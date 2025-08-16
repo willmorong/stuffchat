@@ -640,6 +640,26 @@
             offline: 'presence-offline'
         }[status] || 'presence-offline');
 
+        // Build absolute file URL supporting new endpoint (/files/{id}/{filename})
+        // If only an ID is available, we add a dummy filename segment ("file") since the backend ignores it.
+        const buildFileUrl = (id, filename = 'file') => {
+            if (!id) return '';
+            console.log("building file url because we don't have one");
+            const safe = encodeURIComponent(filename || 'file');
+            return `${store.baseUrl}/files/${encodeURIComponent(id)}/${safe}`;
+        };
+        // Normalize server-provided file_url into an absolute URL
+        const absFileUrl = (file_url) => {
+            if (!file_url) return '';
+            try {
+                // Absolute already?
+                const u = new URL(file_url, store.baseUrl);
+                return u.toString();
+            } catch {
+                return (store.baseUrl || '') + file_url;
+            }
+        };
+
         function saveTokens({ access_token, refresh_token_id, refresh_token }) {
             store.accessToken = access_token;
             store.refreshTokenId = refresh_token_id;
@@ -775,7 +795,8 @@
             $('#meName').textContent = me.username || 'me';
             $('#meEmail').textContent = me.email || '';
             if (me.avatar_file_id) {
-                $('#meAvatar').innerHTML = `<img src="${store.baseUrl}/files/${me.avatar_file_id}" alt="avatar">`;
+                // Use new two-segment file route; filename is arbitrary and ignored by backend
+                $('#meAvatar').innerHTML = `<img src="${buildFileUrl(me.avatar_file_id, 'avatar')}" alt="avatar">`;
             } else {
                 $('#meAvatar').innerHTML = '';
             }
@@ -796,7 +817,7 @@
             }
             const data = await res.json();
             if (data && data.avatar_file_id) {
-                $('#meAvatar').innerHTML = `<img src="${store.baseUrl}/files/${data.avatar_file_id}" alt="avatar">`;
+                $('#meAvatar').innerHTML = `<img src="${buildFileUrl(data.avatar_file_id, 'avatar')}" alt="avatar">`;
             }
         }
 
@@ -886,7 +907,14 @@
         async function fetchMessagesPage(channelId, beforeId = null) {
             let url = `/api/channels/${channelId}/messages?limit=50`;
             if (beforeId) url += '&before=' + encodeURIComponent(beforeId);
-            const page = await apiFetch(url);
+            let page = await apiFetch(url);
+            // Normalize messages to have file_url if server still sends file_id (back-compat)
+            page = page.map(m => {
+                if (!m.file_url && m.file_id) {
+                    return { ...m, file_url: `/files/${m.file_id}/file` };
+                }
+                return m;
+            });
             // API returns newest-first; we want ascending:
             page.reverse();
             const list = store.messages.get(channelId) || [];
@@ -922,7 +950,7 @@
             const avatar = el('div', { class: 'avatar' });
             // We only know my avatar; others unknown in baseline API
             if (own && store.user && store.user.avatar_file_id) {
-                avatar.innerHTML = `<img src="${store.baseUrl}/files/${store.user.avatar_file_id}" alt="me">`;
+                avatar.innerHTML = `<img src="${buildFileUrl(store.user.avatar_file_id, 'avatar')}" alt="me">`;
             }
             const meta = el('div', { class: 'meta' }, [
                 el('strong', {}, own ? (store.user?.username || 'me') : truncateId(m.user_id)),
@@ -931,7 +959,8 @@
                 m.edited_at ? el('span', { class: 'pill' }, 'edited') : null
             ]);
             const content = el('div', { class: 'content' }, m.content || '');
-            const attach = (m.file_id) ? renderAttachment(m.file_id) : null;
+            const hasAttach = !!(m.file_url || m.file_id);
+            const attach = hasAttach ? renderAttachment(m) : null;
 
             const tools = el('div', { class: 'tools' }, []);
             if (own) {
@@ -947,41 +976,113 @@
             return row;
         }
 
-        function renderAttachment(fileId) {
+        function renderAttachment(message) {
             const box = el('div', { class: 'attachment' }, []);
-            const url = `${store.baseUrl}/files/${fileId}`;
+            const url = message.file_url
+                ? absFileUrl(message.file_url)
+                : buildFileUrl(message.file_id, 'file');
 
-            // Try to detect content type; fallback path still handles CORS/HEAD-disabled servers
+            const clearBox = () => {
+                while (box.firstChild) box.removeChild(box.firstChild);
+            };
+
+            const showLink = () => {
+                clearBox();
+                box.appendChild(
+                    el('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, 'Download attachment')
+                );
+            };
+
+            const tryImage = () =>
+                new Promise((resolve, reject) => {
+                    const img = new Image();
+                    img.alt = 'attachment';
+                    img.onload = () => resolve(img);
+                    img.onerror = reject;
+                    img.src = url;
+                });
+
+            const tryVideo = () =>
+                new Promise((resolve, reject) => {
+                    const v = el('video', {
+                        src: url,
+                        controls: true,
+                        preload: 'metadata',
+                        playsinline: false,
+                    });
+
+                    const onOK = () => done(true);
+                    const onErr = () => done(false);
+                    const done = (ok) => {
+                        v.removeEventListener('loadedmetadata', onOK);
+                        v.removeEventListener('canplay', onOK);
+                        v.removeEventListener('error', onErr);
+                        ok ? resolve(v) : reject();
+                    };
+
+                    v.addEventListener('loadedmetadata', onOK, { once: true });
+                    v.addEventListener('canplay', onOK, { once: true });
+                    v.addEventListener('error', onErr, { once: true });
+
+                    try { v.load(); } catch (_) { }
+                });
+
+            const tryAudio = () =>
+                new Promise((resolve, reject) => {
+                    const a = el('audio', {
+                        src: url,
+                        controls: true,
+                        preload: 'metadata',
+                    });
+
+                    const onOK = () => done(true);
+                    const onErr = () => done(false);
+                    const done = (ok) => {
+                        a.removeEventListener('loadedmetadata', onOK);
+                        a.removeEventListener('canplay', onOK);
+                        a.removeEventListener('error', onErr);
+                        ok ? resolve(a) : reject();
+                    };
+
+                    a.addEventListener('loadedmetadata', onOK, { once: true });
+                    a.addEventListener('canplay', onOK, { once: true });
+                    a.addEventListener('error', onErr, { once: true });
+
+                    try { a.load(); } catch (_) { }
+                });
+
+            // Try functions in order, returning the first that resolves.
+            const tryInOrder = (fns) =>
+                fns.reduce((p, fn) => p.catch(() => fn()), Promise.reject());
+
+            const handleByType = (ct) => {
+                if (!ct) return tryInOrder([tryImage, tryVideo, tryAudio]);
+                if (ct.startsWith('image/')) return tryImage();
+                if (ct.startsWith('video/')) return tryInOrder([tryVideo, tryAudio, tryImage]);
+                if (ct.startsWith('audio/')) return tryInOrder([tryAudio, tryVideo, tryImage]);
+                return tryInOrder([tryImage, tryVideo, tryAudio]);
+            };
+
             fetch(url, { method: 'HEAD' })
-                .then(res => {
-                    const ct = (res.headers.get('Content-Type')).toLowerCase();
-                    console.log("Content type of attachment: ", ct);
-                    if (ct.startsWith('video/')) {
-                        const v = el('video', { src: url, controls: true, preload: 'metadata', playsinline: true });
-                        box.appendChild(v);
-                    } else if (ct.startsWith('image/')) {
-                        const img = new Image();
-                        img.onload = () => box.appendChild(img);
-                        img.onerror = () => box.appendChild(el('a', { href: url, target: '_blank' }, 'Download attachment'));
-                        img.src = url;
-                        img.alt = 'attachment';
-                    } else {
-                        box.appendChild(el('a', { href: url, target: '_blank' }, 'Download attachment'));
-                    }
+                .then((res) => {
+                    if (!res.ok) throw new Error('HEAD failed');
+                    const ct = (res.headers.get('Content-Type') || '').toLowerCase();
+                    return handleByType(ct);
                 })
                 .catch(() => {
-                    // Fallback: try as image; if not, try video; else link
-                    console.log("Falling back for attachment");
-                    const img = new Image();
-                    img.onload = () => box.appendChild(img);
-                    img.onerror = () => {
-                        const v = el('video', { src: url, controls: true, preload: 'metadata', autoplay: false });
-                        v.onerror = () => box.appendChild(el('a', { href: url, target: '_blank' }, 'Download attachment'));
-                        box.appendChild(v);
-                    };
-                    img.src = url;
-                    img.alt = 'attachment';
-                });
+                    // HEAD blocked or unknown content-type: guess by extension, then try fallbacks
+                    const ext = (url.split('?')[0].split('.').pop() || '').toLowerCase();
+                    let guess = '';
+                    if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif'].includes(ext)) guess = 'image/';
+                    else if (['mp4', 'webm', 'ogv', 'mov', 'm4v'].includes(ext)) guess = 'video/';
+                    else if (['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac', 'opus'].includes(ext)) guess = 'audio/';
+                    return handleByType(guess);
+                })
+                .then((node) => {
+                    clearBox();
+                    box.appendChild(node);
+                })
+                .catch(showLink);
 
             return box;
         }
@@ -1088,6 +1189,10 @@
         function handleWsMessage(ev) {
             switch (ev.type) {
                 case 'message_created': {
+                    // Back-compat: normalize to include file_url if only file_id is provided
+                    if (!ev.file_url && ev.file_id) {
+                        ev.file_url = `/files/${ev.file_id}/file`;
+                    }
                     const arr = store.messages.get(ev.channel_id) || [];
                     if (!arr.some(m => m.id === ev.id)) {
                         arr.push(ev); // created_at is present; append at end (ascending)
