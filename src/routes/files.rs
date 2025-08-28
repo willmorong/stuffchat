@@ -36,8 +36,7 @@ pub async fn upload_file(
 }
 
 pub struct SavedFile {
-    pub file_id: String,
-    pub stored_name: String,
+    pub file_id: String
 }
 
 pub async fn save_multipart_file(
@@ -79,8 +78,7 @@ pub async fn save_multipart_file(
         .execute(&db.0).await?;
 
     Ok(SavedFile {
-        file_id: id,
-        stored_name,
+        file_id: id
     })
 }
 

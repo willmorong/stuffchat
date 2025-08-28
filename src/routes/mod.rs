@@ -4,3 +4,4 @@ pub mod channels;
 pub mod messages;
 pub mod files;
 pub mod presence;
+pub mod call;
