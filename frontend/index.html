@@ -394,6 +394,13 @@
             padding: 24px;
         }
 
+        #serverIdentifier {
+            font-size: 13px;
+            color: var(--text-dim);
+            margin: -8px 0 12px 0;
+            word-break: break-all;
+        }
+
         .auth-card {
             width: min(480px, 92vw);
             padding: 18px;
@@ -477,35 +484,50 @@
 
 <body>
     <div id="authView" class="glass auth-card">
-        <div class="brand"><i class="bi bi-chat-dots"></i> StuffChat</div>
-        <div class="hint">Set your API URL, then register or log in.</div>
-        <div class="row">
-            <input id="cfgBaseUrl" class="input grow" placeholder="Base URL (e.g. http://localhost:8080)" />
-            <button id="btnSaveBaseUrl" class="button" style="width:140px">Save</button>
+        <!-- Step 1: Server configuration -->
+        <div id="serverStep">
+            <div class="brand"><i class="bi bi-chat-dots"></i> StuffChat</div>
+            <div class="hint">Enter your server address to begin</div>
+            <div class="row">
+                <input id="cfgBaseUrl" class="input grow" placeholder="Base URL (e.g. http://localhost:8080)" />
+                <button id="btnCheckServer" class="button" style="width:140px">Connect</button>
+            </div>
+            <div id="serverError" class="error"></div>
         </div>
-        <div class="panel">
-            <h3>Login</h3>
-            <div class="row">
-                <input id="loginUser" class="input grow" placeholder="Username or email" autocomplete="username" />
+
+        <!-- Step 2: Authentication -->
+        <div id="authStep" style="display:none">
+            <div class="brand"><i class="bi bi-chat-dots"></i> StuffChat</div>
+            <div class="hint" id="serverIdentifier"></div>
+            
+            <div class="panel">
+                <h3>Login</h3>
+                <div class="row">
+                    <input id="loginUser" class="input grow" placeholder="Username or email" autocomplete="username" />
+                </div>
+                <div class="row">
+                    <input id="loginPass" class="input grow" type="password" placeholder="Password" 
+                        autocomplete="current-password" />
+                </div>
+                <div class="row">
+                    <button id="btnLogin" class="button grow">Login</button>
+                </div>
+                <div id="loginErr" class="error"></div>
             </div>
-            <div class="row">
-                <input id="loginPass" class="input grow" type="password" placeholder="Password"
-                    autocomplete="current-password" />
+
+            <div class="panel" style="margin-top:8px">
+                <h3>Register</h3>
+                <div class="row"><input id="regUser" class="input grow" placeholder="Username" autocomplete="username" /></div>
+                <div class="row"><input id="regEmail" class="input grow" placeholder="Email" autocomplete="email" /></div>
+                <div class="row"><input id="regPass" class="input grow" type="password" placeholder="Password (min 8 chars)"
+                        autocomplete="new-password" /></div>
+                <div class="row"><button id="btnRegister" class="button grow">Create account</button></div>
+                <div id="regErr" class="error"></div>
             </div>
-            <div class="row">
-                <button id="btnLogin" class="button grow">Login</button>
+
+            <div class="row" style="margin-top:12px">
+                <button class="button alt grow" onclick="showServerStep()">← Back to Server Settings</button>
             </div>
-            <div id="loginErr" class="error"></div>
-        </div>
-        <div class="panel" style="margin-top:8px">
-            <h3>Register</h3>
-            <div class="row"><input id="regUser" class="input grow" placeholder="Username" autocomplete="username" />
-            </div>
-            <div class="row"><input id="regEmail" class="input grow" placeholder="Email" autocomplete="email" /></div>
-            <div class="row"><input id="regPass" class="input grow" type="password" placeholder="Password (min 8 chars)"
-                    autocomplete="new-password" /></div>
-            <div class="row"><button id="btnRegister" class="button grow">Create account</button></div>
-            <div id="regErr" class="error"></div>
         </div>
     </div>
 
@@ -689,6 +711,31 @@
             throw new Error(errMsg + ' (' + res.status + ')');
         }
 
+        async function checkServer(url) {
+            try {
+                const res = await fetch(url + '/api/health');
+                if (!res.ok) throw new Error('Server not responding');
+                const data = await res.json();
+                return data.version ? true : false;
+            } catch (e) {
+                console.error('Server check failed:', e);
+                throw new Error('Could not connect to server');
+            }
+        }
+
+        function showServerStep() {
+            $('#serverStep').style.display = 'block';
+            $('#authStep').style.display = 'none';
+            $('#serverError').textContent = '';
+        }
+
+        function showAuthStep() {
+            $('#serverStep').style.display = 'none';
+            $('#authStep').style.display = 'block';
+            $('#serverIdentifier').textContent = `Connected to: ${store.baseUrl}`;
+        }
+
+
         async function refreshTokens() {
             try {
                 const data = await fetch(store.baseUrl + '/api/auth/refresh', {
@@ -707,12 +754,34 @@
             }
         }
 
-        function setBaseUrl(url) {
-            store.baseUrl = url.trim().replace(/\/+$/, '');
-            localStorage.setItem('stuffchat.base_url', store.baseUrl);
-            $('#baseUrl').value = store.baseUrl;
-            $('#cfgBaseUrl').value = store.baseUrl;
+        async function setBaseUrl(url) {
+            url = url.trim().replace(/\/+$/, '');
+            if (!url) return;
+            
+            try {
+                $('#btnCheckServer').disabled = true;
+                $('#btnCheckServer').textContent = 'Connecting...';
+                await checkServer(url);
+                
+                store.baseUrl = url;
+                localStorage.setItem('stuffchat.base_url', url);
+                $('#baseUrl').value = url;
+                $('#cfgBaseUrl').value = url;
+                
+                // Clear existing auth if server changes
+                if (localStorage.getItem('stuffchat.base_url') !== url) {
+                    logout(true);
+                }
+                
+                showAuthStep();
+            } catch (e) {
+                $('#serverError').textContent = e.message;
+            } finally {
+                $('#btnCheckServer').disabled = false;
+                $('#btnCheckServer').textContent = 'Connect';
+            }
         }
+
 
         // --- Auth flow ---
         async function doLogin(username_or_email, password) {
@@ -1282,6 +1351,7 @@
         }
 
         function bindUI() {
+            $('#btnCheckServer').addEventListener('click', () => setBaseUrl($('#cfgBaseUrl').value));
             $('#btnSaveBaseUrl').addEventListener('click', () => setBaseUrl($('#cfgBaseUrl').value));
             $('#baseUrl').addEventListener('change', e => setBaseUrl(e.target.value));
 
@@ -1347,24 +1417,25 @@
         // --- Init ---
         async function init() {
             bindUI();
-            setBaseUrl(store.baseUrl);
-            $('#cfgBaseUrl').value = store.baseUrl;
 
-            if (store.accessToken && store.baseUrl) {
+            // If we have a stored URL, try to validate it first
+            const storedUrl = localStorage.getItem('stuffchat.base_url');
+            if (storedUrl) {
+                store.baseUrl = storedUrl;
+                $('#cfgBaseUrl').value = storedUrl;
+                $('#baseUrl').value = storedUrl;
                 try {
-                    $('#authView').style.display = 'none';
-                    $('#appView').style.display = 'flex';
-                    await loadMe();
-                    await loadChannels();
-                    connectWs();
-                    heartbeat();
-                    presencePollLoop();
-                } catch (e) {
-                    // If token invalid, go back to auth
-                    await refreshTokens().catch(() => logout(true));
+                    await checkServer(storedUrl);
+                    showAuthStep();
+                    if (store.accessToken) {
+                        // Try to bootstrap if we have existing tokens
+                        await bootstrapAfterAuth();
+                    }
+                } catch {
+                    showServerStep();
                 }
             } else {
-                $('#authView').style.display = 'flex';
+                showServerStep();
             }
         }
 
