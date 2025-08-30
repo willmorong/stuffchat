@@ -51,6 +51,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(Data::new(chat_server.clone()))
             .service(
                 web::scope("/api")
+                    .route("/health", web::get().to(routes::health::health_check))
                     .service(web::scope("/auth")
                         .route("/register", web::post().to(auth_routes::register))
                         .route("/login", web::post().to(auth_routes::login))

@@ -1352,7 +1352,6 @@
 
         function bindUI() {
             $('#btnCheckServer').addEventListener('click', () => setBaseUrl($('#cfgBaseUrl').value));
-            $('#btnSaveBaseUrl').addEventListener('click', () => setBaseUrl($('#cfgBaseUrl').value));
             $('#baseUrl').addEventListener('change', e => setBaseUrl(e.target.value));
 
             $('#btnLogin').addEventListener('click', async () => {
