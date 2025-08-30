@@ -31,19 +31,40 @@ pub async fn create_channel(db: web::Data<Db>, user: AuthUser, body: web::Json<C
     if body.name.trim().is_empty() { return Err(ApiError::BadRequest("name required".into())); }
     let id = uuid::Uuid::new_v4().to_string();
     let now = Utc::now();
+    let is_private = body.is_private.unwrap_or(false);
+
+    let mut tx = db.0.begin().await?;
+
     sqlx::query("INSERT INTO channels(id,name,is_voice,is_private,created_by,created_at) VALUES (?,?,?,?,?,?)")
         .bind(&id)
         .bind(&body.name)
         .bind(body.is_voice.unwrap_or(false))
-        .bind(body.is_private.unwrap_or(false))
+        .bind(is_private)
         .bind(&user.user_id)
         .bind(now)
-        .execute(&db.0).await?;
-    // make creator a manager
-    sqlx::query("INSERT INTO channel_members(channel_id, user_id, can_read, can_write, can_manage) VALUES (?, ?, 1, 1, 1)")
-        .bind(&id)
-        .bind(&user.user_id)
-        .execute(&db.0).await?;
+        .execute(&mut *tx).await?;
+
+    if is_private {
+        // For private channels, only add the creator as a manager.
+        sqlx::query("INSERT INTO channel_members(channel_id, user_id, can_read, can_write, can_manage) VALUES (?, ?, 1, 1, 1)")
+            .bind(&id)
+            .bind(&user.user_id)
+            .execute(&mut *tx).await?;
+    } else {
+        // For public channels, add all non-creator users as members.
+        sqlx::query("INSERT INTO channel_members(channel_id, user_id, can_read, can_write, can_manage) SELECT ?, id, 1, 1, 0 FROM users WHERE id != ?")
+            .bind(&id)
+            .bind(&user.user_id)
+            .execute(&mut *tx).await?;
+        // And add the creator as a manager.
+        sqlx::query("INSERT INTO channel_members(channel_id, user_id, can_read, can_write, can_manage) VALUES (?, ?, 1, 1, 1)")
+            .bind(&id)
+            .bind(&user.user_id)
+            .execute(&mut *tx).await?;
+    }
+
+    tx.commit().await?;
+
     Ok(HttpResponse::Ok().json(serde_json::json!({"id": id})))
 }
 

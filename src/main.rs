@@ -63,6 +63,8 @@ async fn main() -> std::io::Result<()> {
                         .route("/me", web::patch().to(users_routes::update_me))
                         .route("/me/password", web::put().to(users_routes::change_password))
                         .route("/me/avatar", web::put().to(users_routes::upload_avatar))
+                        .route("/{id}", web::get().to(users_routes::get_user))
+                        .route("/{id}/avatar", web::get().to(users_routes::get_user_avatar))
                     )
                     .service(web::scope("/channels")
                         .route("", web::get().to(channels_routes::list_channels))

@@ -1,5 +1,5 @@
 use actix_web::{web, HttpResponse};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use crate::{db::Db, errors::ApiError, auth::AuthUser, config::Config, auth};
 use actix_multipart::Multipart;
@@ -75,4 +75,49 @@ pub async fn upload_avatar(cfg: web::Data<Config>, db: web::Data<Db>, user: Auth
         .bind(&user.user_id)
         .execute(&db.0).await?;
     Ok(HttpResponse::Ok().json(serde_json::json!({"avatar_file_id": saved.file_id})))
+}
+
+#[derive(Serialize)]
+pub struct UserPublic {
+    id: String,
+    username: String,
+    avatar_file_id: Option<String>,
+}
+
+// Any authenticated user can get public info about another user.
+pub async fn get_user(db: web::Data<Db>, _user: AuthUser, path: web::Path<String>) -> Result<HttpResponse, ApiError> {
+    let user_id = path.into_inner();
+    let row = sqlx::query("SELECT id, username, avatar_file_id FROM users WHERE id = ?")
+        .bind(&user_id)
+        .fetch_optional(&db.0).await?;
+    let row = row.ok_or(ApiError::NotFound)?;
+    let user = UserPublic {
+        id: row.get("id"),
+        username: row.get("username"),
+        avatar_file_id: row.get("avatar_file_id"),
+    };
+    Ok(HttpResponse::Ok().json(user))
+}
+
+// Any authenticated user can get another user's avatar.
+// This redirects to the actual file serving endpoint.
+pub async fn get_user_avatar(db: web::Data<Db>, _user: AuthUser, path: web::Path<String>) -> Result<HttpResponse, ApiError> {
+    let user_id = path.into_inner();
+    // This query joins users and files to get the file_id and original_name for the redirect URL.
+    let row = sqlx::query(
+        "SELECT f.id, f.original_name FROM files f INNER JOIN users u ON u.avatar_file_id = f.id WHERE u.id = ?")
+        .bind(&user_id)
+        .fetch_optional(&db.0).await?;
+
+    let row = row.ok_or(ApiError::NotFound)?;
+    let file_id: String = row.get("id");
+    let original_name: String = row.get("original_name");
+
+    // URL-encode the filename to handle special characters.
+    // Note: You'll need to add the `urlencoding` crate to your Cargo.toml.
+    let file_url = format!("/files/{}/{}", file_id, urlencoding::encode(&original_name));
+
+    Ok(HttpResponse::Found()
+        .append_header((actix_web::http::header::LOCATION, file_url))
+        .finish())
 }
