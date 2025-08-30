@@ -225,6 +225,9 @@ async function heartbeat() {
     const meDot = $('#mePresence');
     meDot.className = 'presence-dot ' + presenceClass(status);
     meDot.title = status;
+    const settingsMeDot = $('#mePresenceSettings');
+    settingsMeDot.className = 'presence-dot ' + presenceClass(status);
+    settingsMeDot.title = status;
 }
 setInterval(heartbeat, 30000);
 
@@ -551,6 +554,7 @@ function isScrolledToBottom() {
     const wrap = $('#messages');
     return wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight < 10;
 }
+
 function scrollToBottom() {
     const wrap = $('#messages');
     wrap.scrollTop = wrap.scrollHeight;
@@ -593,6 +597,7 @@ async function sendMessage() {
     } catch (e) {
         alert('Send failed: ' + e.message);
     }
+    scrollToBottom();
 }
 
 async function editMessage(m) {
@@ -721,7 +726,7 @@ function updateTypingIndicator() {
     const elTip = $('#typingIndicator');
     if (store.typingUsers.size) {
         const sample = [...store.typingUsers][0];
-        elTip.textContent = (store.typingUsers.size > 1) ? 'Several people are typing…' : (truncateId(sample) + ' is typing…');
+        elTip.textContent = (store.typingUsers.size > 1) ? 'Several people are typing…' : (sample + ' is typing…');
         elTip.style.display = '';
     } else {
         elTip.style.display = 'none';
@@ -776,8 +781,6 @@ function bindUI() {
         typingDeb = setTimeout(() => sendTyping(false), 1000);
     });
 
-    $('#btnHeartbeat').addEventListener('click', heartbeat);
-
     $('#avatarFile').addEventListener('change', async (e) => {
         const f = e.target.files && e.target.files[0];
         if (!f) return;
@@ -798,6 +801,8 @@ function bindUI() {
     $('#btnToggleSidebar').addEventListener('click', () => {
         $('#sidebar').classList.toggle('open');
     });
+
+    $('#presenceSelect').addEventListener('change', heartbeat);
 
     window.addEventListener('beforeunload', () => {
         if (store.ws) try { store.ws.close(); } catch { }

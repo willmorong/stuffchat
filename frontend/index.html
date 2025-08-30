@@ -95,15 +95,20 @@
                         <option value="invisible">Invisible</option>
                         <option value="offline">Offline</option>
                     </select>
-                    <button id="btnHeartbeat" class="iconbtn" title="Send heartbeat"><i
-                            class="bi bi-activity"></i></button>
+                    <button id="btnPresenceShow" class="iconbtn">
+                        <span id="mePresenceSettings" class="presence-dot"></span>
+                    </button>
                 </div>
                 <div class="row">
                     <label class="button alt grow" style="cursor:pointer; text-align:center">
-                        <i class="bi bi-image"></i> Change avatar
+                        Change avatar
                         <input id="avatarFile" type="file" accept="image/*" style="display:none" />
                     </label>
-                    <button id="btnLogout" class="button danger" style="width:120px">Logout</button>
+                </div>
+                <div class="row">
+                    <button id="btnLogout" class="button danger">
+                        <span>Logout</span>
+                    </button>
                 </div>
             </div>
         </aside>
