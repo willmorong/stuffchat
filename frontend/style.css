@@ -432,10 +432,6 @@ body {
         transform: translateY(0)
     }
 
-    .app {
-        padding-top: 76px
-    }
-
     .topbar .left {
         display: flex;
         align-items: center;
@@ -443,7 +439,7 @@ body {
     }
 
     .toggle-sidebar {
-        display: inline-flex
+        display: inline-flex;
     }
 }
 
