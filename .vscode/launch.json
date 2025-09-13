@@ -1,0 +1,27 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Rust (cargo run) + Serve frontend",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "cargo run"
+      ],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "Serve frontend (python http.server 3001)",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Run both: backend + frontend",
+      "configurations": [
+        "Run Rust (cargo run) + Serve frontend"
+      ]
+    }
+  ]
+}
