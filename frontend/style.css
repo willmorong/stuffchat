@@ -30,8 +30,8 @@ body {
 body {
     background:
         radial-gradient(1200px 800px at 10% 10%, #14213d 0%, transparent 60%),
-        radial-gradient(1200px 800px at 90% 0%, #1e3a8a 0%, transparent 55%),
-        radial-gradient(1200px 800px at 70% 90%, #0f766e 0%, transparent 55%),
+        radial-gradient(1200px 800px at 90% 0%, #2e3a8a 0%, transparent 55%),
+        radial-gradient(1200px 800px at 70% 90%, #144528 0%, transparent 95%),
         linear-gradient(160deg, var(--bg1), var(--bg2));
     display: flex;
     align-items: center;
