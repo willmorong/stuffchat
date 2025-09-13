@@ -10,6 +10,7 @@ const store = {
     currentChannelId: null,
     messages: new Map(), // channelId -> array of messages (ascending by created_at)
     oldestMessageId: new Map(), // channelId -> oldest id loaded (for pagination)
+    users: new Map(), // userId -> { id, username, avatar_file_id, ... }
     members: new Map(), // channelId -> array of user_ids
     presenceCache: new Map(), // userId -> status
     typingTimers: new Map(), // userId -> timeout
@@ -255,6 +256,9 @@ async function presencePollLoop() {
 async function loadMe() {
     const me = await apiFetch('/api/users/me');
     store.user = me;
+    if (me && me.id) {
+        store.users.set(me.id, me);
+    }
     $('#meName').textContent = me.username || 'me';
     $('#meEmail').textContent = me.email || '';
     if (me.avatar_file_id) {
@@ -264,6 +268,31 @@ async function loadMe() {
         $('#meAvatar').innerHTML = '';
     }
 }
+// --- User profiles (for names/avatars) ---
+async function fetchUser(userId) {
+    if (!userId) return null;
+    if (store.users.has(userId)) return store.users.get(userId);
+    try {
+        const u = await apiFetch(`/api/users/${encodeURIComponent(userId)}`);
+        store.users.set(userId, u);
+        // Re-render current channel to show username/avatar once loaded
+        if (store.currentChannelId) renderMessages(store.currentChannelId);
+        return u;
+    } catch (e) {
+        // Cache a placeholder to avoid repeated fetches on errors
+        store.users.set(userId, { id: userId });
+        return null;
+    }
+}
+
+async function prefetchUsers(userIds) {
+    if (!Array.isArray(userIds) || userIds.length === 0) return;
+    const unique = [...new Set(userIds)].filter(id => id && !store.users.has(id));
+    if (unique.length === 0) return;
+    await Promise.all(unique.map(id => fetchUser(id)));
+}
+
+
 
 async function uploadAvatar(file) {
     const fd = new FormData();
@@ -332,6 +361,7 @@ async function selectChannel(channelId) {
         const members = await apiFetch(`/api/channels/${channelId}/members`);
         const ids = members.map(m => m.user_id);
         store.members.set(channelId, ids);
+        prefetchUsers(ids).catch(() => {});
         fetchPresenceForUsers(ids);
     } catch (e) { store.members.set(channelId, []); }
 
@@ -380,6 +410,10 @@ async function fetchMessagesPage(channelId, beforeId = null) {
     });
     // API returns newest-first; we want ascending:
     page.reverse();
+    // Prefetch authors so we can show names/avatars
+    try {
+        prefetchUsers(page.map(m => m.user_id));
+    } catch (_) {}
     const list = store.messages.get(channelId) || [];
     const isFirstLoad = list.length === 0;
     const atBottom = isScrolledToBottom();
@@ -411,12 +445,24 @@ function renderMessages(channelId) {
 function renderMessageItem(m) {
     const own = (m.user_id === (store.user && store.user.id));
     const avatar = el('div', { class: 'avatar' });
-    // We only know my avatar; others unknown in baseline API
-    if (own && store.user && store.user.avatar_file_id) {
-        avatar.innerHTML = `<img src="${buildFileUrl(store.user.avatar_file_id, 'avatar')}" alt="me">`;
+    const user = own ? store.user : store.users.get(m.user_id);
+    // Show avatar for any user if we have avatar_file_id
+    if (user && user.avatar_file_id) {
+        const src = buildFileUrl(user.avatar_file_id, 'avatar');
+        const img = el('img', {
+            src,
+            alt: user.username ? `${user.username}'s avatar` : 'avatar',
+            onerror: () => { avatar.innerHTML = ''; }
+        });
+        avatar.appendChild(img);
     }
+
     const meta = el('div', { class: 'meta' }, [
-        el('strong', {}, own ? (store.user?.username || 'me') : truncateId(m.user_id)),
+        el('strong', {},
+            own
+                ? (store.user?.username || 'me')
+                : (user?.username || truncateId(m.user_id))
+        ),
         el('span', {}, '•'),
         el('span', {}, new Date(m.created_at || Date.now()).toLocaleString()),
         m.edited_at ? el('span', { class: 'pill' }, 'edited') : null
@@ -586,6 +632,7 @@ async function sendMessage() {
 
     if (!content && !file_id) return;
     $('#msgInput').value = '';
+    $('#msgInput').placeholder = 'Write a message…';
     fileInput.value = '';
 
     try {
@@ -658,6 +705,7 @@ function handleWsMessage(ev) {
             if (!ev.file_url && ev.file_id) {
                 ev.file_url = `/files/${ev.file_id}/file`;
             }
+            if (ev.user_id && !store.users.has(ev.user_id)) fetchUser(ev.user_id);
             const arr = store.messages.get(ev.channel_id) || [];
             if (!arr.some(m => m.id === ev.id)) {
                 arr.push(ev); // created_at is present; append at end (ascending)
@@ -726,7 +774,14 @@ function updateTypingIndicator() {
     const elTip = $('#typingIndicator');
     if (store.typingUsers.size) {
         const sample = [...store.typingUsers][0];
-        elTip.textContent = (store.typingUsers.size > 1) ? 'Several people are typing…' : (sample + ' is typing…');
+        let name = '';
+        if (sample === store.user?.id) {
+            name = store.user?.username || 'You';
+        } else {
+            const u = store.users.get(sample);
+            name = u?.username || truncateId(sample);
+        }
+        elTip.textContent = (store.typingUsers.size > 1) ? 'Several people are typing…' : (name + ' is typing…');
         elTip.style.display = '';
     } else {
         elTip.style.display = 'none';
