@@ -2,7 +2,7 @@
     --bg1: #0b1220;
     --bg2: #1b263b;
     --glass: rgba(255, 255, 255, 0.08);
-    --glass-strong: rgba(255, 255, 255, 0.12);
+    --glass-strong: rgba(255, 255, 255, 0.2);
     --border: rgba(255, 255, 255, 0.15);
     --text: #e9eef7;
     --text-dim: #b7c1d1;
@@ -29,9 +29,9 @@ body {
 
 body {
     background:
-        radial-gradient(1200px 800px at 10% 10%, #14213d 0%, transparent 60%),
+        radial-gradient(1200px 800px at 10% 10%, #11151f 0%, transparent 60%),
         radial-gradient(1200px 800px at 90% 0%, #2e3a8a 0%, transparent 55%),
-        radial-gradient(1200px 800px at 70% 90%, #144528 0%, transparent 95%),
+        radial-gradient(1000px 600px at 70% 90%, #133521 0%, transparent 95%),
         linear-gradient(160deg, var(--bg1), var(--bg2));
     display: flex;
     align-items: center;
@@ -167,7 +167,6 @@ body {
 .settings {
     display: flex;
     flex-direction: column;
-    gap: 8px;
     margin-top: auto;
 }
 
@@ -413,7 +412,8 @@ body {
     font-size: 22px;
     display: flex;
     align-items: center;
-    gap: 8px
+    gap: 8px;
+    margin-left: 10px;
 }
 
 /* Responsive */
@@ -473,4 +473,110 @@ a:hover {
     border-radius: 999px;
     border: 1px solid var(--border);
     background: rgba(255, 255, 255, 0.05)
+}
+
+/* Modal */
+.modal {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    z-index: 100;
+}
+
+.modal.hidden { display: none; }
+
+.modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.35);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+}
+.modal-card {
+    position: relative;
+    width: 80vw;
+    height: 80vh;
+    display: flex;
+    flex-direction: column;
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--glass);
+}
+.brand.small { font-size: 16px; }
+.modal-content {
+    padding: 12px;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.modal-content .panel {
+    padding: 24px;  /* inconsistent with sidebar panels, but looks better and makes the user think "oh this is different" */
+}
+.modal-content .panel .row {
+    padding: 4px 0;
+}
+
+/* Theme overrides */
+body[data-theme="dark"] {
+    --bg1: #000000;
+    --bg2: #000000;
+    --glass: rgba(255, 255, 255, 0.06);
+    --glass-strong: rgba(255, 255, 255, 0.1);
+    --border: rgba(255, 255, 255, 0.18);
+    --text: #ffffff;
+    --text-dim: #d0d5dd;
+    --accent: #7aa2ff;
+    --accent-2: #4dd4ac;
+    --danger: #ff6b6b;
+}
+body[data-theme="dark"] {
+    background: #000000;
+    color: var(--text);
+}
+
+body[data-theme="light"] {
+    --bg1: #e9f0ff;
+    --bg2: #ffffff;
+    --glass: rgba(0, 0, 0, 0.05);
+    --glass-strong: rgba(0, 0, 0, 0.08);
+    --border: rgba(0, 0, 0, 0.12);
+    --text: #0b1220;
+    --text-dim: #465168;
+    --accent: #2c5cff;
+    --accent-2: #10b981;
+    --danger: #e11d48;
+}
+body[data-theme="light"] {
+    background:
+        radial-gradient(1200px 800px at 10% 10%, #729aef 0%, transparent 60%),
+        radial-gradient(1200px 800px at 90% 0%, #b6d4e5 0%, transparent 55%),
+        radial-gradient(1200px 800px at 70% 90%, #82e3a7 0%, transparent 95%),
+        linear-gradient(160deg, var(--bg1), var(--bg2));
+    color: var(--text);
+}
+
+/* Tweak contrasts for light */
+body[data-theme="light"] .input,
+body[data-theme="light"] .select,
+body[data-theme="light"] .button,
+body[data-theme="light"] .iconbtn,
+body[data-theme="light"] .messages,
+body[data-theme="light"] .topbar,
+body[data-theme="light"] #sidebar {
+    background: rgba(255, 255, 255, 0.4);
+}
+body[data-theme="light"] .channel.active {
+    background: linear-gradient(180deg, rgba(44, 92, 255, 0.12), rgba(44, 92, 255, 0.08));
+    border-color: rgba(44, 92, 255, 0.28);
 }

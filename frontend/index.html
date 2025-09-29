@@ -85,10 +85,13 @@
                 </div>
             </div>
 
+            <!-- Sidebar settings panel -->
             <div class="panel settings">
                 <h3>Settings</h3>
-                <input id="baseUrl" class="input" placeholder="Base URL (http://host:port)" />
                 <div class="row">
+                    <button id="btnPresenceShow" class="iconbtn" title="Presence">
+                        <span id="mePresenceSettings" class="presence-dot"></span>
+                    </button>
                     <select id="presenceSelect" class="select grow" title="Status">
                         <option value="online">Online</option>
                         <option value="away">Away</option>
@@ -96,20 +99,13 @@
                         <option value="invisible">Invisible</option>
                         <option value="offline">Offline</option>
                     </select>
-                    <button id="btnPresenceShow" class="iconbtn">
-                        <span id="mePresenceSettings" class="presence-dot"></span>
+                    <button id="btnOpenSettings" class="iconbtn" title="Open settings">
+                        <i class="bi bi-gear-fill"></i>
                     </button>
                 </div>
+
                 <div class="row">
-                    <label class="button alt grow" style="cursor:pointer; text-align:center">
-                        Change Profile Picture
-                        <input id="avatarFile" type="file" accept="image/*" style="display:none" />
-                    </label>
-                </div>
-                <div class="row">
-                    <button id="btnLogout" class="button danger">
-                        <span>Logout</span>
-                    </button>
+                    
                 </div>
             </div>
         </aside>
@@ -139,6 +135,71 @@
                 <button id="btnSend" class="iconbtn" title="Send" disabled><i class="bi bi-send-fill"></i></button>
             </div>
         </main>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-card glass">
+            <div class="modal-header">
+                <div class="brand small"><i class="bi bi-gear-fill"></i> Settings</div>
+                <button id="btnCloseSettings" class="iconbtn" title="Close"><i class="bi bi-x-lg"></i></button>
+            </div>
+
+            <div class="modal-content">
+                <!-- Profile -->
+                <section class="panel">
+                    <h3>Profile</h3>
+                    <div class="row" style="align-items:center">
+                        <div class="avatar" id="settingsAvatarPreview"></div>
+                        <label class="button alt" for="setAvatarFile" style="cursor:pointer; text-align:center; width:200px">
+                            Change Profile Picture
+                        </label>
+                        <input id="setAvatarFile" type="file" accept="image/*" style="display:none" />
+                    </div>
+                    <div class="row">
+                        <input id="profileUsername" class="input grow" placeholder="Screen name" />
+                    </div>
+                    <div class="row" style="gap:8px; flex-wrap:wrap">
+                        <input id="curPwd" class="input" type="password" placeholder="Current password" style="flex:1; min-width:220px" />
+                        <input id="newPwd" class="input" type="password" placeholder="New password" style="flex:1; min-width:220px" />
+                        <button id="btnChangePassword" class="button" style="width:200px">Change Password</button>
+                    </div>
+                    <div class="row">
+                        <button id="btnSaveProfile" class="button">Save Profile Info</button>
+                    </div>
+                    
+                </section>
+
+                <!-- Theme -->
+                <section class="panel">
+                    <h3>Theme</h3>
+                    <div class="row" style="gap:16px; align-items:center">
+                        <label><input type="radio" name="themeSel" value="darkish" /> Default</label>
+                        <label><input type="radio" name="themeSel" value="dark" /> Dark</label>
+                        <label><input type="radio" name="themeSel" value="light" /> Light</label>
+                    </div>
+                </section>
+
+                <!-- Server -->
+                <section class="panel">
+                    <h3>Server</h3>
+                    <p class="error">NOTE: If Will didn't tell you to change this, you probably don't want to change it.</p>
+                    <div class="row">
+                        <input id="settingsBaseUrl" class="input grow" placeholder="Base URL (http://host:port)" />
+                        <button id="btnSaveBaseUrl" class="button" style="width:140px">Connect</button>
+                    </div>
+                </section>
+
+                <!-- Account -->
+                <section class="panel">
+                    <h3>Account</h3>
+                    <div class="row">
+                        <button id="btnLogoutSettings" class="button danger grow">Logout</button>
+                    </div>
+                </section>
+            </div>
+        </div>
     </div>
 
     <script src="frontend.js"></script>

@@ -15,6 +15,7 @@ const store = {
     presenceCache: new Map(), // userId -> status
     typingTimers: new Map(), // userId -> timeout
     typingUsers: new Set(), // currently typing in current channel
+    theme: localStorage.getItem('stuffchat.theme') || 'darkish',
 };
 
 // --- Utilities ---
@@ -74,6 +75,9 @@ const absFileUrl = (file_url) => {
     }
 };
 
+const setIf = (sel, prop, val) => { const n = $(sel); if (n) n[prop] = val; };
+const textIf = (sel, val) => { const n = $(sel); if (n) n.textContent = val; };
+
 function saveTokens({ access_token, refresh_token_id, refresh_token }) {
     store.accessToken = access_token;
     store.refreshTokenId = refresh_token_id;
@@ -127,6 +131,12 @@ function showAuthStep() {
     $('#serverIdentifier').textContent = `Connected to: ${store.baseUrl}`;
 }
 
+function applyTheme(theme) {
+    store.theme = theme || 'darkish';
+    document.body.setAttribute('data-theme', store.theme === 'darkish' ? '' : store.theme);
+    localStorage.setItem('stuffchat.theme', store.theme);
+    if (store.theme === 'darkish') document.body.removeAttribute('data-theme');
+}
 
 async function refreshTokens() {
     try {
@@ -149,28 +159,28 @@ async function refreshTokens() {
 async function setBaseUrl(url) {
     url = url.trim().replace(/\/+$/, '');
     if (!url) return;
-    
+
+    const busyBtn = $('#btnCheckServer') || $('#btnSaveBaseUrl');
     try {
-        $('#btnCheckServer').disabled = true;
-        $('#btnCheckServer').textContent = 'Connecting...';
+        if (busyBtn) { busyBtn.disabled = true; busyBtn.textContent = 'Connecting...'; }
         await checkServer(url);
-        
+
+        const prev = localStorage.getItem('stuffchat.base_url');
         store.baseUrl = url;
         localStorage.setItem('stuffchat.base_url', url);
-        $('#baseUrl').value = url;
-        $('#cfgBaseUrl').value = url;
-        
-        // Clear existing auth if server changes
-        if (localStorage.getItem('stuffchat.base_url') !== url) {
+        setIf('#baseUrl', 'value', url);
+        setIf('#cfgBaseUrl', 'value', url);
+        setIf('#settingsBaseUrl', 'value', url);
+
+        if (prev && prev !== url) {
             logout(true);
         }
-        
+
         showAuthStep();
     } catch (e) {
-        $('#serverError').textContent = e.message;
+        textIf('#serverError', e.message);
     } finally {
-        $('#btnCheckServer').disabled = false;
-        $('#btnCheckServer').textContent = 'Connect';
+        if (busyBtn) { busyBtn.disabled = false; busyBtn.textContent = 'Connect'; }
     }
 }
 
@@ -216,6 +226,15 @@ async function bootstrapAfterAuth() {
     enableComposer(false);
     heartbeat(); // send initial presence
     presencePollLoop(); // periodic presence refresh for members
+}
+
+async function updateMe(fields) {
+    if (!fields || Object.keys(fields).length === 0) return;
+    await apiFetch('/api/users/me', { method: 'PATCH', body: JSON.stringify(fields) });
+    await loadMe();
+}
+async function changeMyPassword(current_password, new_password) {
+    await apiFetch('/api/users/me/password', { method: 'PUT', body: JSON.stringify({ current_password, new_password }) });
 }
 
 // --- Presence ---
@@ -268,6 +287,7 @@ async function loadMe() {
         $('#meAvatar').innerHTML = '';
     }
 }
+
 // --- User profiles (for names/avatars) ---
 async function fetchUser(userId) {
     if (!userId) return null;
@@ -311,6 +331,30 @@ async function uploadAvatar(file) {
     if (data && data.avatar_file_id) {
         $('#meAvatar').innerHTML = `<img src="${buildFileUrl(data.avatar_file_id, 'avatar')}" alt="avatar">`;
     }
+}
+
+// -- Settings ---
+function openSettings() {
+    // Fill current values
+    setIf('#profileUsername', 'value', store.user?.username || '');
+    setIf('#settingsBaseUrl', 'value', store.baseUrl || '');
+    // Avatar preview in modal
+    const prev = $('#settingsAvatarPreview');
+    if (prev) {
+        if (store.user?.avatar_file_id) {
+            prev.innerHTML = `<img src="${buildFileUrl(store.user.avatar_file_id, 'avatar')}" alt="avatar">`;
+        } else {
+            prev.innerHTML = '';
+        }
+    }
+    // Theme selection
+    const radios = document.querySelectorAll('input[name="themeSel"]');
+    radios.forEach(r => { r.checked = (r.value === store.theme); });
+
+    $('#settingsModal').classList.remove('hidden');
+}
+function closeSettings() {
+    $('#settingsModal').classList.add('hidden');
 }
 
 // --- Channels ---
@@ -803,7 +847,10 @@ function renderMemberInfo() {
 
 function bindUI() {
     $('#btnCheckServer').addEventListener('click', () => setBaseUrl($('#cfgBaseUrl').value));
-    $('#baseUrl').addEventListener('change', e => setBaseUrl(e.target.value));
+    // Sidebar baseUrl field removed; guard the old binding if present:
+    if ($('#baseUrl')) {
+        $('#baseUrl').addEventListener('change', e => setBaseUrl(e.target.value));
+    }
 
     $('#btnLogin').addEventListener('click', async () => {
         $('#loginErr').textContent = '';
@@ -815,7 +862,9 @@ function bindUI() {
         try { await doRegister($('#regUser').value, $('#regEmail').value, $('#regPass').value); }
         catch (e) { $('#regErr').textContent = e.message; }
     });
-    $('#btnLogout').addEventListener('click', () => logout());
+
+    // Old direct logout button in sidebar removed; keep global if still present
+    if ($('#btnLogout')) $('#btnLogout').addEventListener('click', () => logout());
 
     $('#btnCreateChannel').addEventListener('click', () => createChannel($('#newChannelName').value));
     $('#newChannelName').addEventListener('keydown', e => { if (e.key === 'Enter') createChannel($('#newChannelName').value) });
@@ -836,16 +885,28 @@ function bindUI() {
         typingDeb = setTimeout(() => sendTyping(false), 1000);
     });
 
-    $('#avatarFile').addEventListener('change', async (e) => {
-        const f = e.target.files && e.target.files[0];
-        if (!f) return;
-        try { await uploadAvatar(f); } catch (err) { alert(err.message); }
-        e.target.value = '';
-    });
+    // Avatar upload: old #avatarFile removed; now wired in modal
+    const modalAvatar = $('#setAvatarFile');
+    if (modalAvatar) {
+        modalAvatar.addEventListener('change', async (e) => {
+            const f = e.target.files && e.target.files[0];
+            if (!f) return;
+            try {
+                await uploadAvatar(f);
+                // Reflect in modal preview too
+                const prev = $('#settingsAvatarPreview');
+                if (store.user?.avatar_file_id && prev) {
+                    prev.innerHTML = `<img src="${buildFileUrl(store.user.avatar_file_id, 'avatar')}" alt="avatar">`;
+                } else if (prev) {
+                    prev.innerHTML = '';
+                }
+            } catch (err) { alert(err.message); }
+            e.target.value = '';
+        });
+    }
 
     $('#attachFile').addEventListener('change', () => {
         if ($('#attachFile').files && $('#attachFile').files[0]) {
-            // Visual hint only
             const name = $('#attachFile').files[0].name;
             $('#msgInput').placeholder = 'Attached: ' + name;
         } else {
@@ -859,6 +920,47 @@ function bindUI() {
 
     $('#presenceSelect').addEventListener('change', heartbeat);
 
+    // Settings modal open/close
+    $('#btnOpenSettings').addEventListener('click', openSettings);
+    $('#btnCloseSettings').addEventListener('click', closeSettings);
+    $('#settingsModal').addEventListener('click', (e) => {
+        if (e.target === $('#settingsModal') || e.target === $('.modal-backdrop')) closeSettings();
+    });
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !$('#settingsModal').classList.contains('hidden')) closeSettings();
+    });
+
+    // Profile save
+    $('#btnSaveProfile').addEventListener('click', async () => {
+        const name = $('#profileUsername').value.trim();
+        try {
+            await updateMe({ username: name || null });
+            alert('Profile updated.');
+        } catch (e) { alert('Update failed: ' + e.message); }
+    });
+
+    // Password change
+    $('#btnChangePassword').addEventListener('click', async () => {
+        const cur = $('#curPwd').value, nw = $('#newPwd').value;
+        if (!cur || !nw) return alert('Enter current and new password.');
+        try {
+            await changeMyPassword(cur, nw);
+            $('#curPwd').value = ''; $('#newPwd').value = '';
+            alert('Password changed.');
+        } catch (e) { alert('Change failed: ' + e.message); }
+    });
+
+    // Theme select
+    document.querySelectorAll('input[name="themeSel"]').forEach(r => {
+        r.addEventListener('change', () => applyTheme(r.value));
+    });
+
+    // Server save from modal
+    $('#btnSaveBaseUrl').addEventListener('click', () => setBaseUrl($('#settingsBaseUrl').value));
+
+    // Logout from modal
+    $('#btnLogoutSettings').addEventListener('click', () => logout());
+
     window.addEventListener('beforeunload', () => {
         if (store.ws) try { store.ws.close(); } catch { }
     });
@@ -868,17 +970,19 @@ function bindUI() {
 async function init() {
     bindUI();
 
-    // If we have a stored URL, try to validate it first
+    // Apply saved theme
+    applyTheme(store.theme);
+
     const storedUrl = localStorage.getItem('stuffchat.base_url');
     if (storedUrl) {
         store.baseUrl = storedUrl;
-        $('#cfgBaseUrl').value = storedUrl;
-        $('#baseUrl').value = storedUrl;
+        setIf('#cfgBaseUrl', 'value', storedUrl);
+        setIf('#baseUrl', 'value', storedUrl);
+        setIf('#settingsBaseUrl', 'value', storedUrl);
         try {
             await checkServer(storedUrl);
             showAuthStep();
             if (store.accessToken) {
-                // Try to bootstrap if we have existing tokens
                 await bootstrapAfterAuth();
             }
         } catch {
