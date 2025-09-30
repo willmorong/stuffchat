@@ -633,7 +633,17 @@ function renderAttachment(message) {
         })
         .then((node) => {
             clearBox();
-            box.appendChild(node);
+            if (node && node.tagName === 'IMG') {
+                const link = el('a', {
+                    href: url,
+                    target: '_blank',
+                    rel: 'noopener noreferrer',
+                    title: 'Open image in new tab',
+                }, node);
+                box.appendChild(link);
+            } else {
+                box.appendChild(node);
+            }
         })
         .catch(showLink);
 
