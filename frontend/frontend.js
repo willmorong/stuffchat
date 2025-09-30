@@ -15,7 +15,7 @@ const store = {
     presenceCache: new Map(), // userId -> status
     typingTimers: new Map(), // userId -> timeout
     typingUsers: new Set(), // currently typing in current channel
-    theme: localStorage.getItem('stuffchat.theme') || 'darkish',
+    theme: localStorage.getItem('stuffchat.theme') || 'mysterious',
 };
 
 // --- Utilities ---
@@ -132,10 +132,10 @@ function showAuthStep() {
 }
 
 function applyTheme(theme) {
-    store.theme = theme || 'darkish';
-    document.body.setAttribute('data-theme', store.theme === 'darkish' ? '' : store.theme);
+    store.theme = theme || 'mysterious';
+    document.body.setAttribute('data-theme', store.theme === 'mysterious' ? '' : store.theme);
     localStorage.setItem('stuffchat.theme', store.theme);
-    if (store.theme === 'darkish') document.body.removeAttribute('data-theme');
+    if (store.theme === 'mysterious') document.body.removeAttribute('data-theme');
 }
 
 async function refreshTokens() {
