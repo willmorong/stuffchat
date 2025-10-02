@@ -714,5 +714,5 @@ body[data-theme="wegmans"] {
     color: var(--text);
     background-repeat: no-repeat;
     background-size: cover;
-    backdrop-filter: blur(10px) contrast(50%);
+    backdrop-filter: blur(5px) contrast(50%);
 }
