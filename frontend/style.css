@@ -681,3 +681,38 @@ body[data-theme="billzinga"] .msg.own {
     background: rgba(255, 255, 255, 0.10);
     border-color: rgba(255, 255, 255, 0.35);
 }
+body[data-theme="wegmans"] {
+    --bg1: #e9f0ff;
+    --bg2: #ffffff;
+    --glass: rgba(0, 0, 0, 0.05);
+    --glass-strong: rgba(0, 0, 0, 0.08);
+    --border: rgba(0, 0, 0, 0.2);
+    --text: #0b1220;
+    --text-dim: #465168;
+    --accent: #2c5cff;
+    --accent-2: #10b981;
+    --danger: #e11d48;
+}
+body[data-theme="wegmans"] .input,
+body[data-theme="wegmans"] .select,
+body[data-theme="wegmans"] .button,
+body[data-theme="wegmans"] .iconbtn,
+body[data-theme="wegmans"] .messages,
+body[data-theme="wegmans"] .topbar,
+body[data-theme="wegmans"] .inputbar,
+body[data-theme="wegmans"] #sidebar {
+    background: rgba(255, 255, 255, 0.4);
+}
+body[data-theme="wegmans"] .channel.active {
+    background: linear-gradient(180deg, rgba(44, 92, 255, 0.12), rgba(44, 92, 255, 0.08));
+    border-color: rgba(44, 92, 255, 0.28);
+}
+body[data-theme="wegmans"] {
+    background: url("wegmans.jpg");
+    background-repeat: repeat;
+    background-size: auto;
+    color: var(--text);
+    background-repeat: no-repeat;
+    background-size: cover;
+    backdrop-filter: blur(10px) contrast(50%);
+}
