@@ -7,6 +7,7 @@ const store = {
     user: null,
     ws: null,
     channels: [],
+    allUsers: [], // for channel creation modal
     currentChannelId: null,
     messages: new Map(), // channelId -> array of messages (ascending by created_at)
     oldestMessageId: new Map(), // channelId -> oldest id loaded (for pagination)
@@ -381,12 +382,53 @@ function renderChannelList() {
     });
 }
 
-async function createChannel(name) {
-    if (!name.trim()) return;
-    const res = await apiFetch('/api/channels', { method: 'POST', body: JSON.stringify({ name: name.trim(), is_voice: false, is_private: false }) });
+async function createChannelAdvanced({ name, is_private, is_voice, members }) {
+    if (!name || !name.trim()) throw new Error('Name required');
+    const payload = { name: name.trim(), is_private: !!is_private, is_voice: !!is_voice };
+    if (payload.is_private && Array.isArray(members)) payload.members = members;
+    const res = await apiFetch('/api/channels', { method: 'POST', body: JSON.stringify(payload) });
     await loadChannels();
     selectChannel(res.id);
-    $('#newChannelName').value = '';
+}
+
+async function loadAllUsers() {
+    try {
+        const users = await apiFetch('/api/users');
+        store.allUsers = users || [];
+        renderCreateChannelMembers();
+    } catch (e) {
+        console.warn('Failed to load users', e.message);
+        store.allUsers = [];
+        renderCreateChannelMembers();
+    }
+}
+
+function openCreateChannelModal() {
+    // reset fields
+    setIf('#chName', 'value', '');
+    $('#chIsVoice').checked = false;
+    $('#chIsPrivate').checked = false;
+    $('#chMembersSection').style.display = 'none';
+    renderCreateChannelMembers();
+    // lazy load users
+    loadAllUsers();
+    $('#createChannelModal').classList.remove('hidden');
+}
+function closeCreateChannelModal() { $('#createChannelModal').classList.add('hidden'); }
+
+function renderCreateChannelMembers() {
+    const sel = $('#chMembersSelect');
+    if (!sel) return;
+    sel.innerHTML = '';
+    const meId = store.user?.id;
+    store.allUsers
+        .filter(u => u.id !== meId)
+        .forEach(u => {
+            const opt = document.createElement('option');
+            opt.value = u.id;
+            opt.textContent = u.username || truncateId(u.id);
+            sel.appendChild(opt);
+        });
 }
 
 // --- Messages ---
@@ -876,8 +918,38 @@ function bindUI() {
     // Old direct logout button in sidebar removed; keep global if still present
     if ($('#btnLogout')) $('#btnLogout').addEventListener('click', () => logout());
 
-    $('#btnCreateChannel').addEventListener('click', () => createChannel($('#newChannelName').value));
-    $('#newChannelName').addEventListener('keydown', e => { if (e.key === 'Enter') createChannel($('#newChannelName').value) });
+    // Create Channel modal open
+    $('#btnOpenCreateChannel').addEventListener('click', openCreateChannelModal);
+
+    // Create Channel modal close handlers
+    $('#btnCloseCreateChannel').addEventListener('click', closeCreateChannelModal);
+    $('#createChannelModal').addEventListener('click', (e) => {
+        if (e.target === $('#createChannelModal') || e.target === $('#createChannelModal .modal-backdrop')) closeCreateChannelModal();
+    });
+
+    // Toggle members section when privacy changes
+    $('#chIsPrivate').addEventListener('change', (e) => {
+        const on = e.target.checked;
+        $('#chMembersSection').style.display = on ? '' : 'none';
+    });
+
+    // Submit create channel
+    $('#btnCreateChannelSubmit').addEventListener('click', async () => {
+        const name = $('#chName').value.trim();
+        const is_private = $('#chIsPrivate').checked;
+        const is_voice = $('#chIsVoice').checked;
+        let members = [];
+        if (is_private) {
+            const opts = Array.from($('#chMembersSelect').selectedOptions || []);
+            members = opts.map(o => o.value);
+        }
+        try {
+            await createChannelAdvanced({ name, is_private, is_voice, members });
+            closeCreateChannelModal();
+        } catch (e) {
+            alert('Create failed: ' + e.message);
+        }
+    });
 
     $('#btnSend').addEventListener('click', sendMessage);
     $('#msgInput').addEventListener('keydown', e => {

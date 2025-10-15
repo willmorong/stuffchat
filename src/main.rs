@@ -59,6 +59,7 @@ async fn main() -> std::io::Result<()> {
                         .route("/logout", web::post().to(auth_routes::logout))
                     )
                     .service(web::scope("/users")
+                        .route("", web::get().to(users_routes::list_users))
                         .route("/me", web::get().to(users_routes::me))
                         .route("/me", web::patch().to(users_routes::update_me))
                         .route("/me/password", web::put().to(users_routes::change_password))

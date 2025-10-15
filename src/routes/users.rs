@@ -84,6 +84,18 @@ pub struct UserPublic {
     avatar_file_id: Option<String>,
 }
 
+// List all users (basic public info). Requires authentication.
+pub async fn list_users(db: web::Data<Db>, _user: AuthUser) -> Result<HttpResponse, ApiError> {
+    let rows = sqlx::query("SELECT id, username, avatar_file_id FROM users ORDER BY username ASC")
+        .fetch_all(&db.0).await?;
+    let users: Vec<UserPublic> = rows.into_iter().map(|r| UserPublic {
+        id: r.get("id"),
+        username: r.get("username"),
+        avatar_file_id: r.get("avatar_file_id"),
+    }).collect();
+    Ok(HttpResponse::Ok().json(users))
+}
+
 // Any authenticated user can get public info about another user.
 pub async fn get_user(db: web::Data<Db>, _user: AuthUser, path: web::Path<String>) -> Result<HttpResponse, ApiError> {
     let user_id = path.into_inner();

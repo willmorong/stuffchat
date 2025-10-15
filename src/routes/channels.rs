@@ -25,7 +25,13 @@ pub async fn list_channels(db: web::Data<Db>, user: AuthUser) -> Result<HttpResp
 }
 
 #[derive(Deserialize)]
-pub struct CreateChannelReq { pub name: String, pub is_voice: Option<bool>, pub is_private: Option<bool> }
+pub struct CreateChannelReq {
+    pub name: String,
+    pub is_voice: Option<bool>,
+    pub is_private: Option<bool>,
+    // Optional list of user IDs to add as initial members (used for private channels)
+    pub members: Option<Vec<String>>,
+}
 
 pub async fn create_channel(db: web::Data<Db>, user: AuthUser, body: web::Json<CreateChannelReq>) -> Result<HttpResponse, ApiError> {
     if body.name.trim().is_empty() { return Err(ApiError::BadRequest("name required".into())); }
@@ -45,11 +51,22 @@ pub async fn create_channel(db: web::Data<Db>, user: AuthUser, body: web::Json<C
         .execute(&mut *tx).await?;
 
     if is_private {
-        // For private channels, only add the creator as a manager.
+        // For private channels, add the creator as a manager.
         sqlx::query("INSERT INTO channel_members(channel_id, user_id, can_read, can_write, can_manage) VALUES (?, ?, 1, 1, 1)")
             .bind(&id)
             .bind(&user.user_id)
             .execute(&mut *tx).await?;
+
+        // Add any specified members (non-managers by default). Ignore the creator if included.
+        if let Some(members) = &body.members {
+            for uid in members {
+                if uid == &user.user_id { continue; }
+                sqlx::query("INSERT OR IGNORE INTO channel_members(channel_id, user_id, can_read, can_write, can_manage) VALUES (?, ?, 1, 1, 0)")
+                    .bind(&id)
+                    .bind(uid)
+                    .execute(&mut *tx).await?;
+            }
+        }
     } else {
         // For public channels, add all non-creator users as members.
         sqlx::query("INSERT INTO channel_members(channel_id, user_id, can_read, can_write, can_manage) SELECT ?, id, 1, 1, 0 FROM users WHERE id != ?")

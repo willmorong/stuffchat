@@ -68,9 +68,8 @@
                     <h3>Channels</h3>
                     <div class="channels" id="channels"></div>
                     <div class="row" style="margin-top:8px">
-                        <input id="newChannelName" class="input grow" placeholder="New channel name" />
-                        <button id="btnCreateChannel" class="iconbtn" title="Create">
-                            <i class="bi bi-plus-lg"></i>
+                        <button id="btnOpenCreateChannel" class="button grow" title="Create Channel">
+                            <i class="bi bi-plus-lg"></i> Create channel
                         </button>
                     </div>
                 </div>
@@ -177,6 +176,44 @@
                         <h3>Account</h3>
                         <div class="row">
                             <button id="btnLogoutSettings" class="button danger grow">Logout</button>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+        <!-- Create Channel Modal -->
+        <div id="createChannelModal" class="modal hidden">
+            <div class="modal-backdrop"></div>
+            <div class="modal-card glass">
+                <div class="modal-header">
+                    <div class="brand small"><i class="bi bi-hash"></i> Create Channel</div>
+                    <button id="btnCloseCreateChannel" class="iconbtn" title="Close"><i class="bi bi-x-lg"></i></button>
+                </div>
+                <div class="modal-content">
+                    <section class="panel">
+                        <h3>Details</h3>
+                        <div class="row">
+                            <input id="chName" class="input grow" placeholder="Channel name" />
+                        </div>
+                        <div class="row" style="align-items:center; gap:12px">
+                            <label class="row" style="gap:6px; align-items:center">
+                                <input type="checkbox" id="chIsVoice" /> Voice channel
+                            </label>
+                            <label class="row" style="gap:6px; align-items:center">
+                                <input type="checkbox" id="chIsPrivate" /> Private channel
+                            </label>
+                        </div>
+                    </section>
+                    <section class="panel" id="chMembersSection" style="display:none">
+                        <h3>Private Members</h3>
+                        <div class="row">
+                            <select id="chMembersSelect" class="select grow" multiple size="8"></select>
+                        </div>
+                        <div class="hint">Hold Shift or Ctrl/Command to select multiple users</div>
+                    </section>
+                    <section class="panel">
+                        <div class="row">
+                            <button id="btnCreateChannelSubmit" class="button grow">Create</button>
                         </div>
                     </section>
                 </div>
