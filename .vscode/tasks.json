@@ -29,6 +29,19 @@
       }
     },
     {
+      "label": "Upload frontend to VPS (rsync)",
+      "type": "shell",
+      "command": "rsync -az --delete --info=progress2 --human-readable --mkpath frontend/ root@caddy-sfo2-01:/srv/frontend/",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
       "label": "Run backend + Serve frontend (parallel)",
       "dependsOn": [
         "Run Rust (cargo run)",
@@ -43,6 +56,23 @@
       "group": {
         "kind": "test",
         "isDefault": true
+      }
+    },
+    {
+      "label": "Run backend + Upload frontend (parallel)",
+      "dependsOn": [
+        "Run Rust (cargo run)",
+        "Upload frontend to VPS (rsync)"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "group": {
+        "kind": "test",
+        "isDefault": false
       }
     }
   ]

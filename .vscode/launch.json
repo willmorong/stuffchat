@@ -20,6 +20,19 @@
       "cwd": "${workspaceFolder}/frontend",
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen"
+    },
+    {
+      "name": "Upload frontend to VPS (rsync)",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "rsync -az --delete --info=progress2 --human-readable --mkpath frontend/ root@caddy-sfo2-01:/srv/frontend/"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
     }
   ],
   "compounds": [
@@ -28,6 +41,14 @@
       "configurations": [
         "Backend: cargo run",
         "Frontend: python http.server 3001"
+      ],
+      "stopAll": true
+    },
+    {
+      "name": "Run backend + Upload frontend",
+      "configurations": [
+        "Backend: cargo run",
+        "Upload frontend to VPS (rsync)"
       ],
       "stopAll": true
     }

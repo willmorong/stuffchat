@@ -185,7 +185,7 @@ body {
 }
 
 .button {
-    background: linear-gradient(180deg, var(--glass), var(--glass-strong)););
+    background: linear-gradient(180deg, var(--glass), var(--glass-strong));
     cursor: pointer;
 }
 
@@ -431,7 +431,10 @@ body {
     }
 
     #sidebar.open {
-        transform: translateY(0)
+        transform: translateY(0);
+        width: auto;
+        box-sizing: border-box;
+        margin: 0 auto;
     }
 
     .topbar .left {
