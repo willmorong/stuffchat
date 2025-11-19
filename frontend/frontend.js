@@ -1137,7 +1137,7 @@ function leaveCall() {
         store.localStream = null;
     }
 
-    store.pcs.forEach(pc => pc.close());
+    store.pcs.forEach(peerConnection => peerConnection.close());
     store.pcs.clear();
 
     store.ws.send(JSON.stringify({ type: 'leave_call', channel_id: store.currentChannelId }));
@@ -1180,6 +1180,7 @@ function updateCallUI() {
         // Not in call
         // Show "Start Call" or "Join Call" depending on if there are people
         btnStart.style.display = 'block';
+        btnStart.style.width = 'fit-content';
         btnStart.textContent = store.voiceUsers.size > 0 ? 'Join Call' : 'Start Call';
         btnStart.className = store.voiceUsers.size > 0 ? 'button small success' : 'button small';
         callUI.style.display = 'none';
@@ -1189,18 +1190,18 @@ function updateCallUI() {
 async function createPeerConnection(targetUserId, initiator) {
     if (store.pcs.has(targetUserId)) return store.pcs.get(targetUserId);
 
-    const pc = new RTCPeerConnection({
+    const peerConnection = new RTCPeerConnection({
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
     });
-    store.pcs.set(targetUserId, pc);
+    store.pcs.set(targetUserId, peerConnection);
 
-    pc.onicecandidate = (event) => {
+    peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
             sendSignal(targetUserId, { candidate: event.candidate });
         }
     };
 
-    pc.ontrack = (event) => {
+    peerConnection.ontrack = (event) => {
         const stream = event.streams[0];
         let audio = document.getElementById(`audio-${targetUserId}`);
         if (!audio) {
@@ -1213,41 +1214,41 @@ async function createPeerConnection(targetUserId, initiator) {
     };
 
     if (store.localStream) {
-        store.localStream.getTracks().forEach(track => pc.addTrack(track, store.localStream));
+        store.localStream.getTracks().forEach(track => peerConnection.addTrack(track, store.localStream));
     }
 
     if (initiator) {
         try {
-            const offer = await pc.createOffer();
+            const offer = await peerConnection.createOffer();
             // Mangle SDP for Opus 96kbps
             const sdp = mangleSdp(offer.sdp);
             const mangledOffer = { type: offer.type, sdp };
-            await pc.setLocalDescription(mangledOffer);
+            await peerConnection.setLocalDescription(mangledOffer);
             sendSignal(targetUserId, { sdp: mangledOffer });
         } catch (e) { console.error('Offer error', e); }
     }
 
-    return pc;
+    return peerConnection;
 }
 
 async function handleSignal(userId, data) {
-    let pc = store.pcs.get(userId);
-    if (!pc) {
-        pc = await createPeerConnection(userId, false);
+    let peerConnection = store.pcs.get(userId);
+    if (!peerConnection) {
+        peerConnection = await createPeerConnection(userId, false);
     }
 
     try {
         if (data.sdp) {
-            await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
             if (data.sdp.type === 'offer') {
-                const answer = await pc.createAnswer();
+                const answer = await peerConnection.createAnswer();
                 const sdp = mangleSdp(answer.sdp);
                 const mangledAnswer = { type: answer.type, sdp };
-                await pc.setLocalDescription(mangledAnswer);
+                await peerConnection.setLocalDescription(mangledAnswer);
                 sendSignal(userId, { sdp: mangledAnswer });
             }
         } else if (data.candidate) {
-            await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
         }
     } catch (e) { console.error('Signal error', e); }
 }
