@@ -1,224 +1,250 @@
 <!doctype html>
 <html lang="en">
-    <head>
-        <meta charset="utf-8" />
-        <title>stuffchat</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <link rel="icon" type="image/png" href="favicon.png" />
-        <link rel="stylesheet" href="style.css" />
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
-    </head>
-    <body>
-        <div id="authView" class="glass auth-card">
-            <div id="serverStep">
-                <div class="brand"><i class="bi bi-chat-dots"></i> stuffchat</div>
-                <div class="hint">Enter server address</div>
+
+<head>
+    <meta charset="utf-8" />
+    <title>stuffchat</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+</head>
+
+<body>
+    <div id="authView" class="glass auth-card">
+        <div id="serverStep">
+            <div class="brand"><i class="bi bi-chat-dots"></i> stuffchat</div>
+            <div class="hint">Enter server address</div>
+            <div class="row">
+                <input id="cfgBaseUrl" class="input grow" placeholder="Base URL (e.g. http://localhost:8080)" />
+                <button id="btnCheckServer" class="button" style="width:140px">Connect</button>
+            </div>
+            <div id="serverError" class="error"></div>
+        </div>
+        <div id="authStep" style="display:none">
+            <div class="brand"><i class="bi bi-chat-dots"></i> StuffChat</div>
+            <div class="hint" id="serverIdentifier"></div>
+
+            <div class="panel">
+                <h3>Login</h3>
                 <div class="row">
-                    <input id="cfgBaseUrl" class="input grow" placeholder="Base URL (e.g. http://localhost:8080)" />
-                    <button id="btnCheckServer" class="button" style="width:140px">Connect</button>
+                    <input id="loginUser" class="input grow" placeholder="Username or email" autocomplete="username" />
                 </div>
-                <div id="serverError" class="error"></div>
+                <div class="row">
+                    <input id="loginPass" class="input grow" type="password" placeholder="Password"
+                        autocomplete="current-password" />
+                </div>
+                <div class="row">
+                    <button id="btnLogin" class="button grow">Login</button>
+                </div>
+                <div id="loginErr" class="error"></div>
             </div>
-            <div id="authStep" style="display:none">
-                <div class="brand"><i class="bi bi-chat-dots"></i> StuffChat</div>
-                <div class="hint" id="serverIdentifier"></div>
-                
-                <div class="panel">
-                    <h3>Login</h3>
-                    <div class="row">
-                        <input id="loginUser" class="input grow" placeholder="Username or email" autocomplete="username" />
-                    </div>
-                    <div class="row">
-                        <input id="loginPass" class="input grow" type="password" placeholder="Password" 
-                            autocomplete="current-password" />
-                    </div>
-                    <div class="row">
-                        <button id="btnLogin" class="button grow">Login</button>
-                    </div>
-                    <div id="loginErr" class="error"></div>
+            <div class="panel" style="margin-top:8px">
+                <h3>Register</h3>
+                <div class="row"><input id="regUser" class="input grow" placeholder="Username"
+                        autocomplete="username" /></div>
+                <div class="row"><input id="regEmail" class="input grow" placeholder="Email" autocomplete="email" />
                 </div>
-                <div class="panel" style="margin-top:8px">
-                    <h3>Register</h3>
-                    <div class="row"><input id="regUser" class="input grow" placeholder="Username" autocomplete="username" /></div>
-                    <div class="row"><input id="regEmail" class="input grow" placeholder="Email" autocomplete="email" /></div>
-                    <div class="row"><input id="regPass" class="input grow" type="password" placeholder="Password (min 8 chars)"
-                            autocomplete="new-password" /></div>
-                    <div class="row"><button id="btnRegister" class="button grow">Create account</button></div>
-                    <div id="regErr" class="error"></div>
-                </div>
-                <div class="row" style="margin-top:12px">
-                    <button class="button alt grow" onclick="showServerStep()">Back to Server Settings</button>
-                </div>
+                <div class="row"><input id="regPass" class="input grow" type="password"
+                        placeholder="Password (min 8 chars)" autocomplete="new-password" /></div>
+                <div class="row"><button id="btnRegister" class="button grow">Create account</button></div>
+                <div id="regErr" class="error"></div>
+            </div>
+            <div class="row" style="margin-top:12px">
+                <button class="button alt grow" onclick="showServerStep()">Back to Server Settings</button>
             </div>
         </div>
-        <div id="appView" class="app" style="display:none">
-            <aside id="sidebar">
-                <div class="profile">
-                    <div class="avatar" id="meAvatar"></div>
-                    <div style="min-width:0">
-                        <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap">
-                            <div id="meName" style="font-weight:600">—</div>
-                            <span id="mePresence" class="presence-dot presence-offline" title="offline"></span>
-                        </div>
-                        <div id="meEmail" class="hint">—</div>
+    </div>
+    <div id="appView" class="app" style="display:none">
+        <aside id="sidebar">
+            <div class="profile">
+                <div class="avatar" id="meAvatar"></div>
+                <button id="btnCloseSidebar" class="iconbtn mobile-only" title="Close Sidebar"
+                    style="margin-right: -4px; order: 2;">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+                <div style="min-width:0">
+                    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap">
+                        <div id="meName" style="font-weight:600">—</div>
+                        <span id="mePresence" class="presence-dot presence-offline" title="offline"></span>
                     </div>
-                </div>
-
-                <div class="panel">
-                    <h3>Channels</h3>
-                    <div class="channels" id="channels"></div>
-                    <div class="row" style="margin-top:8px">
-                        <button id="btnOpenCreateChannel" class="button grow" title="Create Channel">
-                            <i class="bi bi-plus-lg"></i> Create channel
-                        </button>
-                    </div>
-                </div>
-                <div class="panel settings">
-                    <h3>Settings</h3>
-                    <div class="row">
-                        <button id="btnPresenceShow" class="iconbtn" title="Presence">
-                            <span id="mePresenceSettings" class="presence-dot"></span>
-                        </button>
-                        <select id="presenceSelect" class="select grow" title="Status">
-                            <option value="online">Online</option>
-                            <option value="away">Away</option>
-                            <option value="dnd">Do Not Disturb</option>
-                            <option value="invisible">Invisible</option>
-                            <option value="offline">Offline</option>
-                        </select>
-                        <button id="btnOpenSettings" class="iconbtn" title="Open settings">
-                            <i class="bi bi-gear-fill"></i>
-                        </button>
-                    </div>
-
-                    <div class="row">
-                        
-                    </div>
-                </div>
-            </aside>
-            <main id="main">
-                <div class="topbar">
-                    <div class="left">
-                        <button class="iconbtn toggle-sidebar" id="btnToggleSidebar" title="Menu"><i
-                                class="bi bi-list"></i></button>
-                        <div class="name" id="channelName">Select a channel</div>
-                    </div>
-                    <div class="members" id="memberInfo">—</div>
-                </div>
-
-                <div class="messages" id="messages">
-                    <!-- Load older -->
-                </div>
-
-                <div class="typing" id="typingIndicator" style="display:none">Someone is typing…</div>
-
-                <div class="inputbar">
-                    <label class="iconbtn" title="Attach file" style="cursor:pointer">
-                        <i class="bi bi-paperclip"></i>
-                        <input id="attachFile" type="file" style="display:none" />
-                    </label>
-                    <textarea id="msgInput" placeholder="Write a message…" disabled></textarea>
-                    <button id="btnSend" class="iconbtn" title="Send" disabled><i class="bi bi-send-fill"></i></button>
-                </div>
-            </main>
-        </div>
-        <div id="settingsModal" class="modal hidden">
-            <div class="modal-backdrop"></div>
-            <div class="modal-card glass">
-                <div class="modal-header">
-                    <div class="brand small"><i class="bi bi-gear-fill"></i> Settings</div>
-                    <button id="btnCloseSettings" class="iconbtn" title="Close"><i class="bi bi-x-lg"></i></button>
-                </div>
-
-                <div class="modal-content">
-                    <section class="panel">
-                        <h3>Profile</h3>
-                        <div class="row" style="align-items:center">
-                            <div class="avatar" id="settingsAvatarPreview"></div>
-                            <label class="button alt" for="setAvatarFile" style="cursor:pointer; text-align:center; width:200px">
-                                Change Profile Picture
-                            </label>
-                            <input id="setAvatarFile" type="file" accept="image/*" style="display:none" />
-                        </div>
-                        <div class="row">
-                            <input id="profileUsername" class="input grow" placeholder="Screen name" />
-                        </div>
-                        <div class="row" style="gap:8px; flex-wrap:wrap">
-                            <input id="curPwd" class="input" type="password" placeholder="Current password" style="flex:1; min-width:220px" />
-                            <input id="newPwd" class="input" type="password" placeholder="New password" style="flex:1; min-width:220px" />
-                            <button id="btnChangePassword" class="button" style="width:200px">Change Password</button>
-                        </div>
-                        <div class="row">
-                            <button id="btnSaveProfile" class="button">Save Profile Info</button>
-                        </div>
-                    </section>
-                    <section class="panel">
-                        <h3>Theme</h3>
-                        <div class="row" style="gap:16px; align-items:center">
-                            <label><input type="radio" name="themeSel" value="mysterious" /> Mysterious</label>
-                            <label><input type="radio" name="themeSel" value="dark" /> Dark</label>
-                            <label><input type="radio" name="themeSel" value="light" /> Light</label>
-                            <label><input type="radio" name="themeSel" value="pink" /> Pink</label>
-                            <label><input type="radio" name="themeSel" value="question" /> Question</label>
-                            <label><input type="radio" name="themeSel" value="billzinga" /> Billzinga</label>
-                            <label><input type="radio" name="themeSel" value="wegmans" /> Wegmans</label>
-                        </div>
-                    </section>
-                    <section class="panel">
-                        <h3>Server</h3>
-                        <p class="error">NOTE: If Will didn't tell you to change this, you probably don't want to change it.</p>
-                        <div class="row">
-                            <input id="settingsBaseUrl" class="input grow" placeholder="Base URL (http://host:port)" />
-                            <button id="btnSaveBaseUrl" class="button" style="width:140px">Connect</button>
-                        </div>
-                    </section>
-                    <section class="panel">
-                        <h3>Account</h3>
-                        <div class="row">
-                            <button id="btnLogoutSettings" class="button danger grow">Logout</button>
-                        </div>
-                    </section>
+                    <div id="meEmail" class="hint">—</div>
                 </div>
             </div>
-        </div>
-        <!-- Create Channel Modal -->
-        <div id="createChannelModal" class="modal hidden">
-            <div class="modal-backdrop"></div>
-            <div class="modal-card glass">
-                <div class="modal-header">
-                    <div class="brand small"><i class="bi bi-hash"></i> Create Channel</div>
-                    <button id="btnCloseCreateChannel" class="iconbtn" title="Close"><i class="bi bi-x-lg"></i></button>
-                </div>
-                <div class="modal-content">
-                    <section class="panel">
-                        <h3>Details</h3>
-                        <div class="row">
-                            <input id="chName" class="input grow" placeholder="Channel name" />
-                        </div>
-                        <div class="row" style="align-items:center; gap:12px">
-                            <label class="row" style="gap:6px; align-items:center">
-                                <input type="checkbox" id="chIsVoice" /> Voice channel
-                            </label>
-                            <label class="row" style="gap:6px; align-items:center">
-                                <input type="checkbox" id="chIsPrivate" /> Private channel
-                            </label>
-                        </div>
-                    </section>
-                    <section class="panel" id="chMembersSection" style="display:none">
-                        <h3>Private Members</h3>
-                        <div class="row">
-                            <select id="chMembersSelect" class="select grow" multiple size="8"></select>
-                        </div>
-                        <div class="hint">Hold Shift or Ctrl/Command to select multiple users</div>
-                    </section>
-                    <section class="panel">
-                        <div class="row">
-                            <button id="btnCreateChannelSubmit" class="button grow">Create</button>
-                        </div>
-                    </section>
+
+            <div class="panel">
+                <h3>Channels</h3>
+                <div class="channels" id="channels"></div>
+                <div class="row" style="margin-top:8px">
+                    <button id="btnOpenCreateChannel" class="button grow" title="Create Channel">
+                        <i class="bi bi-plus-lg"></i> Create channel
+                    </button>
                 </div>
             </div>
+            <div class="panel settings">
+                <h3>Settings</h3>
+                <div class="row">
+                    <button id="btnPresenceShow" class="iconbtn" title="Presence">
+                        <span id="mePresenceSettings" class="presence-dot"></span>
+                    </button>
+                    <select id="presenceSelect" class="select grow" title="Status">
+                        <option value="online">Online</option>
+                        <option value="away">Away</option>
+                        <option value="dnd">Do Not Disturb</option>
+                        <option value="invisible">Invisible</option>
+                        <option value="offline">Offline</option>
+                    </select>
+                    <button id="btnOpenSettings" class="iconbtn" title="Open settings">
+                        <i class="bi bi-gear-fill"></i>
+                    </button>
+                </div>
+
+                <div class="row">
+
+                </div>
+            </div>
+        </aside>
+        <main id="main">
+            <div class="topbar">
+                <div class="left">
+                    <button class="iconbtn toggle-sidebar" id="btnToggleSidebar" title="Menu"><i
+                            class="bi bi-list"></i></button>
+                    <div class="name" id="channelName">Select a channel</div>
+                </div>
+                <div class="members" id="memberInfo">—</div>
+                <button id="btnStartCall" class="button small"
+                    style="display:none; margin-left:8px; padding: 6px 12px; font-size: 13px;">Start Call</button>
+            </div>
+
+            <div id="callInterface" class="call-interface" style="display:none">
+                <div class="call-info">
+                    <div class="call-status">Voice Connected</div>
+                    <div class="call-participants" id="callParticipants"></div>
+                </div>
+                <div class="call-controls">
+                    <button id="btnLeaveCall" class="button danger" style="padding: 6px 12px; font-size: 13px;">Leave
+                        Call</button>
+                </div>
+            </div>
+
+            <div class="messages" id="messages">
+                <!-- Load older -->
+            </div>
+
+            <div class="typing" id="typingIndicator" style="display:none">Someone is typing…</div>
+
+            <div class="inputbar">
+                <label class="iconbtn" title="Attach file" style="cursor:pointer">
+                    <i class="bi bi-paperclip"></i>
+                    <input id="attachFile" type="file" style="display:none" />
+                </label>
+                <textarea id="msgInput" placeholder="Write a message…" disabled></textarea>
+                <button id="btnSend" class="iconbtn" title="Send" disabled><i class="bi bi-send-fill"></i></button>
+            </div>
+        </main>
+    </div>
+    <div id="settingsModal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-card glass">
+            <div class="modal-header">
+                <div class="brand small"><i class="bi bi-gear-fill"></i> Settings</div>
+                <button id="btnCloseSettings" class="iconbtn" title="Close"><i class="bi bi-x-lg"></i></button>
+            </div>
+
+            <div class="modal-content">
+                <section class="panel">
+                    <h3>Profile</h3>
+                    <div class="row" style="align-items:center">
+                        <div class="avatar" id="settingsAvatarPreview"></div>
+                        <label class="button alt" for="setAvatarFile"
+                            style="cursor:pointer; text-align:center; width:200px">
+                            Change Profile Picture
+                        </label>
+                        <input id="setAvatarFile" type="file" accept="image/*" style="display:none" />
+                    </div>
+                    <div class="row">
+                        <input id="profileUsername" class="input grow" placeholder="Screen name" />
+                    </div>
+                    <div class="row" style="gap:8px; flex-wrap:wrap">
+                        <input id="curPwd" class="input" type="password" placeholder="Current password"
+                            style="flex:1; min-width:220px" />
+                        <input id="newPwd" class="input" type="password" placeholder="New password"
+                            style="flex:1; min-width:220px" />
+                        <button id="btnChangePassword" class="button" style="width:200px">Change Password</button>
+                    </div>
+                    <div class="row">
+                        <button id="btnSaveProfile" class="button">Save Profile Info</button>
+                    </div>
+                </section>
+                <section class="panel">
+                    <h3>Theme</h3>
+                    <div class="row" style="gap:16px; align-items:center">
+                        <label><input type="radio" name="themeSel" value="mysterious" /> Mysterious</label>
+                        <label><input type="radio" name="themeSel" value="dark" /> Dark</label>
+                        <label><input type="radio" name="themeSel" value="light" /> Light</label>
+                        <label><input type="radio" name="themeSel" value="pink" /> Pink</label>
+                        <label><input type="radio" name="themeSel" value="question" /> Question</label>
+                        <label><input type="radio" name="themeSel" value="billzinga" /> Billzinga</label>
+                        <label><input type="radio" name="themeSel" value="wegmans" /> Wegmans</label>
+                    </div>
+                </section>
+                <section class="panel">
+                    <h3>Server</h3>
+                    <p class="error">NOTE: If Will didn't tell you to change this, you probably don't want to change it.
+                    </p>
+                    <div class="row">
+                        <input id="settingsBaseUrl" class="input grow" placeholder="Base URL (http://host:port)" />
+                        <button id="btnSaveBaseUrl" class="button" style="width:140px">Connect</button>
+                    </div>
+                </section>
+                <section class="panel">
+                    <h3>Account</h3>
+                    <div class="row">
+                        <button id="btnLogoutSettings" class="button danger grow">Logout</button>
+                    </div>
+                </section>
+            </div>
         </div>
-        <script src="frontend.js"></script>
-    </body>
+    </div>
+    <!-- Create Channel Modal -->
+    <div id="createChannelModal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-card glass">
+            <div class="modal-header">
+                <div class="brand small"><i class="bi bi-hash"></i> Create Channel</div>
+                <button id="btnCloseCreateChannel" class="iconbtn" title="Close"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <div class="modal-content">
+                <section class="panel">
+                    <h3>Details</h3>
+                    <div class="row">
+                        <input id="chName" class="input grow" placeholder="Channel name" />
+                    </div>
+                    <div class="row" style="align-items:center; gap:12px">
+                        <label class="row" style="gap:6px; align-items:center">
+                            <input type="checkbox" id="chIsVoice" /> Voice channel
+                        </label>
+                        <label class="row" style="gap:6px; align-items:center">
+                            <input type="checkbox" id="chIsPrivate" /> Private channel
+                        </label>
+                    </div>
+                </section>
+                <section class="panel" id="chMembersSection" style="display:none">
+                    <h3>Private Members</h3>
+                    <div class="row">
+                        <select id="chMembersSelect" class="select grow" multiple size="8"></select>
+                    </div>
+                    <div class="hint">Hold Shift or Ctrl/Command to select multiple users</div>
+                </section>
+                <section class="panel">
+                    <div class="row">
+                        <button id="btnCreateChannelSubmit" class="button grow">Create</button>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+    <script src="frontend.js"></script>
+</body>
+
 </html>

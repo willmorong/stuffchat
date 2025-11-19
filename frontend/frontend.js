@@ -17,6 +17,11 @@ const store = {
     typingTimers: new Map(), // userId -> timeout
     typingUsers: new Set(), // currently typing in current channel
     theme: localStorage.getItem('stuffchat.theme') || 'mysterious',
+    // WebRTC
+    localStream: null,
+    pcs: new Map(), // userId -> RTCPeerConnection
+    voiceUsers: new Set(), // userIds in current channel voice
+    inCall: false,
 };
 
 // --- Utilities ---
@@ -435,9 +440,11 @@ function renderCreateChannelMembers() {
 async function selectChannel(channelId) {
     if (store.currentChannelId && store.ws) {
         store.ws.send(JSON.stringify({ type: 'leave', channel_id: store.currentChannelId }));
+        if (store.inCall) leaveCall();
     }
     store.currentChannelId = channelId;
     renderChannelList();
+    updateCallUI();
 
     const ch = store.channels.find(c => c.id === channelId);
     $('#channelName').textContent = ch ? '# ' + ch.name : 'Channel';
@@ -447,7 +454,7 @@ async function selectChannel(channelId) {
         const members = await apiFetch(`/api/channels/${channelId}/members`);
         const ids = members.map(m => m.user_id);
         store.members.set(channelId, ids);
-        prefetchUsers(ids).catch(() => {});
+        prefetchUsers(ids).catch(() => { });
         fetchPresenceForUsers(ids);
     } catch (e) { store.members.set(channelId, []); }
 
@@ -499,7 +506,7 @@ async function fetchMessagesPage(channelId, beforeId = null) {
     // Prefetch authors so we can show names/avatars
     try {
         prefetchUsers(page.map(m => m.user_id));
-    } catch (_) {}
+    } catch (_) { }
     const list = store.messages.get(channelId) || [];
     const isFirstLoad = list.length === 0;
     const atBottom = isScrolledToBottom();
@@ -862,6 +869,38 @@ function handleWsMessage(ev) {
             break;
         }
         case 'pong': break;
+        case 'room_state': {
+            store.voiceUsers = new Set(ev.voice_users || []);
+            updateCallUI();
+            break;
+        }
+        case 'voice_joined': {
+            if (ev.channel_id !== store.currentChannelId) break;
+            store.voiceUsers.add(ev.user_id);
+            updateCallUI();
+            if (store.inCall && ev.user_id !== store.user.id) {
+                // Initiate connection to new joiner
+                createPeerConnection(ev.user_id, true);
+            }
+            break;
+        }
+        case 'voice_left': {
+            if (ev.channel_id !== store.currentChannelId) break;
+            store.voiceUsers.delete(ev.user_id);
+            updateCallUI();
+            if (store.pcs.has(ev.user_id)) {
+                store.pcs.get(ev.user_id).close();
+                store.pcs.delete(ev.user_id);
+            }
+            break;
+        }
+        case 'webrtc_signal': {
+            if (ev.channel_id !== store.currentChannelId) break;
+            if (!store.inCall) break; // Ignore signals if not in call
+            if (ev.from_user_id === store.user.id) break; // Ignore own signals (shouldn't happen with broadcast but good safety)
+            handleSignal(ev.from_user_id, ev.data);
+            break;
+        }
         default: break;
     }
 }
@@ -999,6 +1038,9 @@ function bindUI() {
     $('#btnToggleSidebar').addEventListener('click', () => {
         $('#sidebar').classList.toggle('open');
     });
+    $('#btnCloseSidebar').addEventListener('click', () => {
+        $('#sidebar').classList.remove('open');
+    });
 
     $('#presenceSelect').addEventListener('change', heartbeat);
 
@@ -1046,6 +1088,214 @@ function bindUI() {
     window.addEventListener('beforeunload', () => {
         if (store.ws) try { store.ws.close(); } catch { }
     });
+
+    // WebRTC UI Bindings
+    $('#btnStartCall').addEventListener('click', startCall);
+    $('#btnLeaveCall').addEventListener('click', leaveCall);
+}
+
+// --- WebRTC ---
+async function startCall() {
+    if (store.inCall) return;
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        store.localStream = stream;
+        store.inCall = true;
+
+        // Send join_call
+        store.ws.send(JSON.stringify({ type: 'join_call', channel_id: store.currentChannelId }));
+
+        updateCallUI();
+
+        // Connect to existing users
+        store.voiceUsers.forEach(uid => {
+            if (uid !== store.user.id) {
+                createPeerConnection(uid, false); // Wait for them to offer? Or we offer?
+                // Actually, usually the new joiner offers to existing users, or existing users offer to new joiner.
+                // Let's say new joiner (us) initiates to everyone already there.
+                // Wait, in 'voice_joined' handler, existing users initiate to new joiner.
+                // So here we just wait for offers from existing users?
+                // Let's stick to: Existing users initiate to new joiner. 
+                // So we don't do anything here for existing users, they will see us join and call us.
+                // BUT, what if we are the first one? No one to call.
+                // What if there are others? They get 'voice_joined' and call us.
+                // So we just wait.
+            }
+        });
+    } catch (e) {
+        console.error('Failed to get media', e);
+        alert('Could not access microphone: ' + e.message);
+    }
+}
+
+function leaveCall() {
+    if (!store.inCall) return;
+    store.inCall = false;
+
+    if (store.localStream) {
+        store.localStream.getTracks().forEach(t => t.stop());
+        store.localStream = null;
+    }
+
+    store.pcs.forEach(pc => pc.close());
+    store.pcs.clear();
+
+    store.ws.send(JSON.stringify({ type: 'leave_call', channel_id: store.currentChannelId }));
+
+    updateCallUI();
+}
+
+function updateCallUI() {
+    const ch = store.channels.find(c => c.id === store.currentChannelId);
+    const isVoice = ch && ch.is_voice;
+
+    const btnStart = $('#btnStartCall');
+    const callUI = $('#callInterface');
+    const participantsDiv = $('#callParticipants');
+
+    if (!isVoice) {
+        btnStart.style.display = 'none';
+        callUI.style.display = 'none';
+        return;
+    }
+
+    if (store.inCall) {
+        btnStart.style.display = 'none';
+        callUI.style.display = 'flex';
+
+        // Render participants
+        participantsDiv.innerHTML = '';
+        store.voiceUsers.forEach(uid => {
+            const u = store.users.get(uid);
+            const div = el('div', { class: 'call-participant', title: u?.username || uid });
+            if (u && u.avatar_file_id) {
+                div.appendChild(el('img', { src: buildFileUrl(u.avatar_file_id, 'avatar') }));
+            }
+            participantsDiv.appendChild(div);
+
+            // Add audio element if not present (handled in track event usually, but we need a container?)
+            // We'll create audio elements dynamically and attach to document body or hidden container
+        });
+    } else {
+        // Not in call
+        // Show "Start Call" or "Join Call" depending on if there are people
+        btnStart.style.display = 'block';
+        btnStart.textContent = store.voiceUsers.size > 0 ? 'Join Call' : 'Start Call';
+        btnStart.className = store.voiceUsers.size > 0 ? 'button small success' : 'button small';
+        callUI.style.display = 'none';
+    }
+}
+
+async function createPeerConnection(targetUserId, initiator) {
+    if (store.pcs.has(targetUserId)) return store.pcs.get(targetUserId);
+
+    const pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
+    store.pcs.set(targetUserId, pc);
+
+    pc.onicecandidate = (event) => {
+        if (event.candidate) {
+            sendSignal(targetUserId, { candidate: event.candidate });
+        }
+    };
+
+    pc.ontrack = (event) => {
+        const stream = event.streams[0];
+        let audio = document.getElementById(`audio-${targetUserId}`);
+        if (!audio) {
+            audio = document.createElement('audio');
+            audio.id = `audio-${targetUserId}`;
+            audio.autoplay = true;
+            document.body.appendChild(audio);
+        }
+        audio.srcObject = stream;
+    };
+
+    if (store.localStream) {
+        store.localStream.getTracks().forEach(track => pc.addTrack(track, store.localStream));
+    }
+
+    if (initiator) {
+        try {
+            const offer = await pc.createOffer();
+            // Mangle SDP for Opus 96kbps
+            const sdp = mangleSdp(offer.sdp);
+            const mangledOffer = { type: offer.type, sdp };
+            await pc.setLocalDescription(mangledOffer);
+            sendSignal(targetUserId, { sdp: mangledOffer });
+        } catch (e) { console.error('Offer error', e); }
+    }
+
+    return pc;
+}
+
+async function handleSignal(userId, data) {
+    let pc = store.pcs.get(userId);
+    if (!pc) {
+        pc = await createPeerConnection(userId, false);
+    }
+
+    try {
+        if (data.sdp) {
+            await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+            if (data.sdp.type === 'offer') {
+                const answer = await pc.createAnswer();
+                const sdp = mangleSdp(answer.sdp);
+                const mangledAnswer = { type: answer.type, sdp };
+                await pc.setLocalDescription(mangledAnswer);
+                sendSignal(userId, { sdp: mangledAnswer });
+            }
+        } else if (data.candidate) {
+            await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+        }
+    } catch (e) { console.error('Signal error', e); }
+}
+
+function sendSignal(toUserId, data) {
+    store.ws.send(JSON.stringify({
+        type: 'webrtc_signal',
+        channel_id: store.currentChannelId,
+        to_user_id: toUserId,
+        data
+    }));
+}
+
+function mangleSdp(sdp) {
+    // Force Opus 96kbps
+    // Find opus payload type
+    // Add maxaveragebitrate=96000 to fmtp
+    // This is a simplified mangler
+    const lines = sdp.split('\n');
+    let opusPt = null;
+    for (let l of lines) {
+        if (l.startsWith('a=rtpmap:') && l.includes('opus/48000/2')) {
+            opusPt = l.split(':')[1].split(' ')[0];
+            break;
+        }
+    }
+    if (opusPt) {
+        const fmtpLine = `a=fmtp:${opusPt} maxaveragebitrate=96000;stereo=1;useinbandfec=1`;
+        // Check if fmtp exists
+        let found = false;
+        for (let i = 0; i < lines.length; i++) {
+            if (lines[i].startsWith(`a=fmtp:${opusPt}`)) {
+                lines[i] = lines[i].trim() + ';maxaveragebitrate=96000';
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            // Insert after rtpmap
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].startsWith(`a=rtpmap:${opusPt}`)) {
+                    lines.splice(i + 1, 0, fmtpLine);
+                    break;
+                }
+            }
+        }
+    }
+    return lines.join('\n');
 }
 
 // --- Init ---

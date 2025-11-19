@@ -46,7 +46,7 @@ impl Actor for WsSession {
     type Context = ws::WebsocketContext<Self>;
     fn stopped(&mut self, ctx: &mut Self::Context) {
         if let Some(ch) = self.joined.take() {
-            self.server.do_send(Leave { channel_id: ch, addr: ctx.address() });
+            self.server.do_send(Leave { channel_id: ch, addr: ctx.address(), user_id: self.user_id.clone() });
         }
         // Set presence to offline on disconnect
         let user_id = self.user_id.clone();
@@ -63,10 +63,25 @@ impl Actor for WsSession {
 #[rtype(result="()")]
 pub struct ServerMsg { pub payload: String }
 
+#[derive(Message)]
+#[rtype(result="()")]
+pub struct RoomState { pub voice_users: Vec<String> }
+
 impl Handler<ServerMsg> for WsSession {
     type Result = ();
     fn handle(&mut self, msg: ServerMsg, ctx: &mut Self::Context) {
         ctx.text(msg.payload);
+    }
+}
+
+impl Handler<RoomState> for WsSession {
+    type Result = ();
+    fn handle(&mut self, msg: RoomState, ctx: &mut Self::Context) {
+        let payload = serde_json::json!({
+            "type": "room_state",
+            "voice_users": msg.voice_users
+        }).to_string();
+        ctx.text(payload);
     }
 }
 
@@ -78,6 +93,8 @@ enum ClientEvent {
     ChatMessage { channel_id: String, content: String },
     Typing { channel_id: String, started: bool },
     WebrtcSignal { channel_id: String, to_user_id: String, data: serde_json::Value },
+    JoinCall { channel_id: String },
+    LeaveCall { channel_id: String },
     Ping,
 }
 
@@ -93,7 +110,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                         }
                         ClientEvent::Leave { channel_id } => {
                             if self.joined.as_deref() == Some(&channel_id) {
-                                self.server.do_send(Leave { channel_id, addr: ctx.address() });
+                                self.server.do_send(Leave { channel_id, addr: ctx.address(), user_id: self.user_id.clone() });
                                 self.joined = None;
                             }
                         }
@@ -128,6 +145,12 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                         }
                         ClientEvent::Ping => {
                             ctx.text(r#"{"type":"pong"}"#);
+                        }
+                        ClientEvent::JoinCall { channel_id } => {
+                            self.server.do_send(super::server::JoinVoice { channel_id, user_id: self.user_id.clone() });
+                        }
+                        ClientEvent::LeaveCall { channel_id } => {
+                            self.server.do_send(super::server::LeaveVoice { channel_id, user_id: self.user_id.clone() });
                         }
                     }
                 }

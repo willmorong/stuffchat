@@ -39,7 +39,7 @@ body {
 
 .app {
     height: 100%;
-    width:100%;
+    width: 100%;
     display: flex;
     gap: 16px;
     padding: 16px;
@@ -76,6 +76,7 @@ body {
     background: var(--glass);
     border: 1px solid var(--border);
     border-radius: 12px;
+    justify-content: space-between;
 }
 
 .avatar {
@@ -452,6 +453,10 @@ body {
     .toggle-sidebar {
         display: none
     }
+
+    .mobile-only {
+        display: none !important;
+    }
 }
 
 .hint {
@@ -489,15 +494,18 @@ a:hover {
     z-index: 100;
 }
 
-.modal.hidden { display: none; }
+.modal.hidden {
+    display: none;
+}
 
 .modal-backdrop {
     position: absolute;
     inset: 0;
-    background: rgba(0,0,0,0.35);
+    background: rgba(0, 0, 0, 0.35);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
 }
+
 .modal-card {
     position: relative;
     width: 80vw;
@@ -508,16 +516,20 @@ a:hover {
     border-radius: var(--radius);
     overflow: hidden;
 }
+
 .modal-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 8px;
     padding: 10px 12px;
     border-bottom: 1px solid var(--border);
     background: rgba(255, 255, 255, 0.4);
 }
-.brand.small { font-size: 16px; }
+
+.brand.small {
+    font-size: 16px;
+}
+
 .modal-content {
     padding: 12px;
     overflow: auto;
@@ -528,8 +540,10 @@ a:hover {
 }
 
 .modal-content .panel {
-    padding: 24px;  /* inconsistent with sidebar panels, but looks better and makes the user think "oh this is different" */
+    padding: 24px;
+    /* inconsistent with sidebar panels, but looks better and makes the user think "oh this is different" */
 }
+
 .modal-content .panel .row {
     padding: 4px 0;
 }
@@ -552,6 +566,7 @@ body[data-theme="dark"] {
     --accent-2: #4dd4ac;
     --danger: #ff6b6b;
 }
+
 body[data-theme="dark"] {
     background: #000000;
     color: var(--text);
@@ -569,6 +584,7 @@ body[data-theme="light"] {
     --accent-2: #10b981;
     --danger: #e11d48;
 }
+
 body[data-theme="light"] {
     background:
         radial-gradient(1200px 800px at 10% 10%, #729aef 0%, transparent 60%),
@@ -589,6 +605,7 @@ body[data-theme="light"] .inputbar,
 body[data-theme="light"] #sidebar {
     background: rgba(255, 255, 255, 0.4);
 }
+
 body[data-theme="light"] .channel.active {
     background: linear-gradient(180deg, rgba(44, 92, 255, 0.12), rgba(44, 92, 255, 0.08));
     border-color: rgba(44, 92, 255, 0.28);
@@ -600,13 +617,15 @@ body[data-theme="question"] {
     --bg2: #000000;
     --glass: rgba(255, 255, 255, 0.06);
     --glass-strong: rgba(255, 255, 255, 0.10);
-    --border: rgba(255, 165, 0, 0.35); /* orange borders */
+    --border: rgba(255, 165, 0, 0.35);
+    /* orange borders */
     --text: #ffffff;
     --text-dim: #d0d5dd;
     --accent: #ff9f1a;
     --accent-2: #ff9f1a;
     --danger: #ff6b6b;
 }
+
 body[data-theme="question"] {
     background:
         radial-gradient(1200px 800px at 12% 12%, #1a0f00 0%, transparent 60%),
@@ -615,11 +634,13 @@ body[data-theme="question"] {
         linear-gradient(160deg, var(--bg1), var(--bg2));
     color: var(--text);
 }
+
 body[data-theme="question"] .channel.active {
     background: linear-gradient(180deg, rgba(255, 165, 0, 0.18), rgba(255, 165, 0, 0.12));
     border-color: rgba(255, 165, 0, 0.35);
     color: var(--text);
 }
+
 body[data-theme="question"] .msg.own {
     background: rgba(255, 165, 0, 0.12);
     border-color: rgba(255, 165, 0, 0.40);
@@ -627,17 +648,24 @@ body[data-theme="question"] .msg.own {
 
 /* Pink (pastel pink background, deeper pink borders and message text) */
 body[data-theme="pink"] {
-    --bg1: #fff4f8; /* pastel */
-    --bg2: #ffe9f2; /* pastel */
+    --bg1: #fff4f8;
+    /* pastel */
+    --bg2: #ffe9f2;
+    /* pastel */
     --glass: rgba(255, 255, 255, 0.55);
     --glass-strong: rgba(255, 255, 255, 0.7);
-    --border: rgba(236, 72, 153, 0.45); /* deeper pink borders */
-    --text: #31121f; /* readable on light pastel */
+    --border: rgba(236, 72, 153, 0.45);
+    /* deeper pink borders */
+    --text: #31121f;
+    /* readable on light pastel */
     --text-dim: #6e3a52;
-    --accent: #ec4899;  /* pink */
-    --accent-2: #db2777; /* deeper pink */
+    --accent: #ec4899;
+    /* pink */
+    --accent-2: #db2777;
+    /* deeper pink */
     --danger: #be123c;
 }
+
 body[data-theme="pink"] {
     background:
         radial-gradient(1100px 700px at 12% 12%, #ffd6e8 0%, transparent 60%),
@@ -646,14 +674,18 @@ body[data-theme="pink"] {
         linear-gradient(160deg, var(--bg1), var(--bg2));
     color: var(--text);
 }
+
 body[data-theme="pink"] .channel.active {
     background: linear-gradient(180deg, rgba(236, 72, 153, 0.14), rgba(236, 72, 153, 0.10));
     border-color: rgba(236, 72, 153, 0.35);
     color: var(--text);
 }
+
 body[data-theme="pink"] .msg .content {
-    color: #c2187a; /* deeper pink message text */
+    color: #c2187a;
+    /* deeper pink message text */
 }
+
 body[data-theme="pink"] .msg.own {
     background: rgba(236, 72, 153, 0.10);
     border-color: rgba(236, 72, 153, 0.35);
@@ -661,17 +693,20 @@ body[data-theme="pink"] .msg.own {
 
 /* Billzinga (forest green background, white text and borders) */
 body[data-theme="billzinga"] {
-    --bg1: #0b3d0b;  /* forest greens */
+    --bg1: #0b3d0b;
+    /* forest greens */
     --bg2: #0f4f0f;
     --glass: rgba(255, 255, 255, 0.06);
     --glass-strong: rgba(255, 255, 255, 0.10);
-    --border: rgba(255, 255, 255, 0.35); /* white borders */
+    --border: rgba(255, 255, 255, 0.35);
+    /* white borders */
     --text: #ffffff;
     --text-dim: #d1e7d1;
     --accent: #ffffff;
     --accent-2: #ffffff;
     --danger: #ff6b6b;
 }
+
 body[data-theme="billzinga"] {
     background:
         radial-gradient(1200px 800px at 10% 10%, #0a2f0a 0%, transparent 60%),
@@ -680,15 +715,18 @@ body[data-theme="billzinga"] {
         linear-gradient(160deg, var(--bg1), var(--bg2));
     color: var(--text);
 }
+
 body[data-theme="billzinga"] .channel.active {
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.10));
     border-color: rgba(255, 255, 255, 0.35);
     color: var(--text);
 }
+
 body[data-theme="billzinga"] .msg.own {
     background: rgba(255, 255, 255, 0.10);
     border-color: rgba(255, 255, 255, 0.35);
 }
+
 body[data-theme="wegmans"] {
     --bg1: #e9f0ff;
     --bg2: #ffffff;
@@ -701,6 +739,7 @@ body[data-theme="wegmans"] {
     --accent-2: #10b981;
     --danger: #e11d48;
 }
+
 body[data-theme="wegmans"] .input,
 body[data-theme="wegmans"] .select,
 body[data-theme="wegmans"] .button,
@@ -711,10 +750,12 @@ body[data-theme="wegmans"] .inputbar,
 body[data-theme="wegmans"] #sidebar {
     background: rgba(255, 255, 255, 0.4);
 }
+
 body[data-theme="wegmans"] .channel.active {
     background: linear-gradient(180deg, rgba(44, 92, 255, 0.12), rgba(44, 92, 255, 0.08));
     border-color: rgba(44, 92, 255, 0.28);
 }
+
 body[data-theme="wegmans"] {
     background: url("wegmans.jpg");
     background-repeat: repeat;
@@ -723,4 +764,51 @@ body[data-theme="wegmans"] {
     background-repeat: no-repeat;
     background-size: cover;
     backdrop-filter: blur(5px) contrast(50%);
+}
+
+/* Call Interface */
+.call-interface {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: rgba(46, 204, 113, 0.15);
+    border: 1px solid rgba(46, 204, 113, 0.3);
+    border-radius: var(--radius);
+    /* margin-bottom: 12px; handled by flex gap of main */
+}
+
+.call-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.call-status {
+    font-weight: 600;
+    font-size: 14px;
+    color: #2ecc71;
+}
+
+.call-participants {
+    display: flex;
+    align-items: center;
+    padding-left: 8px;
+}
+
+.call-participant {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 2px solid var(--bg1);
+    background: #31415f;
+    overflow: hidden;
+    margin-left: -8px;
+    position: relative;
+}
+
+.call-participant img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
 }
