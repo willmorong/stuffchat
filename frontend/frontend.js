@@ -1180,6 +1180,7 @@ function updateCallUI() {
         // Not in call
         // Show "Start Call" or "Join Call" depending on if there are people
         btnStart.style.display = 'block';
+        btnStart.style.marginLeft = 'auto';
         btnStart.style.width = 'fit-content';
         btnStart.textContent = store.voiceUsers.size > 0 ? 'Join Call' : 'Start Call';
         btnStart.className = store.voiceUsers.size > 0 ? 'button small success' : 'button small';
