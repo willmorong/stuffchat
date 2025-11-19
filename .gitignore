@@ -1,3 +1,4 @@
 /target
 /uploads
 stuffchat.sqlite3*
+Cargo.lock
