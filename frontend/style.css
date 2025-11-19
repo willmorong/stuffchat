@@ -66,6 +66,7 @@ body {
     padding: 12px;
     gap: 12px;
     overflow: scroll;
+    scrollbar-width: none;
 }
 
 .profile {
@@ -429,6 +430,7 @@ body {
         top: 12px;
         transform: translateY(-150%);
         transition: transform .25s ease;
+        backdrop-filter: blur(24px);
     }
 
     #sidebar.open {
@@ -524,6 +526,7 @@ a:hover {
     padding: 10px 12px;
     border-bottom: 1px solid var(--border);
     background: rgba(255, 255, 255, 0.4);
+    justify-content: space-between;
 }
 
 .brand.small {
