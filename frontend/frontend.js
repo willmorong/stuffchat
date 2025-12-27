@@ -391,7 +391,14 @@ function renderChannelList() {
         const isActive = ch.id === store.currentChannelId;
         const li = el('div', { class: 'channel' + (isActive ? ' active' : ''), onclick: () => selectChannel(ch.id) }, [
             el('i', { class: 'bi ' + (ch.is_voice ? 'bi-mic' : 'bi-hash') }),
-            el('div', {}, ch.name)
+            el('div', { style: 'flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;' }, ch.name),
+            ch.is_owner ? el('div', {
+                class: 'settings-icon',
+                onclick: (e) => {
+                    e.stopPropagation();
+                    openEditChannelModal(ch.id);
+                }
+            }, [el('i', { class: 'bi bi-gear-fill' })]) : null
         ]);
         wrap.appendChild(li);
     });
@@ -431,6 +438,131 @@ function openCreateChannelModal() {
     $('#createChannelModal').classList.remove('hidden');
 }
 function closeCreateChannelModal() { $('#createChannelModal').classList.add('hidden'); }
+
+async function openEditChannelModal(channelId) {
+    const ch = store.channels.find(c => c.id === channelId);
+    if (!ch) return;
+
+    // Fill basic details
+    setIf('#editChName', 'value', ch.name);
+    $('#editChIsVoice').checked = ch.is_voice;
+    $('#editChIsPrivate').checked = ch.is_private;
+
+    // Store temporarily for the buttons
+    $('#editChannelModal').setAttribute('data-channel-id', channelId);
+
+    // Initial load of members
+    await loadEditChannelMembers(channelId);
+
+    $('#editChannelModal').classList.remove('hidden');
+}
+
+function closeEditChannelModal() {
+    $('#editChannelModal').classList.add('hidden');
+}
+
+async function loadEditChannelMembers(channelId) {
+    try {
+        // Current members
+        const membersList = await apiFetch(`/api/channels/${channelId}/members`);
+        const meId = store.user?.id;
+
+        // Make sure we have user profiles for all members
+        await prefetchUsers(membersList.map(m => m.user_id));
+
+        const curSel = $('#editChMembersCurrent');
+        curSel.innerHTML = '';
+        membersList.forEach(m => {
+            if (m.user_id === meId) return; // Don't list owner
+            const u = store.users.get(m.user_id);
+            const opt = document.createElement('option');
+            opt.value = m.user_id;
+            opt.textContent = u ? (u.username || truncateId(m.user_id)) : truncateId(m.user_id);
+            curSel.appendChild(opt);
+        });
+
+        // Potential members (all users - current members)
+        if (store.allUsers.length === 0) await loadAllUsers();
+
+        const addSel = $('#editChMembersAdd');
+        addSel.innerHTML = '';
+        const memberIds = new Set(membersList.map(m => m.user_id));
+        store.allUsers.forEach(u => {
+            if (memberIds.has(u.id)) return;
+            const opt = document.createElement('option');
+            opt.value = u.id;
+            opt.textContent = u.username || truncateId(u.id);
+            addSel.appendChild(opt);
+        });
+    } catch (e) {
+        console.error('Failed to load channel members', e);
+    }
+}
+
+async function saveEditChannel() {
+    const id = $('#editChannelModal').getAttribute('data-channel-id');
+    const name = $('#editChName').value.trim();
+    const is_voice = $('#editChIsVoice').checked;
+    const is_private = $('#editChIsPrivate').checked;
+
+    if (!name) return alert('Name required');
+
+    try {
+        await apiFetch(`/api/channels/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ name, is_voice, is_private })
+        });
+        await loadChannels();
+        closeEditChannelModal();
+        if (id === store.currentChannelId) {
+            $('#channelName').textContent = (is_voice ? '' : '# ') + name;
+        }
+    } catch (e) { alert('Failed to save channel: ' + e.message); }
+}
+
+async function confirmDeleteChannel() {
+    const id = $('#editChannelModal').getAttribute('data-channel-id');
+    const ch = store.channels.find(c => c.id === id);
+    if (!confirm(`Are you sure you want to delete channel "${ch?.name || id}"?`)) return;
+
+    try {
+        await apiFetch(`/api/channels/${id}`, { method: 'DELETE' });
+        await loadChannels();
+        closeEditChannelModal();
+        if (id === store.currentChannelId) {
+            store.currentChannelId = null;
+            $('#channelName').textContent = 'Select a channel';
+            $('#messages').innerHTML = '';
+            enableComposer(false);
+        }
+    } catch (e) { alert('Delete failed: ' + e.message); }
+}
+
+async function modifyMembersInModal(action) {
+    const channelId = $('#editChannelModal').getAttribute('data-channel-id');
+    let sel;
+    let payload;
+
+    if (action === 'add') {
+        sel = $('#editChMembersAdd');
+        const ids = Array.from(sel.selectedOptions).map(o => o.value);
+        if (ids.length === 0) return;
+        payload = { add: ids };
+    } else {
+        sel = $('#editChMembersCurrent');
+        const ids = Array.from(sel.selectedOptions).map(o => o.value);
+        if (ids.length === 0) return;
+        payload = { remove: ids };
+    }
+
+    try {
+        await apiFetch(`/api/channels/${channelId}/members`, {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+        await loadEditChannelMembers(channelId);
+    } catch (e) { alert('Failed to modify members: ' + e.message); }
+}
 
 function renderCreateChannelMembers() {
     const sel = $('#chMembersSelect');
@@ -1033,6 +1165,16 @@ function bindUI() {
             loadChannels();
         } catch (e) { alert(e.message); }
     };
+
+    // Edit Channel modal
+    $('#btnCloseEditChannel').onclick = closeEditChannelModal;
+    $('#btnEditChannelSave').onclick = saveEditChannel;
+    $('#btnEditChannelDelete').onclick = confirmDeleteChannel;
+    $('#btnAddMembers').onclick = () => modifyMembersInModal('add');
+    $('#btnRemoveMembers').onclick = () => modifyMembersInModal('remove');
+    $('#editChannelModal').addEventListener('click', (e) => {
+        if (e.target === $('#editChannelModal') || e.target === $('#editChannelModal .modal-backdrop')) closeEditChannelModal();
+    });
 
     // Invites
     $('#btnOpenInvites').onclick = openInviteModal;

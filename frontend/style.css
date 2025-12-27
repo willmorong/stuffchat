@@ -168,6 +168,27 @@ body {
     color: var(--text);
 }
 
+.channel .settings-icon {
+    margin-left: auto;
+    display: none;
+    opacity: 0.6;
+    font-size: 14px;
+    padding: 4px;
+}
+
+.channel:hover .settings-icon {
+    display: block;
+}
+
+.channel .settings-icon:hover {
+    opacity: 1;
+    color: var(--accent);
+}
+
+.settings-icon i {
+    pointer-events: none;
+}
+
 .settings {
     display: flex;
     flex-direction: column;
@@ -531,7 +552,6 @@ a:hover {
     gap: 8px;
     padding: 10px 12px;
     border-bottom: 1px solid var(--border);
-    background: rgba(255, 255, 255, 0.4);
     justify-content: space-between;
 }
 
@@ -545,7 +565,6 @@ a:hover {
     display: flex;
     flex-direction: column;
     gap: 12px;
-    background: rgba(255, 255, 255, 0.4)
 }
 
 .modal-content .panel {
@@ -806,8 +825,8 @@ body[data-theme="wegmans"] {
 }
 
 .call-participant {
-    width: 28px;
-    height: 28px;
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
     border: 2px solid var(--bg1);
     background: #31415f;

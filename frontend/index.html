@@ -249,6 +249,57 @@
             </div>
         </div>
     </div>
+    <!-- Edit Channel Modal -->
+    <div id="editChannelModal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-card glass">
+            <div class="modal-header">
+                <div class="brand small"><i class="bi bi-gear-fill"></i> Edit Channel</div>
+                <button id="btnCloseEditChannel" class="iconbtn" title="Close"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <div class="modal-content">
+                <section class="panel">
+                    <h3>Details</h3>
+                    <div class="row">
+                        <input id="editChName" class="input grow" placeholder="Channel name" />
+                    </div>
+                    <div class="row" style="align-items:center; gap:12px">
+                        <label class="row" style="gap:6px; align-items:center">
+                            <input type="checkbox" id="editChIsVoice" /> Voice channel
+                        </label>
+                        <label class="row" style="gap:6px; align-items:center">
+                            <input type="checkbox" id="editChIsPrivate" /> Private channel
+                        </label>
+                    </div>
+                </section>
+                <section class="panel">
+                    <h3>Manage Members</h3>
+                    <div class="row" style="gap:8px">
+                        <div style="flex:1">
+                            <h4>Current Members</h4>
+                            <select id="editChMembersCurrent" class="select grow" multiple size="8"></select>
+                            <button id="btnRemoveMembers" class="button alt small" style="margin-top:4px">Remove
+                                Selected</button>
+                        </div>
+                        <div style="flex:1">
+                            <h4>Add Members</h4>
+                            <select id="editChMembersAdd" class="select grow" multiple size="8"></select>
+                            <button id="btnAddMembers" class="button alt small" style="margin-top:4px">Add
+                                Selected</button>
+                        </div>
+                    </div>
+                    <div class="hint" style="margin-top:8px">Hold Shift or Ctrl/Command to select multiple users</div>
+                </section>
+                <section class="panel">
+                    <div class="row" style="gap:12px">
+                        <button id="btnEditChannelSave" class="button grow">Save Changes</button>
+                        <button id="btnEditChannelDelete" class="button danger" style="width:140px">Delete
+                            Channel</button>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
     <!-- Invites Modal -->
     <div id="inviteModal" class="modal hidden">
         <div class="modal-backdrop"></div>
