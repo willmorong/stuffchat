@@ -6,7 +6,10 @@
       "type": "node",
       "request": "launch",
       "runtimeExecutable": "bash",
-      "runtimeArgs": ["-lc", "cargo run"],
+      "runtimeArgs": [
+        "-lc",
+        "cargo run --release"
+      ],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen"
@@ -16,7 +19,10 @@
       "type": "node",
       "request": "launch",
       "runtimeExecutable": "bash",
-      "runtimeArgs": ["-lc", "python3 -m http.server 3001"],
+      "runtimeArgs": [
+        "-lc",
+        "python3 -m http.server 3001"
+      ],
       "cwd": "${workspaceFolder}/frontend",
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen"

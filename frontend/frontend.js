@@ -118,6 +118,11 @@ async function checkServer(url) {
         const res = await fetch(url + '/api/health');
         if (!res.ok) throw new Error('Server not responding');
         const data = await res.json();
+        if (data.config && data.config.invite_only) {
+            $('#regInviteRow').style.display = 'flex';
+        } else {
+            $('#regInviteRow').style.display = 'none';
+        }
         return data.version ? true : false;
     } catch (e) {
         console.error('Server check failed:', e);
@@ -201,12 +206,17 @@ async function doLogin(username_or_email, password) {
     await bootstrapAfterAuth();
 }
 async function doRegister(username, email, password) {
-    const data = await apiFetch('/api/auth/register', {
-        method: 'POST',
-        body: JSON.stringify({ username, email, password })
-    }, false);
-    saveTokens(data);
-    await bootstrapAfterAuth();
+    const invite_code = $('#regInviteRow').style.display !== 'none' ? $('#regInvite').value : null;
+    try {
+        const data = await apiFetch('/api/auth/register', {
+            method: 'POST',
+            body: JSON.stringify({ username, email, password, invite_code })
+        });
+        saveTokens(data);
+        await bootstrapAfterAuth();
+    } catch (e) {
+        $('#regErr').textContent = e.message;
+    }
 }
 async function logout(silent = false) {
     try {
@@ -394,6 +404,7 @@ async function createChannelAdvanced({ name, is_private, is_voice, members }) {
     const res = await apiFetch('/api/channels', { method: 'POST', body: JSON.stringify(payload) });
     await loadChannels();
     selectChannel(res.id);
+    return res; // Return the created channel
 }
 
 async function loadAllUsers() {
@@ -434,6 +445,43 @@ function renderCreateChannelMembers() {
             opt.textContent = u.username || truncateId(u.id);
             sel.appendChild(opt);
         });
+}
+
+// --- Invites ---
+async function openInviteModal() {
+    $('#inviteModal').classList.remove('hidden');
+    loadInvites();
+}
+
+function closeInviteModal() {
+    $('#inviteModal').classList.add('hidden');
+}
+
+async function loadInvites() {
+    try {
+        const invites = await apiFetch('/api/invites');
+        const list = $('#inviteList');
+        list.innerHTML = '';
+        invites.forEach(inv => {
+            const tr = el('tr', {}, [
+                el('td', { style: 'font-family: monospace; user-select: all;' }, [inv.code]),
+                el('td', {}, [inv.joined_username || el('span', { class: 'hint' }, ['—'])]),
+                el('td', { class: 'hint' }, [new Date(inv.created_at).toLocaleString()])
+            ]);
+            list.appendChild(tr);
+        });
+    } catch (e) {
+        console.error('failed to load invites', e);
+    }
+}
+
+async function createInvite() {
+    try {
+        await apiFetch('/api/invites', { method: 'POST' });
+        loadInvites();
+    } catch (e) {
+        alert('Failed to create invite: ' + e.message);
+    }
 }
 
 // --- Messages ---
@@ -950,8 +998,7 @@ function bindUI() {
     });
     $('#btnRegister').addEventListener('click', async () => {
         $('#regErr').textContent = '';
-        try { await doRegister($('#regUser').value, $('#regEmail').value, $('#regPass').value); }
-        catch (e) { $('#regErr').textContent = e.message; }
+        await doRegister($('#regUser').value, $('#regEmail').value, $('#regPass').value);
     });
 
     // Old direct logout button in sidebar removed; keep global if still present
@@ -973,22 +1020,24 @@ function bindUI() {
     });
 
     // Submit create channel
-    $('#btnCreateChannelSubmit').addEventListener('click', async () => {
-        const name = $('#chName').value.trim();
-        const is_private = $('#chIsPrivate').checked;
+    $('#btnCreateChannelSubmit').onclick = async () => {
+        const name = $('#chName').value;
         const is_voice = $('#chIsVoice').checked;
-        let members = [];
-        if (is_private) {
-            const opts = Array.from($('#chMembersSelect').selectedOptions || []);
-            members = opts.map(o => o.value);
-        }
+        const is_private = $('#chIsPrivate').checked;
+        const members = Array.from($('#chMembersSelect').selectedOptions).map(o => o.value);
+        if (!name) return;
         try {
-            await createChannelAdvanced({ name, is_private, is_voice, members });
+            const ch = await createChannelAdvanced({ name, is_private, is_voice, members });
             closeCreateChannelModal();
-        } catch (e) {
-            alert('Create failed: ' + e.message);
-        }
-    });
+            selectChannel(ch.id);
+            loadChannels();
+        } catch (e) { alert(e.message); }
+    };
+
+    // Invites
+    $('#btnOpenInvites').onclick = openInviteModal;
+    $('#btnCloseInvites').onclick = closeInviteModal;
+    $('#btnCreateInvite').onclick = createInvite;
 
     $('#btnSend').addEventListener('click', sendMessage);
     $('#msgInput').addEventListener('keydown', e => {

@@ -253,7 +253,7 @@ body {
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: var(--glass);
-    scrollbar-width: var(--glass-strong) transparent;
+    scrollbar-width: none;
 }
 
 .load-older {

@@ -47,6 +47,8 @@
                 </div>
                 <div class="row"><input id="regPass" class="input grow" type="password"
                         placeholder="Password (min 8 chars)" autocomplete="new-password" /></div>
+                <div class="row" id="regInviteRow" style="display:none"><input id="regInvite" class="input grow"
+                        placeholder="Invite Code" /></div>
                 <div class="row"><button id="btnRegister" class="button grow">Create account</button></div>
                 <div id="regErr" class="error"></div>
             </div>
@@ -96,6 +98,9 @@
                     </select>
                     <button id="btnOpenSettings" class="iconbtn" title="Open settings">
                         <i class="bi bi-gear-fill"></i>
+                    </button>
+                    <button id="btnOpenInvites" class="iconbtn" title="Invite codes">
+                        <i class="bi bi-people-fill"></i>
                     </button>
                 </div>
 
@@ -239,6 +244,41 @@
                 <section class="panel">
                     <div class="row">
                         <button id="btnCreateChannelSubmit" class="button grow">Create</button>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+    <!-- Invites Modal -->
+    <div id="inviteModal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-card glass">
+            <div class="modal-header">
+                <div class="brand small"><i class="bi bi-people-fill"></i> Invites</div>
+                <button id="btnCloseInvites" class="iconbtn" title="Close"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <div class="modal-content">
+                <section class="panel">
+                    <h3>Create Invite</h3>
+                    <div class="row">
+                        <button id="btnCreateInvite" class="button">Create New Invite Code</button>
+                    </div>
+                </section>
+                <section class="panel">
+                    <h3>My Invites</h3>
+                    <div class="table-container" style="overflow-x:auto">
+                        <table style="width:100%; border-collapse: collapse; margin-top: 8px;">
+                            <thead>
+                                <tr style="border-bottom: 1px solid var(--border); text-align: left;">
+                                    <th style="padding: 8px;">Code</th>
+                                    <th style="padding: 8px;">Used By</th>
+                                    <th style="padding: 8px;">Created At</th>
+                                </tr>
+                            </thead>
+                            <tbody id="inviteList">
+                                <!-- Invites populated here -->
+                            </tbody>
+                        </table>
                     </div>
                 </section>
             </div>

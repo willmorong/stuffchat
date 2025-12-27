@@ -1,8 +1,9 @@
 pub mod auth;
-pub mod users;
-pub mod channels;
-pub mod messages;
-pub mod files;
-pub mod presence;
 pub mod call;
+pub mod channels;
+pub mod files;
 pub mod health;
+pub mod invites;
+pub mod messages;
+pub mod presence;
+pub mod users;

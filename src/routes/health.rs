@@ -1,3 +1,12 @@
-pub async fn health_check() -> actix_web::HttpResponse {
-    actix_web::HttpResponse::Ok().body("{\"health\":true}")
+use crate::config::Config;
+use actix_web::{HttpResponse, web};
+
+pub async fn health_check(cfg: web::Data<Config>) -> HttpResponse {
+    HttpResponse::Ok().json(serde_json::json!({
+        "health": true,
+        "version": "1.0.0",
+        "config": {
+            "invite_only": cfg.invite_only
+        }
+    }))
 }

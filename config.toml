@@ -1,0 +1,7 @@
+listen = "punkhazard.local:22800"
+database_path = "./stuffchat.sqlite3"
+uploads_dir = "./uploads"
+allowed_origins = ["punkhazard.local", "https://chat.stuffcity.org"]
+max_upload_size = 524288000
+presence_timeout_secs = 60
+invite_only = true
