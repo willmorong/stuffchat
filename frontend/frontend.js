@@ -20,7 +20,8 @@ const store = {
     // WebRTC
     localStream: null,
     pcs: new Map(), // userId -> RTCPeerConnection
-    voiceUsers: new Set(), // userIds in current channel voice
+    voiceUsers: new Map(), // channelId -> Set of userIds
+    callChannelId: null,
     inCall: false,
 };
 
@@ -619,8 +620,10 @@ async function createInvite() {
 // --- Messages ---
 async function selectChannel(channelId) {
     if (store.currentChannelId && store.ws) {
-        store.ws.send(JSON.stringify({ type: 'leave', channel_id: store.currentChannelId }));
-        if (store.inCall) leaveCall();
+        // Only leave the channel room if we are NOT in a call there
+        if (store.currentChannelId !== store.callChannelId) {
+            store.ws.send(JSON.stringify({ type: 'leave', channel_id: store.currentChannelId }));
+        }
     }
     store.currentChannelId = channelId;
     renderChannelList();
@@ -965,6 +968,10 @@ function connectWs(reconnect = false) {
             if (store.currentChannelId) {
                 ws.send(JSON.stringify({ type: 'join', channel_id: store.currentChannelId }));
             }
+            // Rejoin call channel if different
+            if (store.callChannelId && store.callChannelId !== store.currentChannelId) {
+                ws.send(JSON.stringify({ type: 'join', channel_id: store.callChannelId }));
+            }
         };
         ws.onmessage = (ev) => {
             try {
@@ -1050,34 +1057,36 @@ function handleWsMessage(ev) {
         }
         case 'pong': break;
         case 'room_state': {
-            store.voiceUsers = new Set(ev.voice_users || []);
+            const chanId = ev.channel_id || store.currentChannelId;
+            store.voiceUsers.set(chanId, new Set(ev.voice_users || []));
             updateCallUI();
             break;
         }
         case 'voice_joined': {
-            if (ev.channel_id !== store.currentChannelId) break;
-            store.voiceUsers.add(ev.user_id);
+            if (!store.voiceUsers.has(ev.channel_id)) store.voiceUsers.set(ev.channel_id, new Set());
+            store.voiceUsers.get(ev.channel_id).add(ev.user_id);
             updateCallUI();
-            if (store.inCall && ev.user_id !== store.user.id) {
+            if (store.inCall && ev.channel_id === store.callChannelId && ev.user_id !== store.user.id) {
                 // Initiate connection to new joiner
                 createPeerConnection(ev.user_id, true);
             }
             break;
         }
         case 'voice_left': {
-            if (ev.channel_id !== store.currentChannelId) break;
-            store.voiceUsers.delete(ev.user_id);
+            if (store.voiceUsers.has(ev.channel_id)) {
+                store.voiceUsers.get(ev.channel_id).delete(ev.user_id);
+            }
             updateCallUI();
-            if (store.pcs.has(ev.user_id)) {
+            if (ev.channel_id === store.callChannelId && store.pcs.has(ev.user_id)) {
                 store.pcs.get(ev.user_id).close();
                 store.pcs.delete(ev.user_id);
             }
             break;
         }
         case 'webrtc_signal': {
-            if (ev.channel_id !== store.currentChannelId) break;
+            if (ev.channel_id !== store.callChannelId) break;
             if (!store.inCall) break; // Ignore signals if not in call
-            if (ev.from_user_id === store.user.id) break; // Ignore own signals (shouldn't happen with broadcast but good safety)
+            if (ev.from_user_id === store.user.id) break;
             handleSignal(ev.from_user_id, ev.data);
             break;
         }
@@ -1294,12 +1303,14 @@ async function startCall() {
         store.inCall = true;
 
         // Send join_call
-        store.ws.send(JSON.stringify({ type: 'join_call', channel_id: store.currentChannelId }));
+        store.callChannelId = store.currentChannelId;
+        store.ws.send(JSON.stringify({ type: 'join_call', channel_id: store.callChannelId }));
 
         updateCallUI();
 
         // Connect to existing users
-        store.voiceUsers.forEach(uid => {
+        const existingUsers = store.voiceUsers.get(store.callChannelId) || new Set();
+        existingUsers.forEach(uid => {
             if (uid !== store.user.id) {
                 createPeerConnection(uid, false); // Wait for them to offer? Or we offer?
                 // Actually, usually the new joiner offers to existing users, or existing users offer to new joiner.
@@ -1328,10 +1339,21 @@ function leaveCall() {
         store.localStream = null;
     }
 
-    store.pcs.forEach(peerConnection => peerConnection.close());
+    store.pcs.forEach((peerConnection, targetUserId) => {
+        peerConnection.close();
+        const audio = document.getElementById(`audio-${targetUserId}`);
+        if (audio) audio.remove();
+    });
     store.pcs.clear();
 
-    store.ws.send(JSON.stringify({ type: 'leave_call', channel_id: store.currentChannelId }));
+    store.ws.send(JSON.stringify({ type: 'leave_call', channel_id: store.callChannelId }));
+
+    // If we are not in this channel's view anymore, we should also send a 'leave' to stop receiving its signals
+    if (store.callChannelId !== store.currentChannelId) {
+        store.ws.send(JSON.stringify({ type: 'leave', channel_id: store.callChannelId }));
+    }
+
+    store.callChannelId = null;
 
     updateCallUI();
 }
@@ -1344,38 +1366,41 @@ function updateCallUI() {
     const callUI = $('#callInterface');
     const participantsDiv = $('#callParticipants');
 
-    if (!isVoice) {
-        btnStart.style.display = 'none';
-        callUI.style.display = 'none';
-        return;
-    }
+    const voiceUsersHere = store.voiceUsers.get(store.currentChannelId) || new Set();
 
     if (store.inCall) {
+        // We are in a call (could be this channel or another)
         btnStart.style.display = 'none';
         callUI.style.display = 'flex';
 
-        // Render participants
+        const callChan = store.channels.find(c => c.id === store.callChannelId);
+        $('.call-status').textContent = (store.callChannelId === store.currentChannelId)
+            ? 'Voice Connected'
+            : `Voice Connected (${callChan?.name || 'Unknown'})`;
+
+        // Render participants for the call we are actually in
         participantsDiv.innerHTML = '';
-        store.voiceUsers.forEach(uid => {
+        const callUsers = store.voiceUsers.get(store.callChannelId) || new Set();
+        callUsers.forEach(uid => {
             const u = store.users.get(uid);
             const div = el('div', { class: 'call-participant', title: u?.username || uid });
             if (u && u.avatar_file_id) {
                 div.appendChild(el('img', { src: buildFileUrl(u.avatar_file_id, 'avatar') }));
             }
             participantsDiv.appendChild(div);
-
-            // Add audio element if not present (handled in track event usually, but we need a container?)
-            // We'll create audio elements dynamically and attach to document body or hidden container
         });
     } else {
         // Not in call
-        // Show "Start Call" or "Join Call" depending on if there are people
-        btnStart.style.display = 'block';
-        btnStart.style.marginLeft = 'auto';
-        btnStart.style.width = 'fit-content';
-        btnStart.textContent = store.voiceUsers.size > 0 ? 'Join Call' : 'Start Call';
-        btnStart.className = store.voiceUsers.size > 0 ? 'button small success' : 'button small';
         callUI.style.display = 'none';
+        if (isVoice) {
+            btnStart.style.display = 'block';
+            btnStart.style.marginLeft = 'auto';
+            btnStart.style.width = 'fit-content';
+            btnStart.textContent = voiceUsersHere.size > 0 ? 'Join Call' : 'Start Call';
+            btnStart.className = voiceUsersHere.size > 0 ? 'button small success' : 'button small';
+        } else {
+            btnStart.style.display = 'none';
+        }
     }
 }
 
@@ -1390,6 +1415,23 @@ async function createPeerConnection(targetUserId, initiator) {
     peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
             sendSignal(targetUserId, { candidate: event.candidate });
+        }
+    };
+
+    peerConnection.oniceconnectionstatechange = () => {
+        console.log(`ICE Connection State [${targetUserId}]: ${peerConnection.iceConnectionState}`);
+        if (peerConnection.iceConnectionState === 'failed') {
+            console.warn(`ICE Connection failed for ${targetUserId}, attempting restart?`);
+            // Optionally trigger ICE restart here
+        }
+    };
+
+    peerConnection.onconnectionstatechange = () => {
+        console.log(`Connection State [${targetUserId}]: ${peerConnection.connectionState}`);
+        if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'closed') {
+            const audio = document.getElementById(`audio-${targetUserId}`);
+            if (audio) audio.remove();
+            store.pcs.delete(targetUserId);
         }
     };
 
@@ -1448,7 +1490,7 @@ async function handleSignal(userId, data) {
 function sendSignal(toUserId, data) {
     store.ws.send(JSON.stringify({
         type: 'webrtc_signal',
-        channel_id: store.currentChannelId,
+        channel_id: store.callChannelId,
         to_user_id: toUserId,
         data
     }));

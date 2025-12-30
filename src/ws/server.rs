@@ -4,13 +4,15 @@ use std::collections::{HashMap, HashSet};
 pub struct ChatServer {
     rooms: HashMap<String, HashSet<actix::Addr<super::session::WsSession>>>,
     voice_participants: HashMap<String, HashSet<String>>, // channel_id -> set of user_ids
+    user_sessions: HashMap<String, HashSet<actix::Addr<super::session::WsSession>>>,
 }
 
 impl ChatServer {
     pub fn new() -> Self {
-        Self { 
+        Self {
             rooms: HashMap::new(),
             voice_participants: HashMap::new(),
+            user_sessions: HashMap::new(),
         }
     }
 }
@@ -20,34 +22,77 @@ impl Actor for ChatServer {
 }
 
 #[derive(Message)]
-#[rtype(result="()")]
-pub struct Join { pub channel_id: String, pub addr: actix::Addr<super::session::WsSession> }
+#[rtype(result = "()")]
+pub struct Join {
+    pub channel_id: String,
+    pub addr: actix::Addr<super::session::WsSession>,
+}
 
 #[derive(Message)]
-#[rtype(result="()")]
-pub struct Leave { pub channel_id: String, pub addr: actix::Addr<super::session::WsSession>, pub user_id: String }
+#[rtype(result = "()")]
+pub struct Leave {
+    pub channel_id: String,
+    pub addr: actix::Addr<super::session::WsSession>,
+    pub user_id: String,
+}
 
 #[derive(Message)]
-#[rtype(result="()")]
-pub struct Broadcast { pub channel_id: String, pub payload: String }
+#[rtype(result = "()")]
+pub struct Broadcast {
+    pub channel_id: String,
+    pub payload: String,
+}
 
 #[derive(Message)]
-#[rtype(result="()")]
-pub struct JoinVoice { pub channel_id: String, pub user_id: String }
+#[rtype(result = "()")]
+pub struct JoinVoice {
+    pub channel_id: String,
+    pub user_id: String,
+}
 
 #[derive(Message)]
-#[rtype(result="()")]
-pub struct LeaveVoice { pub channel_id: String, pub user_id: String }
+#[rtype(result = "()")]
+pub struct LeaveVoice {
+    pub channel_id: String,
+    pub user_id: String,
+}
+
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct Connect {
+    pub user_id: String,
+    pub addr: actix::Addr<super::session::WsSession>,
+}
+
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct Disconnect {
+    pub user_id: String,
+    pub addr: actix::Addr<super::session::WsSession>,
+}
+
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct DirectSignal {
+    pub to_user_id: String,
+    pub payload: String,
+}
 
 impl Handler<Join> for ChatServer {
     type Result = ();
     fn handle(&mut self, msg: Join, _: &mut Context<Self>) {
-        self.rooms.entry(msg.channel_id.clone()).or_default().insert(msg.addr.clone());
-        
+        self.rooms
+            .entry(msg.channel_id.clone())
+            .or_default()
+            .insert(msg.addr.clone());
+
         // Send current voice participants to the joining user
         if let Some(voice_users) = self.voice_participants.get(&msg.channel_id) {
             let users_vec: Vec<String> = voice_users.iter().cloned().collect();
-            msg.addr.do_send(super::session::RoomState { voice_users: users_vec });
+            msg.addr.do_send(super::session::RoomState {
+                channel_id: msg.channel_id,
+                voice_users: users_vec,
+            });
         }
     }
 }
@@ -65,10 +110,14 @@ impl Handler<Leave> for ChatServer {
                     "type": "voice_left",
                     "channel_id": msg.channel_id,
                     "user_id": msg.user_id
-                }).to_string();
-                // We can reuse the Broadcast handler logic or call it directly? 
+                })
+                .to_string();
+                // We can reuse the Broadcast handler logic or call it directly?
                 // Calling do_send to self is safer to avoid borrow checker issues if we extracted logic
-                ctx.notify(Broadcast { channel_id: msg.channel_id, payload });
+                ctx.notify(Broadcast {
+                    channel_id: msg.channel_id,
+                    payload,
+                });
             }
         }
     }
@@ -78,7 +127,9 @@ impl Handler<Broadcast> for ChatServer {
     fn handle(&mut self, msg: Broadcast, _: &mut Context<Self>) {
         if let Some(sessions) = self.rooms.get(&msg.channel_id) {
             for s in sessions {
-                s.do_send(super::session::ServerMsg { payload: msg.payload.clone() });
+                s.do_send(super::session::ServerMsg {
+                    payload: msg.payload.clone(),
+                });
             }
         }
     }
@@ -87,14 +138,21 @@ impl Handler<Broadcast> for ChatServer {
 impl Handler<JoinVoice> for ChatServer {
     type Result = ();
     fn handle(&mut self, msg: JoinVoice, ctx: &mut Context<Self>) {
-        let voice_users = self.voice_participants.entry(msg.channel_id.clone()).or_default();
+        let voice_users = self
+            .voice_participants
+            .entry(msg.channel_id.clone())
+            .or_default();
         if voice_users.insert(msg.user_id.clone()) {
             let payload = serde_json::json!({
                 "type": "voice_joined",
                 "channel_id": msg.channel_id,
                 "user_id": msg.user_id
-            }).to_string();
-            ctx.notify(Broadcast { channel_id: msg.channel_id, payload });
+            })
+            .to_string();
+            ctx.notify(Broadcast {
+                channel_id: msg.channel_id,
+                payload,
+            });
         }
     }
 }
@@ -108,8 +166,47 @@ impl Handler<LeaveVoice> for ChatServer {
                     "type": "voice_left",
                     "channel_id": msg.channel_id,
                     "user_id": msg.user_id
-                }).to_string();
-                ctx.notify(Broadcast { channel_id: msg.channel_id, payload });
+                })
+                .to_string();
+                ctx.notify(Broadcast {
+                    channel_id: msg.channel_id,
+                    payload,
+                });
+            }
+        }
+    }
+}
+
+impl Handler<Connect> for ChatServer {
+    type Result = ();
+    fn handle(&mut self, msg: Connect, _: &mut Context<Self>) {
+        self.user_sessions
+            .entry(msg.user_id)
+            .or_default()
+            .insert(msg.addr);
+    }
+}
+
+impl Handler<Disconnect> for ChatServer {
+    type Result = ();
+    fn handle(&mut self, msg: Disconnect, _: &mut Context<Self>) {
+        if let Some(sessions) = self.user_sessions.get_mut(&msg.user_id) {
+            sessions.remove(&msg.addr);
+            if sessions.is_empty() {
+                self.user_sessions.remove(&msg.user_id);
+            }
+        }
+    }
+}
+
+impl Handler<DirectSignal> for ChatServer {
+    type Result = ();
+    fn handle(&mut self, msg: DirectSignal, _: &mut Context<Self>) {
+        if let Some(sessions) = self.user_sessions.get(&msg.to_user_id) {
+            for s in sessions {
+                s.do_send(super::session::ServerMsg {
+                    payload: msg.payload.clone(),
+                });
             }
         }
     }
