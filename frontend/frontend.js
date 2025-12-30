@@ -431,7 +431,7 @@ function openCreateChannelModal() {
     setIf('#chName', 'value', '');
     $('#chIsVoice').checked = false;
     $('#chIsPrivate').checked = false;
-    $('#chMembersSection').style.display = 'none';
+    $('#channelMembersSection').style.display = 'none';
     renderCreateChannelMembers();
     // lazy load users
     loadAllUsers();
@@ -470,7 +470,7 @@ async function loadEditChannelMembers(channelId) {
         // Make sure we have user profiles for all members
         await prefetchUsers(membersList.map(m => m.user_id));
 
-        const curSel = $('#editChMembersCurrent');
+        const curSel = $('#editChannelMembersCurrent');
         curSel.innerHTML = '';
         membersList.forEach(m => {
             if (m.user_id === meId) return; // Don't list owner
@@ -484,7 +484,7 @@ async function loadEditChannelMembers(channelId) {
         // Potential members (all users - current members)
         if (store.allUsers.length === 0) await loadAllUsers();
 
-        const addSel = $('#editChMembersAdd');
+        const addSel = $('#editChannelMembersAdd');
         addSel.innerHTML = '';
         const memberIds = new Set(membersList.map(m => m.user_id));
         store.allUsers.forEach(u => {
@@ -544,12 +544,12 @@ async function modifyMembersInModal(action) {
     let payload;
 
     if (action === 'add') {
-        sel = $('#editChMembersAdd');
+        sel = $('#editChannelMembersAdd');
         const ids = Array.from(sel.selectedOptions).map(o => o.value);
         if (ids.length === 0) return;
         payload = { add: ids };
     } else {
-        sel = $('#editChMembersCurrent');
+        sel = $('#editChannelMembersCurrent');
         const ids = Array.from(sel.selectedOptions).map(o => o.value);
         if (ids.length === 0) return;
         payload = { remove: ids };
@@ -565,7 +565,7 @@ async function modifyMembersInModal(action) {
 }
 
 function renderCreateChannelMembers() {
-    const sel = $('#chMembersSelect');
+    const sel = $('#channelMembersSelect');
     if (!sel) return;
     sel.innerHTML = '';
     const meId = store.user?.id;
@@ -1148,7 +1148,7 @@ function bindUI() {
     // Toggle members section when privacy changes
     $('#chIsPrivate').addEventListener('change', (e) => {
         const on = e.target.checked;
-        $('#chMembersSection').style.display = on ? '' : 'none';
+        $('#channelMembersSection').style.display = on ? '' : 'none';
     });
 
     // Submit create channel
@@ -1156,7 +1156,7 @@ function bindUI() {
         const name = $('#chName').value;
         const is_voice = $('#chIsVoice').checked;
         const is_private = $('#chIsPrivate').checked;
-        const members = Array.from($('#chMembersSelect').selectedOptions).map(o => o.value);
+        const members = Array.from($('#channelMembersSelect').selectedOptions).map(o => o.value);
         if (!name) return;
         try {
             const ch = await createChannelAdvanced({ name, is_private, is_voice, members });

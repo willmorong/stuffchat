@@ -13,11 +13,11 @@
 <body>
     <div id="authView" class="glass auth-card">
         <div id="serverStep">
-            <div class="brand"><i class="bi bi-chat-dots"></i> stuffchat</div>
+            <div class="brand">stuffchat</div>
             <div class="hint">Enter server address</div>
             <div class="row">
                 <input id="cfgBaseUrl" class="input grow" placeholder="Base URL (e.g. http://localhost:8080)" />
-                <button id="btnCheckServer" class="button" style="width:140px">Connect</button>
+                <button id="btnCheckServer" class="button" style="width:auto;">Connect</button>
             </div>
             <div id="serverError" class="error"></div>
         </div>
@@ -234,10 +234,10 @@
                         </label>
                     </div>
                 </section>
-                <section class="panel" id="chMembersSection" style="display:none">
+                <section class="panel" id="channelMembersSection" style="display:none">
                     <h3>Private Members</h3>
                     <div class="row">
-                        <select id="chMembersSelect" class="select grow" multiple size="8"></select>
+                        <select id="channelMembersSelect" class="select grow" multiple size="8"></select>
                     </div>
                     <div class="hint">Hold Shift or Ctrl/Command to select multiple users</div>
                 </section>
@@ -277,13 +277,13 @@
                     <div class="row" style="gap:8px">
                         <div style="flex:1">
                             <h4>Current Members</h4>
-                            <select id="editChMembersCurrent" class="select grow" multiple size="8"></select>
+                            <select id="editChannelMembersCurrent" class="select grow" multiple size="8"></select>
                             <button id="btnRemoveMembers" class="button alt small" style="margin-top:4px">Remove
                                 Selected</button>
                         </div>
                         <div style="flex:1">
                             <h4>Add Members</h4>
-                            <select id="editChMembersAdd" class="select grow" multiple size="8"></select>
+                            <select id="editChannelMembersAdd" class="select grow" multiple size="8"></select>
                             <button id="btnAddMembers" class="button alt small" style="margin-top:4px">Add
                                 Selected</button>
                         </div>
