@@ -49,6 +49,8 @@ pub async fn register(
     let user_id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now();
 
+    let mut tx = db.0.begin().await?;
+
     let res = sqlx::query("INSERT INTO users(id, username, email, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
         .bind(&user_id)
         .bind(&body.username)
@@ -56,7 +58,7 @@ pub async fn register(
         .bind(&hash)
         .bind(now)
         .bind(now)
-        .execute(&db.0).await;
+        .execute(&mut *tx).await;
 
     if let Err(e) = res {
         if let sqlx::Error::Database(db_err) = &e {
@@ -74,10 +76,18 @@ pub async fn register(
             sqlx::query("UPDATE invites SET joined_user_id = ? WHERE code = ?")
                 .bind(&user_id)
                 .bind(code)
-                .execute(&db.0)
+                .execute(&mut *tx)
                 .await?;
         }
     }
+
+    // Add new user to all public channels
+    sqlx::query("INSERT INTO channel_members(channel_id, user_id, can_read, can_write, can_manage) SELECT id, ?, 1, 1, 0 FROM channels WHERE is_private = 0 AND deleted_at IS NULL")
+        .bind(&user_id)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
 
     let access_token = auth::create_access_token(&user_id, &cfg)?;
     let (rt_id, rt) = auth::create_refresh_token(&db, &user_id).await?;
