@@ -66,6 +66,13 @@ const presenceClass = status => ({
     offline: 'presence-offline'
 }[status] || 'presence-offline');
 
+function playNotificationSound(type) {
+    const file = type === 'join' ? 'audio/stuffchat_join_v2.wav' : 'audio/stuffchat_leave_v2.wav';
+    const audio = new Audio(file);
+    audio.volume = 0.25;
+    audio.play().catch(e => console.warn('Audio playback failed', e));
+}
+
 // Build absolute file URL supporting new endpoint (/files/{id}/{filename})
 // If only an ID is available, we add a dummy filename segment ("file") since the backend ignores it.
 const buildFileUrl = (id, filename = 'file') => {
@@ -1079,6 +1086,7 @@ function handleWsMessage(ev) {
                 // Initiate connection to new joiner
                 createPeerConnection(ev.user_id, true);
             }
+            playNotificationSound('join');
             break;
         }
         case 'voice_left': {
@@ -1090,6 +1098,7 @@ function handleWsMessage(ev) {
                 store.pcs.get(ev.user_id).close();
                 store.pcs.delete(ev.user_id);
             }
+            playNotificationSound('leave');
             break;
         }
         case 'webrtc_signal': {
@@ -1342,16 +1351,7 @@ async function startCall() {
         const existingUsers = store.voiceUsers.get(store.callChannelId) || new Set();
         existingUsers.forEach(uid => {
             if (uid !== store.user.id) {
-                createPeerConnection(uid, false); // Wait for them to offer? Or we offer?
-                // Actually, usually the new joiner offers to existing users, or existing users offer to new joiner.
-                // Let's say new joiner (us) initiates to everyone already there.
-                // Wait, in 'voice_joined' handler, existing users initiate to new joiner.
-                // So here we just wait for offers from existing users?
-                // Let's stick to: Existing users initiate to new joiner. 
-                // So we don't do anything here for existing users, they will see us join and call us.
-                // BUT, what if we are the first one? No one to call.
-                // What if there are others? They get 'voice_joined' and call us.
-                // So we just wait.
+                createPeerConnection(uid, false);
             }
         });
     } catch (e) {
