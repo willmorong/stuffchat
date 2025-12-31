@@ -17,6 +17,10 @@ const store = {
     typingTimers: new Map(), // userId -> timeout
     typingUsers: new Set(), // currently typing in current channel
     theme: localStorage.getItem('stuffchat.theme') || 'mysterious',
+    // Audio Preferences
+    noiseSuppression: localStorage.getItem('stuffchat.noise_suppression') !== 'false',
+    echoCancellation: localStorage.getItem('stuffchat.echo_cancellation') === 'true',
+    autoGainControl: localStorage.getItem('stuffchat.auto_gain_control') === 'true',
     // WebRTC
     localStream: null,
     pcs: new Map(), // userId -> RTCPeerConnection
@@ -367,6 +371,11 @@ function openSettings() {
     // Theme selection
     const radios = document.querySelectorAll('input[name="themeSel"]');
     radios.forEach(r => { r.checked = (r.value === store.theme); });
+
+    // Audio preferences
+    setIf('#prefNoiseSuppression', 'checked', store.noiseSuppression);
+    setIf('#prefEchoCancellation', 'checked', store.echoCancellation);
+    setIf('#prefAutoGainControl', 'checked', store.autoGainControl);
 
     $('#settingsModal').classList.remove('hidden');
 }
@@ -1279,6 +1288,20 @@ function bindUI() {
         r.addEventListener('change', () => applyTheme(r.value));
     });
 
+    // Audio preferences
+    $('#prefNoiseSuppression').addEventListener('change', (e) => {
+        store.noiseSuppression = e.target.checked;
+        localStorage.setItem('stuffchat.noise_suppression', store.noiseSuppression);
+    });
+    $('#prefEchoCancellation').addEventListener('change', (e) => {
+        store.echoCancellation = e.target.checked;
+        localStorage.setItem('stuffchat.echo_cancellation', store.echoCancellation);
+    });
+    $('#prefAutoGainControl').addEventListener('change', (e) => {
+        store.autoGainControl = e.target.checked;
+        localStorage.setItem('stuffchat.auto_gain_control', store.autoGainControl);
+    });
+
     // Server save from modal
     $('#btnSaveBaseUrl').addEventListener('click', () => setBaseUrl($('#settingsBaseUrl').value));
 
@@ -1298,7 +1321,14 @@ function bindUI() {
 async function startCall() {
     if (store.inCall) return;
     try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        const stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: store.echoCancellation,
+                noiseSuppression: store.noiseSuppression,
+                autoGainControl: store.autoGainControl
+            },
+            video: false
+        });
         store.localStream = stream;
         store.inCall = true;
 
@@ -1510,12 +1540,12 @@ function mangleSdp(sdp) {
         }
     }
     if (opusPt) {
-        const fmtpLine = `a=fmtp:${opusPt} maxaveragebitrate=96000;stereo=1;useinbandfec=1`;
+        const fmtpLine = `a=fmtp:${opusPt} maxaveragebitrate=96000;stereo=1;useinbandfec=1;usedtx=1`;
         // Check if fmtp exists
         let found = false;
         for (let i = 0; i < lines.length; i++) {
             if (lines[i].startsWith(`a=fmtp:${opusPt}`)) {
-                lines[i] = lines[i].trim() + ';maxaveragebitrate=96000';
+                lines[i] = lines[i].trim() + ';maxaveragebitrate=96000;usedtx=1';
                 found = true;
                 break;
             }
@@ -1556,6 +1586,8 @@ async function init() {
             showServerStep();
         }
     } else {
+        const defaultUrl = `${window.location.protocol}//${window.location.hostname}:22800`;
+        setIf('#cfgBaseUrl', 'value', defaultUrl);
         showServerStep();
     }
 }

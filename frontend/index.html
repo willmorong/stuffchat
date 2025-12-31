@@ -182,6 +182,25 @@
                     </div>
                 </section>
                 <section class="panel">
+                    <h3>Audio Settings</h3>
+                    <p class="error">NOTE: Noise suppression works well, the other two aren't fully tested. If you run
+                        into issues with them, tell Will.</p>
+                    <div class="row" style="flex-direction: column; gap: 8px;">
+                        <label class="row" style="gap:10px; align-items:center; cursor:pointer">
+                            <input type="checkbox" id="prefNoiseSuppression" checked />
+                            <span>Noise Suppression</span>
+                        </label>
+                        <label class="row" style="gap:10px; align-items:center; cursor:pointer">
+                            <input type="checkbox" id="prefEchoCancellation" />
+                            <span>Echo Cancellation</span>
+                        </label>
+                        <label class="row" style="gap:10px; align-items:center; cursor:pointer">
+                            <input type="checkbox" id="prefAutoGainControl" />
+                            <span>Auto Gain Control</span>
+                        </label>
+                    </div>
+                </section>
+                <section class="panel">
                     <h3>Theme</h3>
                     <div class="row" style="gap:16px; align-items:center">
                         <label><input type="radio" name="themeSel" value="mysterious" /> Mysterious</label>
