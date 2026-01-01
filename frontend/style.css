@@ -620,8 +620,8 @@ body[data-theme="dark"] {
 body[data-theme="light"] {
     --bg1: #e9f0ff;
     --bg2: #ffffff;
-    --glass: rgba(0, 0, 0, 0.05);
-    --glass-strong: rgba(0, 0, 0, 0.08);
+    --glass: rgba(255, 255, 255, 0.5);
+    --glass-strong: rgba(255, 255, 255, 0.5);
     --border: rgba(0, 0, 0, 0.2);
     --text: #0b1220;
     --text-dim: #465168;
