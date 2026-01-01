@@ -1,0 +1,72 @@
+import { store } from './store.js';
+
+export const $ = sel => document.querySelector(sel);
+
+export const el = (tag, attrs = {}, children = []) => {
+    const e = document.createElement(tag);
+    Object.entries(attrs).forEach(([k, v]) => {
+        if (k === 'class') e.className = v;
+        else if (k === 'style') e.style.cssText = v;
+        else if (k.startsWith('on') && typeof v === 'function') e.addEventListener(k.slice(2), v);
+        else if (v !== undefined && v !== null) e.setAttribute(k, v);
+    });
+    (Array.isArray(children) ? children : [children]).forEach(c => {
+        if (c === null || c === undefined) return;
+        if (typeof c === 'string') e.appendChild(document.createTextNode(c));
+        else e.appendChild(c);
+    });
+    return e;
+};
+
+export const truncateId = id => id ? id.slice(0, 8) : 'unknown';
+
+export const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+export const toWsUrl = (httpUrl) => {
+    if (!httpUrl) return '';
+    try {
+        const u = new URL(httpUrl);
+        u.protocol = (u.protocol === 'https:') ? 'wss:' : 'ws:';
+        u.pathname = '/ws';
+        u.search = '';
+        return u.toString();
+    } catch { return ''; }
+};
+
+export const presenceClass = status => ({
+    online: 'presence-online',
+    away: 'presence-away',
+    dnd: 'presence-dnd',
+    invisible: 'presence-invisible',
+    offline: 'presence-offline'
+}[status] || 'presence-offline');
+
+export function playNotificationSound(type) {
+    const file = type === 'join' ? 'audio/stuffchat_join_v3.wav' : 'audio/stuffchat_leave_v3.wav';
+    const audio = new Audio(file);
+    audio.volume = 0.25;
+    audio.play().catch(e => console.warn('Audio playback failed', e));
+}
+
+// Build absolute file URL supporting new endpoint (/files/{id}/{filename})
+// If only an ID is available, we add a dummy filename segment ("file") since the backend ignores it.
+export const buildFileUrl = (id, filename = 'file') => {
+    if (!id) return '';
+    const safe = encodeURIComponent(filename || 'file');
+    return `${store.baseUrl}/files/${encodeURIComponent(id)}/${safe}`;
+};
+
+// Normalize server-provided file_url into an absolute URL
+export const absFileUrl = (file_url) => {
+    if (!file_url) return '';
+    try {
+        // Absolute already?
+        const u = new URL(file_url, store.baseUrl);
+        return u.toString();
+    } catch {
+        return (store.baseUrl || '') + file_url;
+    }
+};
+
+export const setIf = (sel, prop, val) => { const n = $(sel); if (n) n[prop] = val; };
+export const textIf = (sel, val) => { const n = $(sel); if (n) n.textContent = val; };

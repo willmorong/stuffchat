@@ -38,6 +38,7 @@ pub async fn ws_route(
         user_id,
         server: srv.get_ref().clone(),
         joined: None,
+        voice_channel: None,
         db: db.get_ref().clone(),
     };
     ws::start(session, &req, stream)
@@ -47,18 +48,21 @@ pub struct WsSession {
     pub user_id: String,
     pub server: Addr<ChatServer>,
     pub joined: Option<String>,
+    pub voice_channel: Option<String>,
     pub db: Db,
 }
 
 impl Actor for WsSession {
     type Context = ws::WebsocketContext<Self>;
     fn started(&mut self, ctx: &mut Self::Context) {
+        log::info!("WsSession started: user_id={}", self.user_id);
         self.server.do_send(Connect {
             user_id: self.user_id.clone(),
             addr: ctx.address(),
         });
     }
     fn stopped(&mut self, ctx: &mut Self::Context) {
+        log::info!("WsSession stopped: user_id={}", self.user_id);
         self.server.do_send(Disconnect {
             user_id: self.user_id.clone(),
             addr: ctx.address(),
@@ -67,6 +71,12 @@ impl Actor for WsSession {
             self.server.do_send(Leave {
                 channel_id: ch,
                 addr: ctx.address(),
+                user_id: self.user_id.clone(),
+            });
+        }
+        if let Some(voice_ch) = self.voice_channel.take() {
+            self.server.do_send(super::server::LeaveVoice {
+                channel_id: voice_ch,
                 user_id: self.user_id.clone(),
             });
         }
@@ -157,6 +167,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
     fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
         match msg {
             Ok(ws::Message::Text(text)) => {
+                log::debug!("WsSession received text: {}", text);
                 if let Ok(ev) = serde_json::from_str::<ClientEvent>(&text) {
                     match ev {
                         ClientEvent::Join { channel_id } => {
@@ -230,12 +241,24 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                             ctx.text(r#"{"type":"pong"}"#);
                         }
                         ClientEvent::JoinCall { channel_id } => {
+                            log::info!(
+                                "WsSession handling JoinCall: user_id={}, channel_id={}",
+                                self.user_id,
+                                channel_id
+                            );
+                            self.voice_channel = Some(channel_id.clone());
                             self.server.do_send(super::server::JoinVoice {
                                 channel_id,
                                 user_id: self.user_id.clone(),
                             });
                         }
                         ClientEvent::LeaveCall { channel_id } => {
+                            log::info!(
+                                "WsSession handling LeaveCall: user_id={}, channel_id={}",
+                                self.user_id,
+                                channel_id
+                            );
+                            self.voice_channel = None;
                             self.server.do_send(super::server::LeaveVoice {
                                 channel_id,
                                 user_id: self.user_id.clone(),

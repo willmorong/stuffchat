@@ -138,6 +138,11 @@ impl Handler<Broadcast> for ChatServer {
 impl Handler<JoinVoice> for ChatServer {
     type Result = ();
     fn handle(&mut self, msg: JoinVoice, ctx: &mut Context<Self>) {
+        log::info!(
+            "ChatServer handling JoinVoice: user_id={}, channel_id={}",
+            msg.user_id,
+            msg.channel_id
+        );
         let voice_users = self
             .voice_participants
             .entry(msg.channel_id.clone())
@@ -160,6 +165,11 @@ impl Handler<JoinVoice> for ChatServer {
 impl Handler<LeaveVoice> for ChatServer {
     type Result = ();
     fn handle(&mut self, msg: LeaveVoice, ctx: &mut Context<Self>) {
+        log::info!(
+            "ChatServer handling LeaveVoice: user_id={}, channel_id={}",
+            msg.user_id,
+            msg.channel_id
+        );
         if let Some(voice_users) = self.voice_participants.get_mut(&msg.channel_id) {
             if voice_users.remove(&msg.user_id) {
                 let payload = serde_json::json!({

@@ -141,9 +141,10 @@ async fn main() -> std::io::Result<()> {
                     ),
             )
             .route("/ws", web::get().to(ws::session::ws_route))
-            .route(
-                "/files/{id}/{filename:.*}",
-                web::get().to(files_routes::get_file),
+            .service(
+                web::resource("/files/{id}/{filename:.*}")
+                    .route(web::get().to(files_routes::get_file))
+                    .route(web::head().to(files_routes::get_file)),
             )
     })
     .bind(listen_addr)?
