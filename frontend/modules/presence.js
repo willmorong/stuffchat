@@ -13,6 +13,20 @@ export async function heartbeat() {
     settingsMeDot.title = status;
 }
 
+let _heartbeatLoopActive = false;
+export async function startHeartbeatLoop() {
+    if (_heartbeatLoopActive) return;
+    _heartbeatLoopActive = true;
+    // Initial heartbeat
+    await heartbeat();
+    while (store.accessToken) {
+        await new Promise(r => setTimeout(r, PRESENCE_INTERVAL));
+        if (!store.accessToken) break;
+        await heartbeat();
+    }
+    _heartbeatLoopActive = false;
+}
+
 export function renderMemberInfo() {
     const ids = store.members.get(store.currentChannelId) || [];
     const onlineCount = ids.filter(id => (store.presenceCache.get(id) || 'offline') !== 'offline').length;

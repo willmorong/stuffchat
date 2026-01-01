@@ -8,7 +8,10 @@ export function connectWs(reconnect = false) {
     const url = toWsUrl(store.baseUrl);
     if (!url || !store.accessToken) return;
     try {
-        if (store.ws) { try { store.ws.close(); } catch { } }
+        if (store.ws) {
+            console.log('WebSocket already open');
+            return;
+        }
         const ws = new WebSocket(url + '?token=' + encodeURIComponent(store.accessToken));
         store.ws = ws;
         ws.onopen = () => {
@@ -39,7 +42,15 @@ export function connectWs(reconnect = false) {
                     pc.close();
                     const audio = document.getElementById(`audio-${uid}`);
                     if (audio) audio.remove();
+                    if (store.visualizers.has(uid)) {
+                        store.visualizers.get(uid).stop();
+                        store.visualizers.delete(uid);
+                    }
                 });
+                if (store.visualizers.has(store.user.id)) {
+                    store.visualizers.get(store.user.id).stop();
+                    store.visualizers.delete(store.user.id);
+                }
                 store.pcs.clear();
                 store.callChannelId = null;
                 updateCallUI();

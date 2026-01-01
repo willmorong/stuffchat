@@ -814,19 +814,36 @@ body[data-theme="wegmans"] {
 /* Call Interface */
 .call-interface {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 12px;
-    background: rgba(46, 204, 113, 0.15);
-    border: 1px solid rgba(46, 204, 113, 0.3);
+    flex-direction: column;
+    padding: 12px;
+    background: rgba(46, 204, 113, 0.12);
+    border: 1px solid rgba(46, 204, 113, 0.25);
     border-radius: var(--radius);
-    /* margin-bottom: 12px; handled by flex gap of main */
-}
-
-.call-info {
     display: flex;
     flex-direction: column;
     gap: 4px;
+}
+
+.call-header {
+    display: flex;
+    justify-content: space-between;
+}
+
+.call-header button {
+    flex-basis: content;
+}
+
+.call-participant-row {
+    display: flex;
+    flex-direction: row;
+}
+
+.call-participant-info {
+    flex-basis: content;
+}
+
+.call-participant-info .username {
+    display: none;
 }
 
 .call-status {

@@ -2,6 +2,63 @@ import { store } from './store.js';
 import { $ } from './utils.js';
 import { playNotificationSound, buildFileUrl, el } from './utils.js';
 
+class Visualizer {
+    constructor(stream, canvas) {
+        this.stream = stream;
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.audioCtx = new (window.AudioContext)();
+        this.analyser = this.audioCtx.createAnalyser();
+        this.source = this.audioCtx.createMediaStreamSource(stream);
+        this.source.connect(this.analyser);
+        this.analyser.fftSize = 256;
+        this.bufferLength = this.analyser.frequencyBinCount;
+        this.dataArray = new Uint8Array(this.bufferLength);
+        this.running = true;
+        this.draw();
+    }
+
+    draw() {
+        if (!this.running) return;
+        requestAnimationFrame(() => this.draw());
+
+        const { width, height } = this.canvas;
+        this.analyser.getByteTimeDomainData(this.dataArray);
+
+        this.ctx.clearRect(0, 0, width, height);
+
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeStyle = '#4dd4ac';
+        this.ctx.beginPath();
+
+        const sliceWidth = width * 1.0 / this.bufferLength;
+        let x = 0;
+
+        for (let i = 0; i < this.bufferLength; i++) {
+            const v = this.dataArray[i] / 128.0;
+            const y = v * height / 2;
+
+            if (i === 0) {
+                this.ctx.moveTo(x, y);
+            } else {
+                this.ctx.lineTo(x, y);
+            }
+
+            x += sliceWidth;
+        }
+
+        this.ctx.lineTo(width, height / 2);
+        this.ctx.stroke();
+    }
+
+    stop() {
+        this.running = false;
+        if (this.audioCtx.state !== 'closed') {
+            this.audioCtx.close();
+        }
+    }
+}
+
 export function updateCallUI() {
     const ch = store.channels.find(c => c.id === store.currentChannelId);
     if (!ch) return;
@@ -11,7 +68,6 @@ export function updateCallUI() {
     const callUI = $('#callInterface');
     const participantsDiv = $('#callParticipants');
 
-    // Safety check if elements exist (in case UI not fully bound yet)
     if (!btnStart || !callUI || !participantsDiv) return;
 
     const voiceUsersHere = store.voiceUsers.get(store.currentChannelId) || new Set();
@@ -25,18 +81,71 @@ export function updateCallUI() {
             ? 'Voice Connected'
             : `Voice Connected (${callChan?.name || 'Unknown'})`;
 
-        participantsDiv.innerHTML = '';
         const callUsers = store.voiceUsers.get(store.callChannelId) || new Set();
-        callUsers.forEach(uid => {
-            const u = store.users.get(uid);
-            const div = el('div', { class: 'call-participant', title: u?.username || uid });
-            if (u && u.avatar_file_id) {
-                div.appendChild(el('img', { src: buildFileUrl(u.avatar_file_id, 'avatar') }));
+
+        // Remove rows for users no longer in call
+        const currentUids = Array.from(callUsers);
+        participantsDiv.querySelectorAll('.call-participant-row').forEach(row => {
+            const uid = row.dataset.uid;
+            if (!currentUids.includes(uid)) {
+                if (store.visualizers.has(uid)) {
+                    store.visualizers.get(uid).stop();
+                    store.visualizers.delete(uid);
+                }
+                row.remove();
             }
-            participantsDiv.appendChild(div);
+        });
+
+        // Add or update rows for users in call
+        currentUids.forEach(uid => {
+            let row = participantsDiv.querySelector(`.call-participant-row[data-uid="${uid}"]`);
+            if (!row) {
+                const u = store.users.get(uid);
+                row = el('div', { class: 'call-participant-row', 'data-uid': uid });
+
+                const info = el('div', { class: 'call-participant-info' });
+                const avatar = el('div', { class: 'avatar' });
+                if (u && u.avatar_file_id) {
+                    avatar.appendChild(el('img', { src: buildFileUrl(u.avatar_file_id, 'avatar') }));
+                }
+                info.appendChild(avatar);
+                info.appendChild(el('div', { class: 'username' }, u?.username || uid));
+
+                const waveformContainer = el('div', { class: 'call-waveform-container' });
+                const canvas = el('canvas', { class: 'call-waveform-canvas', width: 120, height: 44 });
+                waveformContainer.appendChild(canvas);
+
+                row.appendChild(info);
+                row.appendChild(waveformContainer);
+                participantsDiv.appendChild(row);
+
+                // Initialize visualizer if stream is available
+                if (uid === store.user.id && store.localStream) {
+                    if (store.visualizers.has(uid)) store.visualizers.get(uid).stop();
+                    store.visualizers.set(uid, new Visualizer(store.localStream, canvas));
+                } else if (store.pcs.has(uid)) {
+                    const audio = document.getElementById(`audio-${uid}`);
+                    if (audio && audio.srcObject) {
+                        if (store.visualizers.has(uid)) store.visualizers.get(uid).stop();
+                        store.visualizers.set(uid, new Visualizer(audio.srcObject, canvas));
+                    }
+                }
+            } else {
+                // Adjust canvas size if window resized? Or just ensure it matches its container
+                const canvas = row.querySelector('.call-waveform-canvas');
+                const container = row.querySelector('.call-waveform-container');
+                if (canvas.width !== container.clientWidth || canvas.height !== container.clientHeight) {
+                    canvas.width = container.clientWidth;
+                    canvas.height = container.clientHeight;
+                }
+            }
         });
     } else {
         callUI.style.display = 'none';
+        // Cleanup visualizers if not in call
+        store.visualizers.forEach(v => v.stop());
+        store.visualizers.clear();
+
         if (isVoice) {
             btnStart.style.display = 'block';
             btnStart.style.marginLeft = 'auto';
@@ -108,7 +217,12 @@ export async function createPeerConnection(targetUserId, initiator) {
         if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'closed') {
             const audio = document.getElementById(`audio-${targetUserId}`);
             if (audio) audio.remove();
+            if (store.visualizers.has(targetUserId)) {
+                store.visualizers.get(targetUserId).stop();
+                store.visualizers.delete(targetUserId);
+            }
             store.pcs.delete(targetUserId);
+            updateCallUI();
         }
     };
 
@@ -122,6 +236,7 @@ export async function createPeerConnection(targetUserId, initiator) {
             document.body.appendChild(audio);
         }
         audio.srcObject = stream;
+        updateCallUI(); // Trigger UI update to attach visualizer to the new stream
     };
 
     if (store.localStream) {
@@ -208,11 +323,19 @@ export function leaveCall() {
     store.pcs.forEach((pc) => {
         pc.close();
     });
-    // Remove all audio elements
+    // Remove all audio elements and visualizers
     store.pcs.forEach((_, uid) => {
         const audio = document.getElementById(`audio-${uid}`);
         if (audio) audio.remove();
+        if (store.visualizers.has(uid)) {
+            store.visualizers.get(uid).stop();
+            store.visualizers.delete(uid);
+        }
     });
+    if (store.visualizers.has(store.user.id)) {
+        store.visualizers.get(store.user.id).stop();
+        store.visualizers.delete(store.user.id);
+    }
     store.pcs.clear();
 
     if (store.ws && store.ws.readyState === 1) {

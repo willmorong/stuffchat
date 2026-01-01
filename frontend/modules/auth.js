@@ -5,7 +5,7 @@ import { connectWs } from './socket.js';
 import { loadMe } from './users.js';
 import { loadChannels } from './channels.js';
 import { enableComposer } from './messages.js';
-import { heartbeat, presencePollLoop } from './presence.js';
+import { heartbeat, presencePollLoop, startHeartbeatLoop } from './presence.js';
 
 export function showServerStep() {
     $('#serverStep').style.display = 'block';
@@ -92,6 +92,6 @@ export async function bootstrapAfterAuth() {
     await loadChannels();
     connectWs();
     enableComposer(false);
-    heartbeat();
+    startHeartbeatLoop();
     presencePollLoop();
 }
