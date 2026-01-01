@@ -81,18 +81,24 @@ export function updateCallUI() {
             ? 'Voice Connected'
             : `Voice Connected (${callChan?.name || 'Unknown'})`;
 
-        const callUsers = store.voiceUsers.get(store.callChannelId) || new Set();
+        const callUsersComposite = store.voiceUsers.get(store.callChannelId) || new Set();
+        const callUsersSet = new Set();
+        callUsersComposite.forEach(cid => callUsersSet.add(cid.split(':')[0]));
 
         // Remove rows for users no longer in call
-        const currentUids = Array.from(callUsers);
+        const currentUids = Array.from(callUsersSet);
         participantsDiv.querySelectorAll('.call-participant-row').forEach(row => {
             const uid = row.dataset.uid;
             if (!currentUids.includes(uid)) {
-                if (store.visualizers.has(uid)) {
-                    store.visualizers.get(uid).stop();
-                    store.visualizers.delete(uid);
+                // Check if any session for this user is still in the call
+                const userStillIn = Array.from(callUsersComposite).some(cid => cid.startsWith(uid + ':'));
+                if (!userStillIn) {
+                    if (store.visualizers.has(uid)) {
+                        store.visualizers.get(uid).stop();
+                        store.visualizers.delete(uid);
+                    }
+                    row.remove();
                 }
-                row.remove();
             }
         });
 
@@ -123,11 +129,19 @@ export function updateCallUI() {
                 if (uid === store.user.id && store.localStream) {
                     if (store.visualizers.has(uid)) store.visualizers.get(uid).stop();
                     store.visualizers.set(uid, new Visualizer(store.localStream, canvas));
-                } else if (store.pcs.has(uid)) {
-                    const audio = document.getElementById(`audio-${uid}`);
-                    if (audio && audio.srcObject) {
-                        if (store.visualizers.has(uid)) store.visualizers.get(uid).stop();
-                        store.visualizers.set(uid, new Visualizer(audio.srcObject, canvas));
+                } else {
+                    // Check if we have any PC for this user (any session)
+                    let foundStream = false;
+                    for (const [pcid, pc] of store.pcs) {
+                        if (pcid.startsWith(uid + ':')) {
+                            const audio = document.getElementById(`audio-${pcid}`);
+                            if (audio && audio.srcObject) {
+                                if (store.visualizers.has(uid)) store.visualizers.get(uid).stop();
+                                store.visualizers.set(uid, new Visualizer(audio.srcObject, canvas));
+                                foundStream = true;
+                                break;
+                            }
+                        }
                     }
                 }
             } else {
@@ -158,12 +172,14 @@ export function updateCallUI() {
     }
 }
 
-function sendSignal(toUserId, data) {
+function sendSignal(toUserId, toSessionId, data) {
     if (store.ws && store.ws.readyState === 1) {
         store.ws.send(JSON.stringify({
             type: 'webrtc_signal',
             channel_id: store.callChannelId,
             to_user_id: toUserId,
+            to_session_id: toSessionId,
+            from_session_id: store.sessionId,
             data
         }));
     }
@@ -200,38 +216,35 @@ function mangleSdp(sdp) {
     return lines.join('\n');
 }
 
-export async function createPeerConnection(targetUserId, initiator) {
-    if (store.pcs.has(targetUserId)) return store.pcs.get(targetUserId);
+export async function createPeerConnection(targetUserId, targetSessionId, initiator) {
+    const pcId = `${targetUserId}:${targetSessionId}`;
+    if (store.pcs.has(pcId)) return store.pcs.get(pcId);
 
     const peerConnection = new RTCPeerConnection({
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
     });
-    store.pcs.set(targetUserId, peerConnection);
+    store.pcs.set(pcId, peerConnection);
 
     peerConnection.onicecandidate = (event) => {
-        if (event.candidate) sendSignal(targetUserId, { candidate: event.candidate });
+        if (event.candidate) sendSignal(targetUserId, targetSessionId, { candidate: event.candidate });
     };
 
     peerConnection.onconnectionstatechange = () => {
-        console.log(`Connection State [${targetUserId}]: ${peerConnection.connectionState}`);
+        console.log(`Connection State [${pcId}]: ${peerConnection.connectionState}`);
         if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'closed') {
-            const audio = document.getElementById(`audio-${targetUserId}`);
+            const audio = document.getElementById(`audio-${pcId}`);
             if (audio) audio.remove();
-            if (store.visualizers.has(targetUserId)) {
-                store.visualizers.get(targetUserId).stop();
-                store.visualizers.delete(targetUserId);
-            }
-            store.pcs.delete(targetUserId);
+            store.pcs.delete(pcId);
             updateCallUI();
         }
     };
 
     peerConnection.ontrack = (event) => {
         const stream = event.streams[0];
-        let audio = document.getElementById(`audio-${targetUserId}`);
+        let audio = document.getElementById(`audio-${pcId}`);
         if (!audio) {
             audio = document.createElement('audio');
-            audio.id = `audio-${targetUserId}`;
+            audio.id = `audio-${pcId}`;
             audio.autoplay = true;
             document.body.appendChild(audio);
         }
@@ -249,17 +262,18 @@ export async function createPeerConnection(targetUserId, initiator) {
             const sdp = mangleSdp(offer.sdp);
             const mangledOffer = { type: offer.type, sdp };
             await peerConnection.setLocalDescription(mangledOffer);
-            sendSignal(targetUserId, { sdp: mangledOffer });
+            sendSignal(targetUserId, targetSessionId, { sdp: mangledOffer });
         } catch (e) { console.error('Offer error', e); }
     }
 
     return peerConnection;
 }
 
-export async function handleSignal(userId, data) {
-    let peerConnection = store.pcs.get(userId);
+export async function handleSignal(userId, sessionId, data) {
+    const pcId = `${userId}:${sessionId}`;
+    let peerConnection = store.pcs.get(pcId);
     if (!peerConnection) {
-        peerConnection = await createPeerConnection(userId, false);
+        peerConnection = await createPeerConnection(userId, sessionId, false);
     }
     try {
         if (data.sdp) {
@@ -269,7 +283,7 @@ export async function handleSignal(userId, data) {
                 const sdp = mangleSdp(answer.sdp);
                 const mangledAnswer = { type: answer.type, sdp };
                 await peerConnection.setLocalDescription(mangledAnswer);
-                sendSignal(userId, { sdp: mangledAnswer });
+                sendSignal(userId, sessionId, { sdp: mangledAnswer });
             }
         } else if (data.candidate) {
             await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
@@ -303,10 +317,11 @@ export async function startCall() {
     store.ws.send(JSON.stringify({ type: 'join_call', channel_id: store.callChannelId }));
 
     const existingUsers = store.voiceUsers.get(store.callChannelId) || new Set();
-    existingUsers.forEach(uid => {
+    existingUsers.forEach(cid => {
+        const [uid, sid] = cid.split(':');
         if (uid !== store.user.id) {
             const shouldInitiate = store.user.id > uid;
-            createPeerConnection(uid, shouldInitiate);
+            createPeerConnection(uid, sid, shouldInitiate);
         }
     });
 }
@@ -320,22 +335,11 @@ export function leaveCall() {
         store.localStream = null;
     }
 
-    store.pcs.forEach((pc) => {
+    store.pcs.forEach((pc, pcid) => {
         pc.close();
-    });
-    // Remove all audio elements and visualizers
-    store.pcs.forEach((_, uid) => {
-        const audio = document.getElementById(`audio-${uid}`);
+        const audio = document.getElementById(`audio-${pcid}`);
         if (audio) audio.remove();
-        if (store.visualizers.has(uid)) {
-            store.visualizers.get(uid).stop();
-            store.visualizers.delete(uid);
-        }
     });
-    if (store.visualizers.has(store.user.id)) {
-        store.visualizers.get(store.user.id).stop();
-        store.visualizers.delete(store.user.id);
-    }
     store.pcs.clear();
 
     if (store.ws && store.ws.readyState === 1) {

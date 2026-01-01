@@ -14,6 +14,7 @@ export const store = {
     members: new Map(), // channelId -> array of user_ids
     presenceCache: new Map(), // userId -> status
     typingTimers: new Map(), // userId -> timeout
+    sessionId: null,
     typingUsers: new Set(), // currently typing in current channel
     theme: localStorage.getItem('stuffchat.theme') || 'mysterious',
     // Audio Preferences

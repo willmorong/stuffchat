@@ -38,19 +38,13 @@ export function connectWs(reconnect = false) {
                     store.localStream.getTracks().forEach(t => t.stop());
                     store.localStream = null;
                 }
-                store.pcs.forEach((pc, uid) => {
+                store.pcs.forEach((pc, pcid) => {
                     pc.close();
-                    const audio = document.getElementById(`audio-${uid}`);
+                    const audio = document.getElementById(`audio-${pcid}`);
                     if (audio) audio.remove();
-                    if (store.visualizers.has(uid)) {
-                        store.visualizers.get(uid).stop();
-                        store.visualizers.delete(uid);
-                    }
                 });
-                if (store.visualizers.has(store.user.id)) {
-                    store.visualizers.get(store.user.id).stop();
-                    store.visualizers.delete(store.user.id);
-                }
+                store.visualizers.forEach(v => v.stop());
+                store.visualizers.clear();
                 store.pcs.clear();
                 store.callChannelId = null;
                 updateCallUI();
@@ -127,40 +121,64 @@ export function handleWsMessage(ev) {
             break;
         }
         case 'pong': break;
+        case 'connection_metadata': {
+            store.sessionId = ev.session_id;
+            console.log('Session ID:', store.sessionId);
+            break;
+        }
         case 'room_state': {
             const chanId = ev.channel_id || store.currentChannelId;
-            store.voiceUsers.set(chanId, new Set(ev.voice_users || []));
+            // Room state now contains pairs of [user_id, session_id]
+            const users = new Set();
+            (ev.voice_users || []).forEach(([uid, sid]) => {
+                users.add(`${uid}:${sid}`);
+            });
+            store.voiceUsers.set(chanId, users);
             updateCallUI();
             break;
         }
         case 'voice_joined': {
             if (!store.voiceUsers.has(ev.channel_id)) store.voiceUsers.set(ev.channel_id, new Set());
-            store.voiceUsers.get(ev.channel_id).add(ev.user_id);
+            const compositeid = `${ev.user_id}:${ev.session_id}`;
+            store.voiceUsers.get(ev.channel_id).add(compositeid);
             updateCallUI();
             if (store.inCall && ev.channel_id === store.callChannelId && ev.user_id !== store.user.id) {
+                // If we are in call, and someone joins, we might need to connect to them.
+                // We use (user_id, session_id) for the peer connection.
                 const shouldInitiate = store.user.id > ev.user_id;
-                createPeerConnection(ev.user_id, shouldInitiate);
+                createPeerConnection(ev.user_id, ev.session_id, shouldInitiate);
             }
             playNotificationSound('join');
             break;
         }
         case 'voice_left': {
             if (store.voiceUsers.has(ev.channel_id)) {
-                store.voiceUsers.get(ev.channel_id).delete(ev.user_id);
+                // Remove all sessions for this user
+                const users = store.voiceUsers.get(ev.channel_id);
+                for (const cid of users) {
+                    if (cid.startsWith(ev.user_id + ':')) {
+                        users.delete(cid);
+                        const sid = cid.split(':')[1];
+                        if (ev.channel_id === store.callChannelId && store.pcs.has(`${ev.user_id}:${sid}`)) {
+                            store.pcs.get(`${ev.user_id}:${sid}`).close();
+                            store.pcs.delete(`${ev.user_id}:${sid}`);
+                        }
+                    }
+                }
             }
             updateCallUI();
-            if (ev.channel_id === store.callChannelId && store.pcs.has(ev.user_id)) {
-                store.pcs.get(ev.user_id).close();
-                store.pcs.delete(ev.user_id);
-            }
             playNotificationSound('leave');
             break;
         }
         case 'webrtc_signal': {
             if (ev.channel_id !== store.callChannelId) break;
             if (!store.inCall) break;
-            if (ev.from_user_id === store.user.id) break;
-            handleSignal(ev.from_user_id, ev.data);
+            if (ev.from_user_id === store.user.id && ev.from_session_id === store.sessionId) break;
+
+            // If it's targeted at us, or untargeted (legacy/broadcast)
+            if (!ev.to_session_id || ev.to_session_id === store.sessionId) {
+                handleSignal(ev.from_user_id, ev.from_session_id, ev.data);
+            }
             break;
         }
         default: break;

@@ -34,18 +34,32 @@ pub async fn ws_route(
     .bind(&user_id).bind(Utc::now()).bind(Utc::now())
     .execute(&db.0).await;
 
+    let session_id = uuid::Uuid::new_v4().to_string();
     let session = WsSession {
         user_id,
+        session_id: session_id.clone(),
         server: srv.get_ref().clone(),
         joined: None,
         voice_channel: None,
         db: db.get_ref().clone(),
     };
-    ws::start(session, &req, stream)
+    let (addr, resp) = ws::start_with_addr(session, &req, stream)?;
+
+    // Send session_id to client
+    addr.do_send(ServerMsg {
+        payload: serde_json::json!({
+            "type": "connection_metadata",
+            "session_id": session_id
+        })
+        .to_string(),
+    });
+
+    Ok(resp)
 }
 
 pub struct WsSession {
     pub user_id: String,
+    pub session_id: String,
     pub server: Addr<ChatServer>,
     pub joined: Option<String>,
     pub voice_channel: Option<String>,
@@ -58,6 +72,7 @@ impl Actor for WsSession {
         log::info!("WsSession started: user_id={}", self.user_id);
         self.server.do_send(Connect {
             user_id: self.user_id.clone(),
+            session_id: self.session_id.clone(),
             addr: ctx.address(),
         });
     }
@@ -65,6 +80,7 @@ impl Actor for WsSession {
         log::info!("WsSession stopped: user_id={}", self.user_id);
         self.server.do_send(Disconnect {
             user_id: self.user_id.clone(),
+            session_id: self.session_id.clone(),
             addr: ctx.address(),
         });
         if let Some(ch) = self.joined.take() {
@@ -78,6 +94,7 @@ impl Actor for WsSession {
             self.server.do_send(super::server::LeaveVoice {
                 channel_id: voice_ch,
                 user_id: self.user_id.clone(),
+                session_id: self.session_id.clone(),
             });
         }
         // Set presence to offline on disconnect
@@ -109,7 +126,7 @@ pub struct ServerMsg {
 #[rtype(result = "()")]
 pub struct RoomState {
     pub channel_id: String,
-    pub voice_users: Vec<String>,
+    pub voice_users: Vec<(String, String)>,
 }
 
 impl Handler<ServerMsg> for WsSession {
@@ -152,6 +169,7 @@ enum ClientEvent {
     WebrtcSignal {
         channel_id: String,
         to_user_id: String,
+        to_session_id: Option<String>,
         data: serde_json::Value,
     },
     JoinCall {
@@ -191,7 +209,6 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                             channel_id,
                             content,
                         } => {
-                            // In real impl: validate membership, persist to DB, then broadcast.
                             let payload = serde_json::json!({
                                 "type": "chat_message",
                                 "channel_id": channel_id,
@@ -223,17 +240,21 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                         ClientEvent::WebrtcSignal {
                             channel_id,
                             to_user_id,
+                            to_session_id,
                             data,
                         } => {
                             let payload = serde_json::json!({
                                 "type": "webrtc_signal",
                                 "channel_id": channel_id,
                                 "from_user_id": self.user_id,
+                                "from_session_id": self.session_id,
+                                "to_session_id": to_session_id,
                                 "data": data
                             })
                             .to_string();
                             self.server.do_send(DirectSignal {
                                 to_user_id,
+                                to_session_id,
                                 payload,
                             });
                         }
@@ -242,26 +263,30 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                         }
                         ClientEvent::JoinCall { channel_id } => {
                             log::info!(
-                                "WsSession handling JoinCall: user_id={}, channel_id={}",
+                                "WsSession handling JoinCall: user_id={}, session_id={}, channel_id={}",
                                 self.user_id,
+                                self.session_id,
                                 channel_id
                             );
                             self.voice_channel = Some(channel_id.clone());
                             self.server.do_send(super::server::JoinVoice {
                                 channel_id,
                                 user_id: self.user_id.clone(),
+                                session_id: self.session_id.clone(),
                             });
                         }
                         ClientEvent::LeaveCall { channel_id } => {
                             log::info!(
-                                "WsSession handling LeaveCall: user_id={}, channel_id={}",
+                                "WsSession handling LeaveCall: user_id={}, session_id={}, channel_id={}",
                                 self.user_id,
+                                self.session_id,
                                 channel_id
                             );
                             self.voice_channel = None;
                             self.server.do_send(super::server::LeaveVoice {
                                 channel_id,
                                 user_id: self.user_id.clone(),
+                                session_id: self.session_id.clone(),
                             });
                         }
                     }

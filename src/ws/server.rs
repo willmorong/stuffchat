@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet};
 
 pub struct ChatServer {
     rooms: HashMap<String, HashSet<actix::Addr<super::session::WsSession>>>,
-    voice_participants: HashMap<String, HashSet<String>>, // channel_id -> set of user_ids
-    user_sessions: HashMap<String, HashSet<actix::Addr<super::session::WsSession>>>,
+    voice_participants: HashMap<String, HashSet<(String, String)>>, // channel_id -> set of (user_id, session_id)
+    user_sessions: HashMap<String, HashMap<String, actix::Addr<super::session::WsSession>>>, // user_id -> { session_id -> addr }
 }
 
 impl ChatServer {
@@ -48,6 +48,7 @@ pub struct Broadcast {
 pub struct JoinVoice {
     pub channel_id: String,
     pub user_id: String,
+    pub session_id: String,
 }
 
 #[derive(Message)]
@@ -55,12 +56,14 @@ pub struct JoinVoice {
 pub struct LeaveVoice {
     pub channel_id: String,
     pub user_id: String,
+    pub session_id: String,
 }
 
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct Connect {
     pub user_id: String,
+    pub session_id: String,
     pub addr: actix::Addr<super::session::WsSession>,
 }
 
@@ -68,6 +71,7 @@ pub struct Connect {
 #[rtype(result = "()")]
 pub struct Disconnect {
     pub user_id: String,
+    pub session_id: String,
     pub addr: actix::Addr<super::session::WsSession>,
 }
 
@@ -75,6 +79,7 @@ pub struct Disconnect {
 #[rtype(result = "()")]
 pub struct DirectSignal {
     pub to_user_id: String,
+    pub to_session_id: Option<String>,
     pub payload: String,
 }
 
@@ -88,7 +93,11 @@ impl Handler<Join> for ChatServer {
 
         // Send current voice participants to the joining user
         if let Some(voice_users) = self.voice_participants.get(&msg.channel_id) {
-            let users_vec: Vec<String> = voice_users.iter().cloned().collect();
+            // For room state, we still just send user IDs to avoid leaking session IDs unnecessarily
+            // The frontend only needs to know who is in the room.
+            // However, for signaling, it WILL need session IDs of others.
+            // Let's include session IDs in room state too.
+            let users_vec: Vec<(String, String)> = voice_users.iter().cloned().collect();
             msg.addr.do_send(super::session::RoomState {
                 channel_id: msg.channel_id,
                 voice_users: users_vec,
@@ -104,20 +113,33 @@ impl Handler<Leave> for ChatServer {
         }
         // If user was in voice, remove them
         if let Some(voice_users) = self.voice_participants.get_mut(&msg.channel_id) {
-            if voice_users.remove(&msg.user_id) {
-                // Broadcast voice_left
-                let payload = serde_json::json!({
-                    "type": "voice_left",
-                    "channel_id": msg.channel_id,
-                    "user_id": msg.user_id
-                })
-                .to_string();
-                // We can reuse the Broadcast handler logic or call it directly?
-                // Calling do_send to self is safer to avoid borrow checker issues if we extracted logic
-                ctx.notify(Broadcast {
-                    channel_id: msg.channel_id,
-                    payload,
-                });
+            // Find session_id for this user and addr
+            let maybe_session_id = self.user_sessions.get(&msg.user_id).and_then(|sessions| {
+                sessions
+                    .iter()
+                    .find(|(_, a)| *a == &msg.addr)
+                    .map(|(s, _)| s.clone())
+            });
+
+            if let Some(sid) = maybe_session_id {
+                if voice_users.remove(&(msg.user_id.clone(), sid)) {
+                    // Check if any other session of this user is still in the voice call
+                    let user_still_in_call = voice_users.iter().any(|(uid, _)| uid == &msg.user_id);
+
+                    if !user_still_in_call {
+                        // Broadcast voice_left only if no more sessions of this user are in the call
+                        let payload = serde_json::json!({
+                            "type": "voice_left",
+                            "channel_id": msg.channel_id,
+                            "user_id": msg.user_id
+                        })
+                        .to_string();
+                        ctx.notify(Broadcast {
+                            channel_id: msg.channel_id,
+                            payload,
+                        });
+                    }
+                }
             }
         }
     }
@@ -147,11 +169,12 @@ impl Handler<JoinVoice> for ChatServer {
             .voice_participants
             .entry(msg.channel_id.clone())
             .or_default();
-        if voice_users.insert(msg.user_id.clone()) {
+        if voice_users.insert((msg.user_id.clone(), msg.session_id.clone())) {
             let payload = serde_json::json!({
                 "type": "voice_joined",
                 "channel_id": msg.channel_id,
-                "user_id": msg.user_id
+                "user_id": msg.user_id,
+                "session_id": msg.session_id
             })
             .to_string();
             ctx.notify(Broadcast {
@@ -171,17 +194,22 @@ impl Handler<LeaveVoice> for ChatServer {
             msg.channel_id
         );
         if let Some(voice_users) = self.voice_participants.get_mut(&msg.channel_id) {
-            if voice_users.remove(&msg.user_id) {
-                let payload = serde_json::json!({
-                    "type": "voice_left",
-                    "channel_id": msg.channel_id,
-                    "user_id": msg.user_id
-                })
-                .to_string();
-                ctx.notify(Broadcast {
-                    channel_id: msg.channel_id,
-                    payload,
-                });
+            if voice_users.remove(&(msg.user_id.clone(), msg.session_id)) {
+                // Check if any other session of this user is still in the voice call
+                let user_still_in_call = voice_users.iter().any(|(uid, _)| uid == &msg.user_id);
+
+                if !user_still_in_call {
+                    let payload = serde_json::json!({
+                        "type": "voice_left",
+                        "channel_id": msg.channel_id,
+                        "user_id": msg.user_id
+                    })
+                    .to_string();
+                    ctx.notify(Broadcast {
+                        channel_id: msg.channel_id,
+                        payload,
+                    });
+                }
             }
         }
     }
@@ -193,7 +221,7 @@ impl Handler<Connect> for ChatServer {
         self.user_sessions
             .entry(msg.user_id)
             .or_default()
-            .insert(msg.addr);
+            .insert(msg.session_id, msg.addr);
     }
 }
 
@@ -201,7 +229,7 @@ impl Handler<Disconnect> for ChatServer {
     type Result = ();
     fn handle(&mut self, msg: Disconnect, _: &mut Context<Self>) {
         if let Some(sessions) = self.user_sessions.get_mut(&msg.user_id) {
-            sessions.remove(&msg.addr);
+            sessions.remove(&msg.session_id);
             if sessions.is_empty() {
                 self.user_sessions.remove(&msg.user_id);
             }
@@ -213,10 +241,18 @@ impl Handler<DirectSignal> for ChatServer {
     type Result = ();
     fn handle(&mut self, msg: DirectSignal, _: &mut Context<Self>) {
         if let Some(sessions) = self.user_sessions.get(&msg.to_user_id) {
-            for s in sessions {
-                s.do_send(super::session::ServerMsg {
-                    payload: msg.payload.clone(),
-                });
+            if let Some(sid) = msg.to_session_id {
+                if let Some(s) = sessions.get(&sid) {
+                    s.do_send(super::session::ServerMsg {
+                        payload: msg.payload,
+                    });
+                }
+            } else {
+                for s in sessions.values() {
+                    s.do_send(super::session::ServerMsg {
+                        payload: msg.payload.clone(),
+                    });
+                }
             }
         }
     }
