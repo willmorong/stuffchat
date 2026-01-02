@@ -2,11 +2,22 @@ import { store } from './store.js';
 import { $ } from './utils.js';
 import { playNotificationSound, buildFileUrl, el } from './utils.js';
 
+let sharedAudioCtx = null;
+function getAudioCtx() {
+    if (!sharedAudioCtx) {
+        sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (sharedAudioCtx.state === 'suspended') {
+        sharedAudioCtx.resume();
+    }
+    return sharedAudioCtx;
+}
+
 class VolumeMonitor {
     constructor(stream, element) {
         this.stream = stream;
         this.element = element;
-        this.audioCtx = new (window.AudioContext)();
+        this.audioCtx = getAudioCtx();
         this.analyser = this.audioCtx.createAnalyser();
         this.source = this.audioCtx.createMediaStreamSource(stream);
         this.source.connect(this.analyser);
@@ -28,16 +39,19 @@ class VolumeMonitor {
         const average = sum / this.dataArray.length;
 
         // Map average volume (0-255) to border size (0-5px)
-        // We probably want to be more sensitive at lower volumes
         const borderSize = Math.min(5, (average / 30) * 5);
         this.element.style.boxShadow = `0 0 0 ${borderSize}px #4dd4ac`;
     }
 
     stop() {
         this.running = false;
-        if (this.audioCtx.state !== 'closed') {
-            this.audioCtx.close();
+        if (this.source) {
+            this.source.disconnect();
         }
+        if (this.analyser) {
+            this.analyser.disconnect();
+        }
+        this.element.style.boxShadow = 'none';
     }
 }
 
@@ -101,23 +115,22 @@ export function updateCallUI() {
 
                 row.appendChild(info);
                 participantsDiv.appendChild(row);
+            }
 
-                // Initialize volume monitor if stream is available
-                if (uid === store.user.id && store.localStream) {
-                    if (store.volumeMonitors.has(uid)) store.volumeMonitors.get(uid).stop();
+            // Always check if we need to initialize or update the volume monitor
+            const avatar = row.querySelector('.avatar');
+            if (uid === store.user.id && store.localStream) {
+                if (!store.volumeMonitors.has(uid)) {
                     store.volumeMonitors.set(uid, new VolumeMonitor(store.localStream, avatar));
-                } else {
-                    // Check if we have any PC for this user (any session)
-                    let foundStream = false;
-                    for (const [pcid, pc] of store.pcs) {
-                        if (pcid.startsWith(uid + ':')) {
-                            const audio = document.getElementById(`audio-${pcid}`);
-                            if (audio && audio.srcObject) {
-                                if (store.volumeMonitors.has(uid)) store.volumeMonitors.get(uid).stop();
-                                store.volumeMonitors.set(uid, new VolumeMonitor(audio.srcObject, avatar));
-                                foundStream = true;
-                                break;
-                            }
+                }
+            } else {
+                // Check if we have any PC for this user (any session)
+                for (const [pcid, pc] of store.pcs) {
+                    if (pcid.startsWith(uid + ':')) {
+                        const audio = document.getElementById(`audio-${pcid}`);
+                        if (audio && audio.srcObject && !store.volumeMonitors.has(uid)) {
+                            store.volumeMonitors.set(uid, new VolumeMonitor(audio.srcObject, avatar));
+                            break;
                         }
                     }
                 }
