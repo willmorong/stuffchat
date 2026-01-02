@@ -2,53 +2,35 @@ import { store } from './store.js';
 import { $ } from './utils.js';
 import { playNotificationSound, buildFileUrl, el } from './utils.js';
 
-class Visualizer {
-    constructor(stream, canvas) {
+class VolumeMonitor {
+    constructor(stream, element) {
         this.stream = stream;
-        this.canvas = canvas;
-        this.ctx = canvas.getContext('2d');
+        this.element = element;
         this.audioCtx = new (window.AudioContext)();
         this.analyser = this.audioCtx.createAnalyser();
         this.source = this.audioCtx.createMediaStreamSource(stream);
         this.source.connect(this.analyser);
         this.analyser.fftSize = 256;
-        this.bufferLength = this.analyser.frequencyBinCount;
-        this.dataArray = new Uint8Array(this.bufferLength);
+        this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
         this.running = true;
-        this.draw();
+        this.update();
     }
 
-    draw() {
+    update() {
         if (!this.running) return;
-        requestAnimationFrame(() => this.draw());
+        requestAnimationFrame(() => this.update());
 
-        const { width, height } = this.canvas;
-        this.analyser.getByteTimeDomainData(this.dataArray);
-
-        this.ctx.clearRect(0, 0, width, height);
-
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeStyle = '#4dd4ac';
-        this.ctx.beginPath();
-
-        const sliceWidth = width * 1.0 / this.bufferLength;
-        let x = 0;
-
-        for (let i = 0; i < this.bufferLength; i++) {
-            const v = this.dataArray[i] / 128.0;
-            const y = v * height / 2;
-
-            if (i === 0) {
-                this.ctx.moveTo(x, y);
-            } else {
-                this.ctx.lineTo(x, y);
-            }
-
-            x += sliceWidth;
+        this.analyser.getByteFrequencyData(this.dataArray);
+        let sum = 0;
+        for (let i = 0; i < this.dataArray.length; i++) {
+            sum += this.dataArray[i];
         }
+        const average = sum / this.dataArray.length;
 
-        this.ctx.lineTo(width, height / 2);
-        this.ctx.stroke();
+        // Map average volume (0-255) to border size (0-5px)
+        // We probably want to be more sensitive at lower volumes
+        const borderSize = Math.min(5, (average / 30) * 5);
+        this.element.style.boxShadow = `0 0 0 ${borderSize}px #4dd4ac`;
     }
 
     stop() {
@@ -93,9 +75,9 @@ export function updateCallUI() {
                 // Check if any session for this user is still in the call
                 const userStillIn = Array.from(callUsersComposite).some(cid => cid.startsWith(uid + ':'));
                 if (!userStillIn) {
-                    if (store.visualizers.has(uid)) {
-                        store.visualizers.get(uid).stop();
-                        store.visualizers.delete(uid);
+                    if (store.volumeMonitors.has(uid)) {
+                        store.volumeMonitors.get(uid).stop();
+                        store.volumeMonitors.delete(uid);
                     }
                     row.remove();
                 }
@@ -117,18 +99,13 @@ export function updateCallUI() {
                 info.appendChild(avatar);
                 info.appendChild(el('div', { class: 'username' }, u?.username || uid));
 
-                const waveformContainer = el('div', { class: 'call-waveform-container' });
-                const canvas = el('canvas', { class: 'call-waveform-canvas', width: 120, height: 44 });
-                waveformContainer.appendChild(canvas);
-
                 row.appendChild(info);
-                row.appendChild(waveformContainer);
                 participantsDiv.appendChild(row);
 
-                // Initialize visualizer if stream is available
+                // Initialize volume monitor if stream is available
                 if (uid === store.user.id && store.localStream) {
-                    if (store.visualizers.has(uid)) store.visualizers.get(uid).stop();
-                    store.visualizers.set(uid, new Visualizer(store.localStream, canvas));
+                    if (store.volumeMonitors.has(uid)) store.volumeMonitors.get(uid).stop();
+                    store.volumeMonitors.set(uid, new VolumeMonitor(store.localStream, avatar));
                 } else {
                     // Check if we have any PC for this user (any session)
                     let foundStream = false;
@@ -136,29 +113,21 @@ export function updateCallUI() {
                         if (pcid.startsWith(uid + ':')) {
                             const audio = document.getElementById(`audio-${pcid}`);
                             if (audio && audio.srcObject) {
-                                if (store.visualizers.has(uid)) store.visualizers.get(uid).stop();
-                                store.visualizers.set(uid, new Visualizer(audio.srcObject, canvas));
+                                if (store.volumeMonitors.has(uid)) store.volumeMonitors.get(uid).stop();
+                                store.volumeMonitors.set(uid, new VolumeMonitor(audio.srcObject, avatar));
                                 foundStream = true;
                                 break;
                             }
                         }
                     }
                 }
-            } else {
-                // Adjust canvas size if window resized? Or just ensure it matches its container
-                const canvas = row.querySelector('.call-waveform-canvas');
-                const container = row.querySelector('.call-waveform-container');
-                if (canvas.width !== container.clientWidth || canvas.height !== container.clientHeight) {
-                    canvas.width = container.clientWidth;
-                    canvas.height = container.clientHeight;
-                }
             }
         });
     } else {
         callUI.style.display = 'none';
-        // Cleanup visualizers if not in call
-        store.visualizers.forEach(v => v.stop());
-        store.visualizers.clear();
+        // Cleanup volume monitors if not in call
+        store.volumeMonitors.forEach(v => v.stop());
+        store.volumeMonitors.clear();
 
         if (isVoice) {
             btnStart.style.display = 'block';
@@ -249,7 +218,7 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
             document.body.appendChild(audio);
         }
         audio.srcObject = stream;
-        updateCallUI(); // Trigger UI update to attach visualizer to the new stream
+        updateCallUI(); // Trigger UI update to attach volume monitor to the new stream
     };
 
     if (store.localStream) {

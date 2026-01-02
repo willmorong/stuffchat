@@ -25,7 +25,7 @@ export const store = {
     localStream: null,
     pcs: new Map(), // userId -> RTCPeerConnection
     voiceUsers: new Map(), // channelId -> Set of userIds
-    visualizers: new Map(), // userId -> Visualizer instance
+    volumeMonitors: new Map(), // userId -> VolumeMonitor instance
     callChannelId: null,
     inCall: false,
 };

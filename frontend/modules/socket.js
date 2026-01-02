@@ -43,8 +43,8 @@ export function connectWs(reconnect = false) {
                     const audio = document.getElementById(`audio-${pcid}`);
                     if (audio) audio.remove();
                 });
-                store.visualizers.forEach(v => v.stop());
-                store.visualizers.clear();
+                store.volumeMonitors.forEach(v => v.stop());
+                store.volumeMonitors.clear();
                 store.pcs.clear();
                 store.callChannelId = null;
                 updateCallUI();

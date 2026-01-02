@@ -88,6 +88,7 @@ body {
     overflow: hidden;
     border: 1px solid var(--border);
     flex-shrink: 0;
+    transition: box-shadow 0.1s ease-out;
 }
 
 .avatar img {
