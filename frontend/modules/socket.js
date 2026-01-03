@@ -3,14 +3,20 @@ import { toWsUrl, $, truncateId, playNotificationSound } from './utils.js';
 import { fetchUser } from './users.js';
 import { renderMessages, renderMessageItem, isScrolledToBottom, scrollToBottom } from './messages.js';
 import { updateCallUI, createPeerConnection, handleSignal } from './voice.js';
+import { renderChannelList, markChannelRead } from './channels.js';
 
 export function connectWs(reconnect = false) {
     const url = toWsUrl(store.baseUrl);
     if (!url || !store.accessToken) return;
     try {
         if (store.ws) {
-            console.log('WebSocket already open');
-            return;
+            if (store.ws.readyState === WebSocket.OPEN || store.ws.readyState === WebSocket.CONNECTING) {
+                // Console log disabled to reduce noise
+                // console.log('WebSocket already open or connecting');
+                return;
+            }
+            // If it is closing or closed, we can overwrite it, but maybe we should close it explicitly first just in case?
+            // Usually if it's closed it's fine.
         }
         const ws = new WebSocket(url + '?token=' + encodeURIComponent(store.accessToken));
         store.ws = ws;
@@ -68,10 +74,33 @@ export function handleWsMessage(ev) {
                 arr.push(ev);
                 store.messages.set(ev.channel_id, arr);
             }
+
+            // Update channel last_message_at
+            const chItem = store.channels.find(c => c.id === ev.channel_id);
+            if (chItem) chItem.last_message_at = ev.created_at;
+
             if (ev.channel_id === store.currentChannelId) {
                 const atBottom = isScrolledToBottom();
                 $('#messages').appendChild(renderMessageItem(ev));
                 if (atBottom) scrollToBottom();
+
+                // Mark read immediately if in channel
+                if (!document.hidden) {
+                    markChannelRead(ev.channel_id, ev);
+                }
+            } else {
+                renderChannelList();
+                if (Notification.permission === 'granted' && chItem) {
+                    // Check if not focused? No, checks if channel is different.
+                    // Don't notify if we sent it?
+                    if (ev.user_id !== store.user.id) {
+                        const n = new Notification(`#${chItem.name}`, {
+                            body: `${ev.user_id === store.user.id ? 'You' : (store.users.get(ev.user_id)?.username || 'Someone')}: ${ev.content || 'Sent a file'}`,
+                            icon: '/img/favicon.png'
+                        });
+                        n.onclick = () => { window.focus(); };
+                    }
+                }
             }
             break;
         }

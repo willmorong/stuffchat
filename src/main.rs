@@ -85,8 +85,14 @@ async fn main() -> std::io::Result<()> {
                         web::scope("/channels")
                             .route("", web::get().to(channels_routes::list_channels))
                             .route("", web::post().to(channels_routes::create_channel))
+                            .route("/unread", web::get().to(channels_routes::get_unread))
                             .route("/{id}", web::patch().to(channels_routes::edit_channel))
                             .route("/{id}", web::delete().to(channels_routes::delete_channel))
+                            .route("/{id}/read", web::post().to(channels_routes::mark_read))
+                            .route(
+                                "/{id}/notified",
+                                web::post().to(channels_routes::mark_notified),
+                            )
                             .route(
                                 "/{id}/ownership",
                                 web::get().to(channels_routes::check_ownership),

@@ -1,5 +1,6 @@
 import { store } from './store.js';
 import { apiFetch } from './api.js';
+import { connectWs } from './socket.js';
 import { $, el, absFileUrl, buildFileUrl, setIf, truncateId } from './utils.js';
 import { prefetchUsers } from './users.js';
 
@@ -208,6 +209,7 @@ export async function fetchMessagesPage(channelId, beforeId = null) {
 }
 
 export async function sendMessage() {
+    connectWs(); // Ensure we are connected
     const content = $('#msgInput').value.trim();
     const fileInput = $('#attachFile');
     let file_id = null;

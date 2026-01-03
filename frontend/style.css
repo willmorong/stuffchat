@@ -169,6 +169,11 @@ body {
     color: var(--text);
 }
 
+.channel.unread {
+    color: var(--text);
+    font-weight: 700;
+}
+
 .channel .settings-icon {
     margin-left: auto;
     display: none;

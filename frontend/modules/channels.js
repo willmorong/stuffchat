@@ -7,8 +7,14 @@ import { fetchPresenceForUsers } from './presence.js';
 import { prefetchUsers, fetchAllUsers } from './users.js';
 
 export async function loadChannels() {
-    const list = await apiFetch('/api/channels');
+    const [list, unread] = await Promise.all([
+        apiFetch('/api/channels'),
+        apiFetch('/api/channels/unread').catch(() => [])
+    ]);
     store.channels = list;
+    if (unread) {
+        unread.forEach(u => store.unread.set(u.channel_id, u));
+    }
     renderChannelList();
     if (list.length && !store.currentChannelId) {
         selectChannel(list[0].id);
@@ -20,7 +26,16 @@ export function renderChannelList() {
     wrap.innerHTML = '';
     store.channels.forEach(ch => {
         const isActive = ch.id === store.currentChannelId;
-        const li = el('div', { class: 'channel' + (isActive ? ' active' : ''), onclick: () => selectChannel(ch.id) }, [
+
+        let isUnread = false;
+        if (ch.last_message_at && !isActive) { // Don't show unread on active channel
+            const unreadState = store.unread.get(ch.id);
+            const lastMsgAt = new Date(ch.last_message_at).getTime();
+            const lastReadAt = (unreadState && unreadState.last_read_at) ? new Date(unreadState.last_read_at).getTime() : 0;
+            if (lastMsgAt > lastReadAt) isUnread = true;
+        }
+
+        const li = el('div', { class: 'channel' + (isActive ? ' active' : '') + (isUnread ? ' unread' : ''), onclick: () => selectChannel(ch.id) }, [
             el('i', { class: 'bi ' + (ch.is_voice ? 'bi-mic' : 'bi-hash') }),
             el('div', { style: 'flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;' }, ch.name),
             ch.is_owner ? el('div', {
@@ -68,6 +83,11 @@ export async function selectChannel(channelId) {
     }
 
     await fetchMessagesPage(channelId);
+
+    const msgs = store.messages.get(channelId);
+    if (msgs && msgs.length > 0) {
+        markChannelRead(channelId, msgs[msgs.length - 1]);
+    }
 
     enableComposer(true);
     $('#msgInput').focus();
@@ -228,4 +248,23 @@ export async function modifyMembersInModal(action) {
         });
         await loadEditChannelMembers(channelId);
     } catch (e) { alert('Failed to modify members: ' + e.message); }
+}
+
+export async function markChannelRead(channelId, message) {
+    if (!message || !message.id) return;
+    const u = store.unread.get(channelId) || { channel_id: channelId };
+    // Update local state
+    // We assume message.created_at is correct. 
+    // Ideally we use backend's stored time, but we can trust message.created_at
+    const ts = message.created_at || new Date().toISOString();
+    store.unread.set(channelId, { ...u, last_read_message_id: message.id, last_read_at: ts });
+
+    renderChannelList();
+
+    try {
+        await apiFetch(`/api/channels/${channelId}/read`, {
+            method: 'POST',
+            body: JSON.stringify({ message_id: message.id })
+        });
+    } catch (e) { console.error('Failed to mark read', e); }
 }

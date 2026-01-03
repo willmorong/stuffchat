@@ -43,7 +43,7 @@ pub async fn ws_route(
         voice_channel: None,
         db: db.get_ref().clone(),
     };
-    let (addr, resp) = ws::start_with_addr(session, &req, stream)?;
+    let (addr, resp) = ws::WsResponseBuilder::new(session, &req, stream).start_with_addr()?;
 
     // Send session_id to client
     addr.do_send(ServerMsg {
@@ -81,7 +81,6 @@ impl Actor for WsSession {
         self.server.do_send(Disconnect {
             user_id: self.user_id.clone(),
             session_id: self.session_id.clone(),
-            addr: ctx.address(),
         });
         if let Some(ch) = self.joined.take() {
             self.server.do_send(Leave {

@@ -72,7 +72,6 @@ pub struct Connect {
 pub struct Disconnect {
     pub user_id: String,
     pub session_id: String,
-    pub addr: actix::Addr<super::session::WsSession>,
 }
 
 #[derive(Message)]
@@ -81,6 +80,14 @@ pub struct DirectSignal {
     pub to_user_id: String,
     pub to_session_id: Option<String>,
     pub payload: String,
+}
+
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct NotifyUsers {
+    pub user_ids: Vec<String>,
+    pub payload: String,
+    pub skip_channel: Option<String>,
 }
 
 impl Handler<Join> for ChatServer {
@@ -250,6 +257,31 @@ impl Handler<DirectSignal> for ChatServer {
             } else {
                 for s in sessions.values() {
                     s.do_send(super::session::ServerMsg {
+                        payload: msg.payload.clone(),
+                    });
+                }
+            }
+        }
+    }
+}
+
+impl Handler<NotifyUsers> for ChatServer {
+    type Result = ();
+    fn handle(&mut self, msg: NotifyUsers, _: &mut Context<Self>) {
+        let skip_addrs: HashSet<actix::Addr<super::session::WsSession>> = match &msg.skip_channel {
+            Some(ch) => self.rooms.get(ch).cloned().unwrap_or_default(),
+            None => HashSet::new(),
+        };
+
+        for uid in msg.user_ids {
+            if let Some(sessions) = self.user_sessions.get(&uid) {
+                for addr in sessions.values() {
+                    // If skip_channel is set, check if this session is in that room
+                    // Note: session instance identity (Addr) check
+                    if msg.skip_channel.is_some() && skip_addrs.contains(addr) {
+                        continue;
+                    }
+                    addr.do_send(super::session::ServerMsg {
                         payload: msg.payload.clone(),
                     });
                 }

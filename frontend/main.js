@@ -175,6 +175,29 @@ function bindUI() {
     // WebRTC
     $('#btnStartCall').addEventListener('click', startCall);
     $('#btnLeaveCall').addEventListener('click', leaveCall);
+
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+            // Reconnect if needed
+            connectWs();
+
+            if (store.currentChannelId) {
+                const msgs = store.messages.get(store.currentChannelId);
+                if (msgs && msgs.length) {
+                    // Determine latest
+                    const last = msgs[msgs.length - 1]; // sorted ascending
+                    import('./modules/channels.js').then(m => m.markChannelRead(store.currentChannelId, last));
+                }
+            }
+        }
+    });
+
+    if ('Notification' in window && Notification.permission === 'default') {
+        // Request on interaction
+        document.body.addEventListener('click', () => {
+            if (Notification.permission === 'default') Notification.requestPermission();
+        }, { once: true });
+    }
 }
 
 init();

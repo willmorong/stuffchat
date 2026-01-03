@@ -11,11 +11,14 @@ struct ChannelResp {
     is_voice: bool,
     is_private: bool,
     is_owner: bool,
+    last_message_at: Option<chrono::DateTime<Utc>>,
 }
 
 pub async fn list_channels(db: web::Data<Db>, user: AuthUser) -> Result<HttpResponse, ApiError> {
     let rows = sqlx::query(
-        "SELECT c.id, c.name, c.is_voice, c.is_private, c.created_by FROM channels c
+        "SELECT c.id, c.name, c.is_voice, c.is_private, c.created_by,
+        (SELECT created_at FROM messages WHERE channel_id = c.id AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1) as last_message_at
+        FROM channels c
         INNER JOIN channel_members m ON m.channel_id = c.id
         WHERE m.user_id = ? AND c.deleted_at IS NULL",
     )
@@ -30,9 +33,100 @@ pub async fn list_channels(db: web::Data<Db>, user: AuthUser) -> Result<HttpResp
             is_voice: r.get::<i64, _>("is_voice") != 0,
             is_private: r.get::<i64, _>("is_private") != 0,
             is_owner: r.get::<String, _>("created_by") == user.user_id,
+            last_message_at: r.get("last_message_at"),
         })
         .collect();
     Ok(HttpResponse::Ok().json(list))
+}
+
+#[derive(Serialize)]
+struct UnreadState {
+    channel_id: String,
+    last_read_message_id: Option<String>,
+    last_read_at: Option<chrono::DateTime<Utc>>,
+}
+
+pub async fn get_unread(db: web::Data<Db>, user: AuthUser) -> Result<HttpResponse, ApiError> {
+    let rows = sqlx::query(
+        "SELECT channel_id, last_read_message_id, last_read_at FROM channel_unread WHERE user_id = ?"
+    )
+    .bind(&user.user_id)
+    .fetch_all(&db.0)
+    .await?;
+
+    let list: Vec<UnreadState> = rows
+        .into_iter()
+        .map(|r| UnreadState {
+            channel_id: r.get("channel_id"),
+            last_read_message_id: r.get("last_read_message_id"),
+            last_read_at: r.get("last_read_at"),
+        })
+        .collect();
+
+    Ok(HttpResponse::Ok().json(list))
+}
+
+#[derive(Deserialize)]
+pub struct MarkReadReq {
+    pub message_id: String,
+}
+
+pub async fn mark_read(
+    db: web::Data<Db>,
+    user: AuthUser,
+    path: web::Path<String>,
+    body: web::Json<MarkReadReq>,
+) -> Result<HttpResponse, ApiError> {
+    let channel_id = path.into_inner();
+    let now = Utc::now();
+
+    // Get message created_at
+    let row = sqlx::query("SELECT created_at FROM messages WHERE id = ?")
+        .bind(&body.message_id)
+        .fetch_optional(&db.0)
+        .await?;
+
+    let created_at: chrono::DateTime<Utc> = match row {
+        Some(r) => r.get("created_at"),
+        None => now, // Fallback if message not found? Should effectively be "now"
+    };
+
+    sqlx::query(
+        "INSERT INTO channel_unread (channel_id, user_id, last_read_message_id, last_read_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(channel_id, user_id) DO UPDATE SET last_read_message_id = ?, last_read_at = ?, updated_at = ?"
+    )
+    .bind(&channel_id).bind(&user.user_id).bind(&body.message_id).bind(created_at).bind(now)
+    .bind(&body.message_id).bind(created_at).bind(now)
+    .execute(&db.0).await?;
+
+    Ok(HttpResponse::Ok().finish())
+}
+
+#[derive(Deserialize)]
+pub struct MarkNotifiedReq {
+    pub message_id: String,
+}
+
+pub async fn mark_notified(
+    db: web::Data<Db>,
+    user: AuthUser,
+    path: web::Path<String>,
+    body: web::Json<MarkNotifiedReq>,
+) -> Result<HttpResponse, ApiError> {
+    let channel_id = path.into_inner();
+    let now = Utc::now();
+
+    sqlx::query(
+        "INSERT INTO channel_unread (channel_id, user_id, last_notified_message_id, updated_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(channel_id, user_id) DO UPDATE SET last_notified_message_id = ?, updated_at = ?"
+    )
+    .bind(&channel_id).bind(&user.user_id).bind(&body.message_id).bind(now)
+    .bind(&body.message_id).bind(now)
+    .execute(&db.0).await?;
+
+    Ok(HttpResponse::Ok().finish())
 }
 
 pub async fn check_ownership(

@@ -9,6 +9,7 @@ export const store = {
     allUsers: [], // for channel creation modal
     currentChannelId: null,
     messages: new Map(), // channelId -> array of messages (ascending by created_at)
+    unread: new Map(), // channelId -> { last_read_message_id, last_read_at, last_notified_message_id }
     oldestMessageId: new Map(), // channelId -> oldest id loaded (for pagination)
     users: new Map(), // userId -> { id, username, avatar_file_id, ... }
     members: new Map(), // channelId -> array of user_ids
