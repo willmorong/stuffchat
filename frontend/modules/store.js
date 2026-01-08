@@ -29,4 +29,5 @@ export const store = {
     volumeMonitors: new Map(), // userId -> VolumeMonitor instance
     callChannelId: null,
     inCall: false,
+    userVolumes: JSON.parse(localStorage.getItem('stuffchat.user_volumes') || '{}'), // userId -> volume (0.0 - 2.0)
 };

@@ -881,3 +881,61 @@ body[data-theme="wegmans"] {
     height: 100%;
     object-fit: cover;
 }
+
+/* Volume Slider */
+.volume-slider-container {
+    display: none;
+    align-items: center;
+    margin-left: 12px;
+    padding: 10px;
+    background: var(--glass-strong);
+    border-radius: var(--small-radius);
+    border: 1px solid var(--border);
+    opacity: 0;
+    transform: translateX(-10px);
+    transition: opacity 0.5s ease, transform 0.5s ease;
+    z-index: 10;
+}
+
+.volume-slider-container.visible {
+    display: flex;
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.volume-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100px;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+}
+
+.volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    background: var(--accent-2);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
+}
+
+.volume-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background: var(--accent-2);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
+}
+
+.volume-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-left: 8px;
+    min-width: 32px;
+}

@@ -114,6 +114,54 @@ export function updateCallUI() {
                 info.appendChild(el('div', { class: 'username' }, u?.username || uid));
 
                 row.appendChild(info);
+
+                if (uid !== store.user.id) {
+                    avatar.style.cursor = 'pointer';
+                    avatar.onclick = () => {
+                        const singleton = $('#voiceVolumeControl');
+                        if (!singleton) return;
+
+                        // If already open for this user, close it
+                        if (singleton.dataset.uid === uid && singleton.classList.contains('visible')) {
+                            singleton.classList.remove('visible');
+                            setTimeout(() => {
+                                if (!singleton.classList.contains('visible')) {
+                                    singleton.style.display = 'none';
+                                }
+                            }, 500);
+                            return;
+                        }
+
+                        // Otherwise, move and show it
+                        singleton.dataset.uid = uid;
+                        row.appendChild(singleton);
+
+                        const slider = singleton.querySelector('.volume-slider');
+                        const label = singleton.querySelector('.volume-label');
+                        const initialVol = store.userVolumes[uid] !== undefined ? store.userVolumes[uid] : 1.0;
+
+                        slider.value = initialVol;
+                        label.textContent = `${Math.round(initialVol * 100)}%`;
+
+                        slider.oninput = () => {
+                            const val = parseFloat(slider.value);
+                            label.textContent = `${Math.round(val * 100)}%`;
+                            store.userVolumes[uid] = val;
+                            localStorage.setItem('stuffchat.user_volumes', JSON.stringify(store.userVolumes));
+
+                            for (const [pcid, pc] of store.pcs) {
+                                if (pcid.startsWith(uid + ':')) {
+                                    const audio = document.getElementById(`audio-${pcid}`);
+                                    if (audio) audio.volume = val;
+                                }
+                            }
+                        };
+
+                        singleton.style.display = 'flex';
+                        setTimeout(() => singleton.classList.add('visible'), 10);
+                    };
+                }
+
                 participantsDiv.appendChild(row);
             }
 
@@ -231,6 +279,11 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
             document.body.appendChild(audio);
         }
         audio.srcObject = stream;
+        // Apply saved volume
+        const initialVol = store.userVolumes[targetUserId];
+        if (initialVol !== undefined) {
+            audio.volume = initialVol;
+        }
         updateCallUI(); // Trigger UI update to attach volume monitor to the new stream
     };
 
