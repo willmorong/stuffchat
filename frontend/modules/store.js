@@ -36,4 +36,6 @@ export const store = {
     localVideoStream: null,
     screenSharing: false,
     remoteVideoStreams: new Map(), // pcId -> MediaStream (video)
+    isMuted: false,
+    isDeafened: false,
 };

@@ -186,6 +186,9 @@ export function updateCallUI() {
                 }
             }
         });
+
+        updateMuteButton();
+        updateDeafenButton();
     } else {
         callUI.style.display = 'none';
         // Cleanup volume monitors if not in call
@@ -337,9 +340,13 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
             store.gainNodes.set(pcId, gainNode);
 
             // Apply saved volume
-            const initialVol = store.userVolumes[targetUserId];
-            if (initialVol !== undefined) {
-                gainNode.gain.value = initialVol;
+            if (store.isDeafened) {
+                gainNode.gain.value = 0;
+            } else {
+                const initialVol = store.userVolumes[targetUserId];
+                if (initialVol !== undefined) {
+                    gainNode.gain.value = initialVol;
+                }
             }
             updateCallUI(); // Trigger UI update to attach volume monitor to the new stream
         }
@@ -416,6 +423,61 @@ export async function handleSignal(userId, sessionId, data) {
     }
 }
 
+export function toggleMute() {
+    store.isMuted = !store.isMuted;
+    if (store.localStream) {
+        store.localStream.getAudioTracks().forEach(t => {
+            t.enabled = !store.isMuted;
+        });
+    }
+    updateMuteButton();
+}
+
+export function toggleDeafen() {
+    store.isDeafened = !store.isDeafened;
+
+    // Apply to all current gain nodes
+    store.gainNodes.forEach((gainNode, pcId) => {
+        if (store.isDeafened) {
+            gainNode.gain.value = 0;
+        } else {
+            // Restore saved volume or 1.0
+            const [uid] = pcId.split(':');
+            gainNode.gain.value = store.userVolumes[uid] !== undefined ? store.userVolumes[uid] : 1.0;
+        }
+    });
+
+    updateDeafenButton();
+}
+
+function updateMuteButton() {
+    const btn = $('#btnMute');
+    if (!btn) return;
+    if (store.isMuted) {
+        btn.classList.add('danger');
+        btn.innerHTML = '<i class="bi bi-mic-mute-fill"></i>';
+        btn.title = 'Unmute';
+    } else {
+        btn.classList.remove('danger');
+        btn.innerHTML = '<i class="bi bi-mic"></i>';
+        btn.title = 'Mute';
+    }
+}
+
+function updateDeafenButton() {
+    const btn = $('#btnDeafen');
+    if (!btn) return;
+    if (store.isDeafened) {
+        btn.classList.add('danger');
+        btn.innerHTML = '<i class="bi bi-volume-off-fill"></i>';
+        btn.title = 'Undeafen';
+    } else {
+        btn.classList.remove('danger');
+        btn.innerHTML = '<i class="bi bi-volume-up-fill"></i>';
+        btn.title = 'Deafen';
+    }
+}
+
 export async function startCall() {
     if (store.inCall) return;
     let stream;
@@ -435,6 +497,9 @@ export async function startCall() {
     }
 
     store.localStream = stream;
+    if (store.isMuted) {
+        stream.getAudioTracks().forEach(t => t.enabled = false);
+    }
     store.callChannelId = store.currentChannelId;
     store.inCall = true;
 
