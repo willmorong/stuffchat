@@ -263,6 +263,10 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
 
     peerConnection.onconnectionstatechange = () => {
         console.log(`Connection State [${pcId}]: ${peerConnection.connectionState}`);
+        if (peerConnection.connectionState === 'connected') {
+            // Refresh video grid when connection is fully established
+            updateVideoGrid();
+        }
         if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'closed') {
             const audio = document.getElementById(`audio-${pcId}`);
             if (audio) {
@@ -276,43 +280,64 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
                 store.audioSources.get(pcId).disconnect();
                 store.audioSources.delete(pcId);
             }
+            store.remoteVideoStreams.delete(pcId);
             store.pcs.delete(pcId);
             updateCallUI();
+            updateVideoGrid();
         }
     };
 
     peerConnection.ontrack = (event) => {
+        const track = event.track;
         const stream = event.streams[0];
-        let audio = document.getElementById(`audio-${pcId}`);
-        if (!audio) {
-            audio = document.createElement('audio');
-            audio.id = `audio-${pcId}`;
-            audio.autoplay = true;
-            document.body.appendChild(audio);
+
+        if (track.kind === 'video') {
+            // Handle video track
+            store.remoteVideoStreams.set(pcId, stream);
+            updateVideoGrid();
+            // Clean up when track ends
+            track.onended = () => {
+                store.remoteVideoStreams.delete(pcId);
+                updateVideoGrid();
+            };
+        } else if (track.kind === 'audio') {
+            // Handle audio track
+            let audio = document.getElementById(`audio-${pcId}`);
+            if (!audio) {
+                audio = document.createElement('audio');
+                audio.id = `audio-${pcId}`;
+                audio.autoplay = true;
+                document.body.appendChild(audio);
+            }
+            audio.srcObject = stream;
+            audio.muted = true; // Use Web Audio API for playback to support boosting
+
+            // Setup Web Audio API
+            const ctx = getAudioCtx();
+            const source = ctx.createMediaStreamSource(stream);
+            const gainNode = ctx.createGain();
+            source.connect(gainNode);
+            gainNode.connect(ctx.destination);
+
+            store.audioSources.set(pcId, source);
+            store.gainNodes.set(pcId, gainNode);
+
+            // Apply saved volume
+            const initialVol = store.userVolumes[targetUserId];
+            if (initialVol !== undefined) {
+                gainNode.gain.value = initialVol;
+            }
+            updateCallUI(); // Trigger UI update to attach volume monitor to the new stream
         }
-        audio.srcObject = stream;
-        audio.muted = true; // Use Web Audio API for playback to support boosting
-
-        // Setup Web Audio API
-        const ctx = getAudioCtx();
-        const source = ctx.createMediaStreamSource(stream);
-        const gainNode = ctx.createGain();
-        source.connect(gainNode);
-        gainNode.connect(ctx.destination);
-
-        store.audioSources.set(pcId, source);
-        store.gainNodes.set(pcId, gainNode);
-
-        // Apply saved volume
-        const initialVol = store.userVolumes[targetUserId];
-        if (initialVol !== undefined) {
-            gainNode.gain.value = initialVol;
-        }
-        updateCallUI(); // Trigger UI update to attach volume monitor to the new stream
     };
 
     if (store.localStream) {
         store.localStream.getTracks().forEach(track => peerConnection.addTrack(track, store.localStream));
+    }
+
+    // Add video track if screen sharing is active
+    if (store.localVideoStream) {
+        store.localVideoStream.getTracks().forEach(track => peerConnection.addTrack(track, store.localVideoStream));
     }
 
     if (initiator) {
@@ -324,6 +349,7 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
             sendSignal(targetUserId, targetSessionId, { sdp: mangledOffer });
         } catch (e) { console.error('Offer error', e); }
     }
+    updateVideoGrid();
 
     return peerConnection;
 }
@@ -389,6 +415,11 @@ export function leaveCall() {
     if (!store.inCall) return;
     store.inCall = false;
 
+    // Stop screen sharing if active
+    if (store.screenSharing) {
+        stopScreenShare();
+    }
+
     if (store.localStream) {
         store.localStream.getTracks().forEach(t => t.stop());
         store.localStream = null;
@@ -409,6 +440,7 @@ export function leaveCall() {
         }
     });
     store.pcs.clear();
+    store.remoteVideoStreams.clear();
 
     if (store.ws && store.ws.readyState === 1) {
         store.ws.send(JSON.stringify({ type: 'leave_call', channel_id: store.callChannelId }));
@@ -419,4 +451,151 @@ export function leaveCall() {
 
     store.callChannelId = null;
     updateCallUI();
+    updateVideoGrid();
+}
+
+// Screen sharing functions
+export async function startScreenShare() {
+    if (store.screenSharing) return;
+
+    let stream;
+    try {
+        stream = await navigator.mediaDevices.getDisplayMedia({
+            video: { cursor: 'always' },
+            audio: false
+        });
+    } catch (e) {
+        console.error('Failed to get screen share', e);
+        return;
+    }
+
+    store.localVideoStream = stream;
+    store.screenSharing = true;
+
+    // Add video track to all existing peer connections
+    const videoTrack = stream.getVideoTracks()[0];
+    store.pcs.forEach((pc, pcId) => {
+        pc.addTrack(videoTrack, stream);
+    });
+
+    // Handle stream ending (user clicks browser's stop sharing)
+    videoTrack.onended = () => {
+        stopScreenShare();
+    };
+
+    // Renegotiate with all peers
+    store.pcs.forEach(async (pc, pcId) => {
+        try {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            const [userId, sessionId] = pcId.split(':');
+            sendSignal(userId, sessionId, { sdp: pc.localDescription });
+        } catch (e) {
+            console.error('Renegotiation error', e);
+        }
+    });
+
+    updateScreenShareButton();
+    updateVideoGrid();
+}
+
+export function stopScreenShare() {
+    if (!store.screenSharing) return;
+
+    if (store.localVideoStream) {
+        store.localVideoStream.getTracks().forEach(t => t.stop());
+        store.localVideoStream = null;
+    }
+
+    store.screenSharing = false;
+
+    // Remove video senders from all peer connections
+    store.pcs.forEach((pc) => {
+        const senders = pc.getSenders();
+        senders.forEach(sender => {
+            if (sender.track && sender.track.kind === 'video') {
+                pc.removeTrack(sender);
+            }
+        });
+    });
+
+    updateScreenShareButton();
+    updateVideoGrid();
+}
+
+function updateScreenShareButton() {
+    const btn = $('#btnScreenShare');
+    if (!btn) return;
+
+    if (store.screenSharing) {
+        btn.classList.add('active');
+        btn.title = 'Stop Sharing';
+        btn.innerHTML = '<i class="bi bi-display-fill"></i>';
+    } else {
+        btn.classList.remove('active');
+        btn.title = 'Share Screen';
+        btn.innerHTML = '<i class="bi bi-display"></i>';
+    }
+}
+
+// Video grid functions
+export function updateVideoGrid() {
+    const grid = $('#videoGrid');
+    if (!grid) return;
+
+    // Clear existing tiles
+    grid.innerHTML = '';
+
+    // Add local video if screen sharing
+    if (store.localVideoStream && store.screenSharing) {
+        const tile = createVideoTile('local', store.localVideoStream, store.user?.username || 'You');
+        tile.classList.add('local');
+        grid.appendChild(tile);
+    }
+
+    // Add remote video streams
+    store.remoteVideoStreams.forEach((stream, pcId) => {
+        const [userId] = pcId.split(':');
+        const user = store.users.get(userId);
+        const username = user?.username || userId;
+        const tile = createVideoTile(pcId, stream, username);
+        grid.appendChild(tile);
+    });
+}
+
+function createVideoTile(id, stream, username) {
+    const tile = el('div', { class: 'video-tile', 'data-stream-id': id });
+    const video = el('video', { autoplay: true, playsinline: true, muted: id === 'local' });
+    video.srcObject = stream;
+    tile.appendChild(video);
+
+    const label = el('div', { class: 'video-label' }, username);
+    tile.appendChild(label);
+
+    tile.onclick = () => toggleVideoFullscreen(stream, username);
+
+    return tile;
+}
+
+export function toggleVideoFullscreen(stream, username) {
+    const overlay = $('#videoFullscreen');
+    if (!overlay) return;
+
+    if (overlay.classList.contains('hidden')) {
+        // Enter fullscreen
+        overlay.innerHTML = '';
+        const video = el('video', { autoplay: true, playsinline: true });
+        video.srcObject = stream;
+        overlay.appendChild(video);
+        overlay.classList.remove('hidden');
+
+        overlay.onclick = () => {
+            overlay.classList.add('hidden');
+            overlay.innerHTML = '';
+        };
+    } else {
+        // Exit fullscreen
+        overlay.classList.add('hidden');
+        overlay.innerHTML = '';
+    }
 }

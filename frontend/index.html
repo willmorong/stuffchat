@@ -125,13 +125,22 @@
                 <div class="call-content">
                     <div class="call-header">
                         <div class="call-status">Voice Connected</div>
-                        <button id="btnLeaveCall" class="button danger small">
-                            <i class="bi bi-telephone-x-fill"></i>
-                        </button>
+                        <div class="call-controls">
+                            <button id="btnScreenShare" class="iconbtn" title="Share Screen">
+                                <i class="bi bi-display"></i>
+                            </button>
+                            <button id="btnLeaveCall" class="iconbtn danger">
+                                <i class="bi bi-telephone-x-fill"></i>
+                            </button>
+                        </div>
                     </div>
                     <div class="call-participants" id="callParticipants"></div>
+                    <div id="videoGrid" class="video-grid"></div>
                 </div>
             </div>
+
+            <!-- Fullscreen Video Overlay -->
+            <div id="videoFullscreen" class="video-fullscreen hidden"></div>
 
             <!-- Singleton Volume Slider -->
             <div id="voiceVolumeControl" class="volume-slider-container">

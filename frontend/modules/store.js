@@ -32,4 +32,8 @@ export const store = {
     callChannelId: null,
     inCall: false,
     userVolumes: JSON.parse(localStorage.getItem('stuffchat.user_volumes') || '{}'), // userId -> volume (0.0 - 2.0)
+    // Video streaming
+    localVideoStream: null,
+    screenSharing: false,
+    remoteVideoStreams: new Map(), // pcId -> MediaStream (video)
 };

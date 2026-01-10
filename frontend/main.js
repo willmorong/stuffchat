@@ -14,7 +14,7 @@ import {
     sendMessage, enableComposer
 } from './modules/messages.js';
 import {
-    startCall, leaveCall
+    startCall, leaveCall, startScreenShare, stopScreenShare
 } from './modules/voice.js';
 import {
     bindSettingsEvents, applyTheme
@@ -175,6 +175,13 @@ function bindUI() {
     // WebRTC
     $('#btnStartCall').addEventListener('click', startCall);
     $('#btnLeaveCall').addEventListener('click', leaveCall);
+    $('#btnScreenShare').addEventListener('click', () => {
+        if (store.screenSharing) {
+            stopScreenShare();
+        } else {
+            startScreenShare();
+        }
+    });
 
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) {
