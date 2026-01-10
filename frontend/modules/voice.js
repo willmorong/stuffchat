@@ -261,6 +261,20 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
         if (event.candidate) sendSignal(targetUserId, targetSessionId, { candidate: event.candidate });
     };
 
+    peerConnection.onnegotiationneeded = async () => {
+        // Only initiate negotiation if we're in a stable state to avoid glare
+        if (peerConnection.signalingState !== 'stable') {
+            return;
+        }
+        try {
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            sendSignal(targetUserId, targetSessionId, { sdp: peerConnection.localDescription });
+        } catch (e) {
+            console.error('Negotiation needed error', e);
+        }
+    };
+
     peerConnection.onconnectionstatechange = () => {
         console.log(`Connection State [${pcId}]: ${peerConnection.connectionState}`);
         if (peerConnection.connectionState === 'connected') {
@@ -362,18 +376,44 @@ export async function handleSignal(userId, sessionId, data) {
     }
     try {
         if (data.sdp) {
-            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
             if (data.sdp.type === 'offer') {
+                // Handle glare: if we're also trying to send an offer
+                if (peerConnection.signalingState !== 'stable') {
+                    // Polite peer (lower user ID) rolls back their offer
+                    const polite = store.user.id < userId;
+                    if (!polite) {
+                        // We're impolite - ignore their offer, ours takes priority
+                        return;
+                    }
+                    // We're polite - rollback and accept their offer
+                    await peerConnection.setLocalDescription({ type: 'rollback' });
+                }
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
                 const answer = await peerConnection.createAnswer();
                 const sdp = mangleSdp(answer.sdp);
                 const mangledAnswer = { type: answer.type, sdp };
                 await peerConnection.setLocalDescription(mangledAnswer);
                 sendSignal(userId, sessionId, { sdp: mangledAnswer });
+            } else if (data.sdp.type === 'answer') {
+                // Only accept answer if we have a pending offer
+                if (peerConnection.signalingState !== 'have-local-offer') {
+                    console.log(`Ignoring answer in state ${peerConnection.signalingState}`);
+                    return;
+                }
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
             }
         } else if (data.candidate) {
-            await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+            // Only add candidates if we have a remote description
+            if (peerConnection.remoteDescription) {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+            }
         }
-    } catch (e) { console.error('Signal error', e); }
+    } catch (e) {
+        // Ignore non-fatal errors like stale candidates
+        if (e.name !== 'InvalidStateError' && !e.message?.includes('Unknown ufrag')) {
+            console.error('Signal error', e);
+        }
+    }
 }
 
 export async function startCall() {
