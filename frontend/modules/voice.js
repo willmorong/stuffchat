@@ -151,8 +151,10 @@ export function updateCallUI() {
 
                             for (const [pcid, pc] of store.pcs) {
                                 if (pcid.startsWith(uid + ':')) {
-                                    const audio = document.getElementById(`audio-${pcid}`);
-                                    if (audio) audio.volume = val;
+                                    const gainNode = store.gainNodes.get(pcid);
+                                    if (gainNode) {
+                                        gainNode.gain.value = val;
+                                    }
                                 }
                             }
                         };
@@ -263,7 +265,17 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
         console.log(`Connection State [${pcId}]: ${peerConnection.connectionState}`);
         if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'closed') {
             const audio = document.getElementById(`audio-${pcId}`);
-            if (audio) audio.remove();
+            if (audio) {
+                audio.remove();
+            }
+            if (store.gainNodes.has(pcId)) {
+                store.gainNodes.get(pcId).disconnect();
+                store.gainNodes.delete(pcId);
+            }
+            if (store.audioSources.has(pcId)) {
+                store.audioSources.get(pcId).disconnect();
+                store.audioSources.delete(pcId);
+            }
             store.pcs.delete(pcId);
             updateCallUI();
         }
@@ -279,10 +291,22 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
             document.body.appendChild(audio);
         }
         audio.srcObject = stream;
+        audio.muted = true; // Use Web Audio API for playback to support boosting
+
+        // Setup Web Audio API
+        const ctx = getAudioCtx();
+        const source = ctx.createMediaStreamSource(stream);
+        const gainNode = ctx.createGain();
+        source.connect(gainNode);
+        gainNode.connect(ctx.destination);
+
+        store.audioSources.set(pcId, source);
+        store.gainNodes.set(pcId, gainNode);
+
         // Apply saved volume
         const initialVol = store.userVolumes[targetUserId];
         if (initialVol !== undefined) {
-            audio.volume = initialVol;
+            gainNode.gain.value = initialVol;
         }
         updateCallUI(); // Trigger UI update to attach volume monitor to the new stream
     };
@@ -374,6 +398,15 @@ export function leaveCall() {
         pc.close();
         const audio = document.getElementById(`audio-${pcid}`);
         if (audio) audio.remove();
+
+        if (store.gainNodes.has(pcid)) {
+            store.gainNodes.get(pcid).disconnect();
+            store.gainNodes.delete(pcid);
+        }
+        if (store.audioSources.has(pcid)) {
+            store.audioSources.get(pcid).disconnect();
+            store.audioSources.delete(pcid);
+        }
     });
     store.pcs.clear();
 

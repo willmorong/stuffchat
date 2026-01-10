@@ -27,6 +27,8 @@ export const store = {
     pcs: new Map(), // userId -> RTCPeerConnection
     voiceUsers: new Map(), // channelId -> Set of userIds
     volumeMonitors: new Map(), // userId -> VolumeMonitor instance
+    gainNodes: new Map(), // pcId -> GainNode
+    audioSources: new Map(), // pcId -> MediaStreamAudioSourceNode
     callChannelId: null,
     inCall: false,
     userVolumes: JSON.parse(localStorage.getItem('stuffchat.user_volumes') || '{}'), // userId -> volume (0.0 - 2.0)
