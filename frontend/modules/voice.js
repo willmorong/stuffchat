@@ -55,6 +55,27 @@ class VolumeMonitor {
     }
 }
 
+// Perfect Negotiation state per peer connection
+// Maps pcId -> { makingOffer, ignoreOffer, isSettingRemoteAnswerPending, polite, pendingCandidates }
+const negotiationState = new Map();
+
+function getNegotiationState(pcId) {
+    if (!negotiationState.has(pcId)) {
+        negotiationState.set(pcId, {
+            makingOffer: false,
+            ignoreOffer: false,
+            isSettingRemoteAnswerPending: false,
+            polite: false,
+            pendingCandidates: []
+        });
+    }
+    return negotiationState.get(pcId);
+}
+
+function cleanupNegotiationState(pcId) {
+    negotiationState.delete(pcId);
+}
+
 export function updateCallUI() {
     const ch = store.channels.find(c => c.id === store.currentChannelId);
     if (!ch) return;
@@ -260,21 +281,29 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
     });
     store.pcs.set(pcId, peerConnection);
 
+    // Initialize negotiation state for this connection
+    // Polite peer has lower user ID - they will yield during glare
+    const state = getNegotiationState(pcId);
+    state.polite = store.user.id < targetUserId;
+
     peerConnection.onicecandidate = (event) => {
-        if (event.candidate) sendSignal(targetUserId, targetSessionId, { candidate: event.candidate });
+        if (event.candidate) {
+            sendSignal(targetUserId, targetSessionId, { candidate: event.candidate });
+        }
     };
 
+    // Perfect Negotiation: onnegotiationneeded handler
     peerConnection.onnegotiationneeded = async () => {
-        // Only initiate negotiation if we're in a stable state to avoid glare
-        if (peerConnection.signalingState !== 'stable') {
-            return;
-        }
+        const state = getNegotiationState(pcId);
         try {
-            const offer = await peerConnection.createOffer();
-            await peerConnection.setLocalDescription(offer);
+            state.makingOffer = true;
+            // setLocalDescription with no arguments creates and sets offer automatically
+            await peerConnection.setLocalDescription();
             sendSignal(targetUserId, targetSessionId, { sdp: peerConnection.localDescription });
         } catch (e) {
-            console.error('Negotiation needed error', e);
+            console.error(`Negotiation error [${pcId}]:`, e);
+        } finally {
+            state.makingOffer = false;
         }
     };
 
@@ -285,22 +314,7 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
             updateVideoGrid();
         }
         if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'closed') {
-            const audio = document.getElementById(`audio-${pcId}`);
-            if (audio) {
-                audio.remove();
-            }
-            if (store.gainNodes.has(pcId)) {
-                store.gainNodes.get(pcId).disconnect();
-                store.gainNodes.delete(pcId);
-            }
-            if (store.audioSources.has(pcId)) {
-                store.audioSources.get(pcId).disconnect();
-                store.audioSources.delete(pcId);
-            }
-            store.remoteVideoStreams.delete(pcId);
-            store.pcs.delete(pcId);
-            updateCallUI();
-            updateVideoGrid();
+            cleanupPeerConnection(pcId);
         }
     };
 
@@ -352,6 +366,7 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
         }
     };
 
+    // Add local audio track
     if (store.localStream) {
         store.localStream.getTracks().forEach(track => peerConnection.addTrack(track, store.localStream));
     }
@@ -361,18 +376,37 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
         store.localVideoStream.getTracks().forEach(track => peerConnection.addTrack(track, store.localVideoStream));
     }
 
+    // Initial offer only if we are the initiator
+    // After this, onnegotiationneeded will handle all subsequent negotiations
     if (initiator) {
-        try {
-            const offer = await peerConnection.createOffer();
-            const sdp = mangleSdp(offer.sdp);
-            const mangledOffer = { type: offer.type, sdp };
-            await peerConnection.setLocalDescription(mangledOffer);
-            sendSignal(targetUserId, targetSessionId, { sdp: mangledOffer });
-        } catch (e) { console.error('Offer error', e); }
+        // Trigger onnegotiationneeded by adding transceiver if no tracks yet
+        // The onnegotiationneeded handler will create and send the offer
+        // Since we already added tracks above, onnegotiationneeded will fire automatically
     }
+
     updateVideoGrid();
 
     return peerConnection;
+}
+
+function cleanupPeerConnection(pcId) {
+    const audio = document.getElementById(`audio-${pcId}`);
+    if (audio) {
+        audio.remove();
+    }
+    if (store.gainNodes.has(pcId)) {
+        store.gainNodes.get(pcId).disconnect();
+        store.gainNodes.delete(pcId);
+    }
+    if (store.audioSources.has(pcId)) {
+        store.audioSources.get(pcId).disconnect();
+        store.audioSources.delete(pcId);
+    }
+    store.remoteVideoStreams.delete(pcId);
+    store.pcs.delete(pcId);
+    cleanupNegotiationState(pcId);
+    updateCallUI();
+    updateVideoGrid();
 }
 
 export async function handleSignal(userId, sessionId, data) {
@@ -381,44 +415,69 @@ export async function handleSignal(userId, sessionId, data) {
     if (!peerConnection) {
         peerConnection = await createPeerConnection(userId, sessionId, false);
     }
+
+    const state = getNegotiationState(pcId);
+
     try {
         if (data.sdp) {
-            if (data.sdp.type === 'offer') {
-                // Handle glare: if we're also trying to send an offer
-                if (peerConnection.signalingState !== 'stable') {
-                    // Polite peer (lower user ID) rolls back their offer
-                    const polite = store.user.id < userId;
-                    if (!polite) {
-                        // We're impolite - ignore their offer, ours takes priority
-                        return;
+            // Perfect Negotiation: handle offer/answer with glare detection
+            const description = new RTCSessionDescription(data.sdp);
+            const readyForOffer =
+                !state.makingOffer &&
+                (peerConnection.signalingState === 'stable' || state.isSettingRemoteAnswerPending);
+            const offerCollision = description.type === 'offer' && !readyForOffer;
+
+            state.ignoreOffer = !state.polite && offerCollision;
+            if (state.ignoreOffer) {
+                console.log(`[${pcId}] Ignoring colliding offer (we are impolite)`);
+                // Clear any pending candidates - they're for the ignored offer's session
+                // and will have mismatched ufrag/pwd when we receive the answer for our offer
+                state.pendingCandidates = [];
+                return;
+            }
+
+            state.isSettingRemoteAnswerPending = description.type === 'answer';
+            await peerConnection.setRemoteDescription(description);
+            state.isSettingRemoteAnswerPending = false;
+
+            // Process any queued ICE candidates now that we have remote description
+            if (state.pendingCandidates.length > 0) {
+                for (const candidate of state.pendingCandidates) {
+                    try {
+                        await peerConnection.addIceCandidate(candidate);
+                    } catch (e) {
+                        // Ignore stale candidate errors
+                        if (!e.message?.includes('Unknown ufrag')) {
+                            console.warn(`Failed to add queued candidate [${pcId}]:`, e);
+                        }
                     }
-                    // We're polite - rollback and accept their offer
-                    await peerConnection.setLocalDescription({ type: 'rollback' });
                 }
-                await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
-                const answer = await peerConnection.createAnswer();
-                const sdp = mangleSdp(answer.sdp);
-                const mangledAnswer = { type: answer.type, sdp };
-                await peerConnection.setLocalDescription(mangledAnswer);
-                sendSignal(userId, sessionId, { sdp: mangledAnswer });
-            } else if (data.sdp.type === 'answer') {
-                // Only accept answer if we have a pending offer
-                if (peerConnection.signalingState !== 'have-local-offer') {
-                    console.log(`Ignoring answer in state ${peerConnection.signalingState}`);
-                    return;
-                }
-                await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                state.pendingCandidates = [];
+            }
+
+            if (description.type === 'offer') {
+                await peerConnection.setLocalDescription();
+                sendSignal(userId, sessionId, { sdp: peerConnection.localDescription });
             }
         } else if (data.candidate) {
-            // Only add candidates if we have a remote description
-            if (peerConnection.remoteDescription) {
-                await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+            // Queue candidates if we don't have a remote description yet
+            if (!peerConnection.remoteDescription || !peerConnection.remoteDescription.type) {
+                state.pendingCandidates.push(new RTCIceCandidate(data.candidate));
+            } else {
+                try {
+                    await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+                } catch (e) {
+                    // Ignore stale candidate errors
+                    if (!e.message?.includes('Unknown ufrag')) {
+                        console.warn(`Failed to add ICE candidate [${pcId}]:`, e);
+                    }
+                }
             }
         }
     } catch (e) {
-        // Ignore non-fatal errors like stale candidates
-        if (e.name !== 'InvalidStateError' && !e.message?.includes('Unknown ufrag')) {
-            console.error('Signal error', e);
+        // Log unexpected errors
+        if (e.name !== 'InvalidStateError') {
+            console.error(`Signal error [${pcId}]:`, e);
         }
     }
 }
@@ -510,6 +569,7 @@ export async function startCall() {
     existingUsers.forEach(cid => {
         const [uid, sid] = cid.split(':');
         if (uid !== store.user.id) {
+            // Higher user ID initiates the connection
             const shouldInitiate = store.user.id > uid;
             createPeerConnection(uid, sid, shouldInitiate);
         }
@@ -532,20 +592,11 @@ export function leaveCall() {
 
     store.pcs.forEach((pc, pcid) => {
         pc.close();
-        const audio = document.getElementById(`audio-${pcid}`);
-        if (audio) audio.remove();
-
-        if (store.gainNodes.has(pcid)) {
-            store.gainNodes.get(pcid).disconnect();
-            store.gainNodes.delete(pcid);
-        }
-        if (store.audioSources.has(pcid)) {
-            store.audioSources.get(pcid).disconnect();
-            store.audioSources.delete(pcid);
-        }
+        cleanupPeerConnection(pcid);
     });
     store.pcs.clear();
     store.remoteVideoStreams.clear();
+    negotiationState.clear();
 
     if (store.ws && store.ws.readyState === 1) {
         store.ws.send(JSON.stringify({ type: 'leave_call', channel_id: store.callChannelId }));
@@ -578,6 +629,7 @@ export async function startScreenShare() {
     store.screenSharing = true;
 
     // Add video track to all existing peer connections
+    // This will trigger onnegotiationneeded automatically - no manual renegotiation needed
     const videoTrack = stream.getVideoTracks()[0];
     store.pcs.forEach((pc, pcId) => {
         pc.addTrack(videoTrack, stream);
@@ -587,18 +639,6 @@ export async function startScreenShare() {
     videoTrack.onended = () => {
         stopScreenShare();
     };
-
-    // Renegotiate with all peers
-    store.pcs.forEach(async (pc, pcId) => {
-        try {
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            const [userId, sessionId] = pcId.split(':');
-            sendSignal(userId, sessionId, { sdp: pc.localDescription });
-        } catch (e) {
-            console.error('Renegotiation error', e);
-        }
-    });
 
     updateScreenShareButton();
     updateVideoGrid();
@@ -615,6 +655,7 @@ export function stopScreenShare() {
     store.screenSharing = false;
 
     // Remove video senders from all peer connections
+    // This will trigger onnegotiationneeded automatically
     store.pcs.forEach((pc) => {
         const senders = pc.getSenders();
         senders.forEach(sender => {
