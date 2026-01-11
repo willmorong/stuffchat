@@ -1,4 +1,4 @@
-import { store } from './modules/store.js';
+import { store, setPendingAttachment } from './modules/store.js';
 import { $ } from './modules/utils.js';
 import { setupApi, checkServer } from './modules/api.js';
 import {
@@ -151,8 +151,58 @@ function bindUI() {
         if ($('#attachFile').files && $('#attachFile').files[0]) {
             const name = $('#attachFile').files[0].name;
             $('#msgInput').placeholder = 'Attached: ' + name;
+            // Clear any pending attachment from paste/drop when file input is used
+            setPendingAttachment(null);
         } else {
             $('#msgInput').placeholder = 'Write a message…';
+        }
+    });
+
+    // Paste handler for images/files
+    $('#msgInput').addEventListener('paste', (e) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        for (const item of items) {
+            if (item.kind === 'file') {
+                const file = item.getAsFile();
+                if (file) {
+                    setPendingAttachment(file);
+                    $('#msgInput').placeholder = 'Attached: ' + file.name;
+                    // Clear the file input to avoid confusion
+                    $('#attachFile').value = '';
+                    break;
+                }
+            }
+        }
+    });
+
+    // Drag and drop handlers
+    const msgInput = $('#msgInput');
+
+    msgInput.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        msgInput.classList.add('drag-over');
+    });
+
+    msgInput.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        msgInput.classList.remove('drag-over');
+    });
+
+    msgInput.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        msgInput.classList.remove('drag-over');
+
+        const files = e.dataTransfer?.files;
+        if (files && files.length > 0) {
+            const file = files[0];
+            setPendingAttachment(file);
+            msgInput.placeholder = 'Attached: ' + file.name;
+            // Clear the file input to avoid confusion
+            $('#attachFile').value = '';
         }
     });
 

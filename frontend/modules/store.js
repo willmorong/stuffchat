@@ -38,4 +38,10 @@ export const store = {
     remoteVideoStreams: new Map(), // pcId -> MediaStream (video)
     isMuted: false,
     isDeafened: false,
+    // Pending attachment from paste/drop
+    pendingAttachment: null,
 };
+
+export function setPendingAttachment(file) {
+    store.pendingAttachment = file;
+}

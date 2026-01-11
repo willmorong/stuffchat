@@ -214,9 +214,12 @@ export async function sendMessage() {
     const fileInput = $('#attachFile');
     let file_id = null;
 
-    if (fileInput.files && fileInput.files[0]) {
+    // Check for file from file input OR from paste/drop (pendingAttachment)
+    const fileToUpload = (fileInput.files && fileInput.files[0]) || store.pendingAttachment;
+
+    if (fileToUpload) {
         const fd = new FormData();
-        fd.append('file', fileInput.files[0]);
+        fd.append('file', fileToUpload);
         const res = await fetch(store.baseUrl + '/api/files', {
             method: 'POST',
             headers: store.accessToken ? { 'Authorization': 'Bearer ' + store.accessToken } : {},
@@ -236,6 +239,7 @@ export async function sendMessage() {
     $('#msgInput').value = '';
     $('#msgInput').placeholder = 'Write a message…';
     fileInput.value = '';
+    store.pendingAttachment = null; // Clear pending attachment
 
     try {
         await apiFetch(`/api/channels/${store.currentChannelId}/messages`, {
