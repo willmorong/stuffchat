@@ -373,7 +373,10 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
 
     // Add video track if screen sharing is active
     if (store.localVideoStream) {
-        store.localVideoStream.getTracks().forEach(track => peerConnection.addTrack(track, store.localVideoStream));
+        store.localVideoStream.getTracks().forEach(track => {
+            const sender = peerConnection.addTrack(track, store.localVideoStream);
+            configureVideoSender(sender, peerConnection);
+        });
     }
 
     // Initial offer only if we are the initiator
@@ -610,6 +613,42 @@ export function leaveCall() {
     updateVideoGrid();
 }
 
+// Configure video sender for high-quality screensharing with AV1 preference
+async function configureVideoSender(sender, pc) {
+    // Set codec preference to AV1 if supported
+    const transceiver = pc.getTransceivers().find(t => t.sender === sender);
+    if (transceiver && transceiver.setCodecPreferences) {
+        const capabilities = RTCRtpSender.getCapabilities('video');
+        if (capabilities) {
+            // Sort codecs to prefer AV1, then VP9, then VP8
+            const codecs = capabilities.codecs.slice();
+            codecs.sort((a, b) => {
+                const order = ['video/AV1', 'video/VP9', 'video/VP8', 'video/H264'];
+                const aIndex = order.findIndex(c => a.mimeType.includes(c.split('/')[1]));
+                const bIndex = order.findIndex(c => b.mimeType.includes(c.split('/')[1]));
+                return (aIndex === -1 ? 999 : aIndex) - (bIndex === -1 ? 999 : bIndex);
+            });
+            try {
+                transceiver.setCodecPreferences(codecs);
+            } catch (e) {
+                console.warn('Could not set codec preferences:', e);
+            }
+        }
+    }
+
+    // Set high bitrate for smooth screensharing (8 Mbps max)
+    try {
+        const params = sender.getParameters();
+        if (!params.encodings || params.encodings.length === 0) {
+            params.encodings = [{}];
+        }
+        params.encodings[0].maxBitrate = 8_000_000; // 8 Mbps
+        await sender.setParameters(params);
+    } catch (e) {
+        console.warn('Could not set video bitrate:', e);
+    }
+}
+
 // Screen sharing functions
 export async function startScreenShare() {
     if (store.screenSharing) return;
@@ -617,7 +656,10 @@ export async function startScreenShare() {
     let stream;
     try {
         stream = await navigator.mediaDevices.getDisplayMedia({
-            video: { cursor: 'always' },
+            video: {
+                cursor: 'always',
+                frameRate: { ideal: 60 }
+            },
             audio: false
         });
     } catch (e) {
@@ -632,7 +674,8 @@ export async function startScreenShare() {
     // This will trigger onnegotiationneeded automatically - no manual renegotiation needed
     const videoTrack = stream.getVideoTracks()[0];
     store.pcs.forEach((pc, pcId) => {
-        pc.addTrack(videoTrack, stream);
+        const sender = pc.addTrack(videoTrack, stream);
+        configureVideoSender(sender, pc);
     });
 
     // Handle stream ending (user clicks browser's stop sharing)
