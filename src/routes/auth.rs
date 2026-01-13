@@ -166,8 +166,22 @@ pub struct LogoutReq {
 
 pub async fn logout(
     db: web::Data<Db>,
+    user: auth::AuthUser,
     body: web::Json<LogoutReq>,
 ) -> Result<HttpResponse, ApiError> {
+    // Verify the refresh token belongs to this user
+    let row = sqlx::query("SELECT user_id FROM refresh_tokens WHERE id = ?")
+        .bind(&body.refresh_token_id)
+        .fetch_optional(&db.0)
+        .await?;
+
+    let row = row.ok_or(ApiError::NotFound)?;
+    let token_owner: String = row.get("user_id");
+
+    if token_owner != user.user_id {
+        return Err(ApiError::Forbidden);
+    }
+
     sqlx::query("UPDATE refresh_tokens SET revoked_at = ? WHERE id = ?")
         .bind(chrono::Utc::now())
         .bind(&body.refresh_token_id)

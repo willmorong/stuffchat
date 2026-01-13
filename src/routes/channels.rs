@@ -80,6 +80,17 @@ pub async fn mark_read(
     let channel_id = path.into_inner();
     let now = Utc::now();
 
+    // Verify user is a member of this channel
+    let membership =
+        sqlx::query("SELECT can_read FROM channel_members WHERE channel_id = ? AND user_id = ?")
+            .bind(&channel_id)
+            .bind(&user.user_id)
+            .fetch_optional(&db.0)
+            .await?;
+    if membership.is_none() {
+        return Err(ApiError::Forbidden);
+    }
+
     // Get message created_at
     let row = sqlx::query("SELECT created_at FROM messages WHERE id = ?")
         .bind(&body.message_id)
@@ -116,6 +127,17 @@ pub async fn mark_notified(
 ) -> Result<HttpResponse, ApiError> {
     let channel_id = path.into_inner();
     let now = Utc::now();
+
+    // Verify user is a member of this channel
+    let membership =
+        sqlx::query("SELECT can_read FROM channel_members WHERE channel_id = ? AND user_id = ?")
+            .bind(&channel_id)
+            .bind(&user.user_id)
+            .fetch_optional(&db.0)
+            .await?;
+    if membership.is_none() {
+        return Err(ApiError::Forbidden);
+    }
 
     sqlx::query(
         "INSERT INTO channel_unread (channel_id, user_id, last_notified_message_id, updated_at)

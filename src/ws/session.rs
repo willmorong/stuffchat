@@ -148,6 +148,36 @@ impl Handler<RoomState> for WsSession {
     }
 }
 
+/// Check if user can read this channel
+async fn can_read(db: &crate::db::Db, user_id: &str, channel_id: &str) -> bool {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT can_read FROM channel_members WHERE channel_id = ? AND user_id = ?",
+    )
+    .bind(channel_id)
+    .bind(user_id)
+    .fetch_optional(&db.0)
+    .await
+    .ok()
+    .flatten()
+    .map(|v| v != 0)
+    .unwrap_or(false)
+}
+
+/// Check if user can write to this channel
+async fn can_write(db: &crate::db::Db, user_id: &str, channel_id: &str) -> bool {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT can_write FROM channel_members WHERE channel_id = ? AND user_id = ?",
+    )
+    .bind(channel_id)
+    .bind(user_id)
+    .fetch_optional(&db.0)
+    .await
+    .ok()
+    .flatten()
+    .map(|v| v != 0)
+    .unwrap_or(false)
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum ClientEvent {
@@ -188,11 +218,30 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                 if let Ok(ev) = serde_json::from_str::<ClientEvent>(&text) {
                     match ev {
                         ClientEvent::Join { channel_id } => {
-                            self.joined = Some(channel_id.clone());
-                            self.server.do_send(Join {
-                                channel_id,
-                                addr: ctx.address(),
-                            });
+                            let db = self.db.clone();
+                            let user_id = self.user_id.clone();
+                            let server = self.server.clone();
+                            let addr = ctx.address();
+                            let cid = channel_id.clone();
+                            ctx.spawn(
+                                async move {
+                                    if can_read(&db, &user_id, &cid).await {
+                                        server.do_send(Join {
+                                            channel_id: cid,
+                                            addr,
+                                        });
+                                    } else {
+                                        log::warn!(
+                                            "User {} denied access to channel {}",
+                                            user_id,
+                                            cid
+                                        );
+                                    }
+                                }
+                                .into_actor(self),
+                            );
+                            // Set joined optimistically - we still track the channel locally
+                            self.joined = Some(channel_id);
                         }
                         ClientEvent::Leave { channel_id } => {
                             if self.joined.as_deref() == Some(&channel_id) {
@@ -208,33 +257,59 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                             channel_id,
                             content,
                         } => {
-                            let payload = serde_json::json!({
-                                "type": "chat_message",
-                                "channel_id": channel_id,
-                                "user_id": self.user_id,
-                                "content": content,
-                            })
-                            .to_string();
-                            self.server.do_send(Broadcast {
-                                channel_id,
-                                payload,
-                            });
+                            let db = self.db.clone();
+                            let user_id = self.user_id.clone();
+                            let server = self.server.clone();
+                            ctx.spawn(
+                                async move {
+                                    if can_write(&db, &user_id, &channel_id).await {
+                                        let payload = serde_json::json!({
+                                            "type": "chat_message",
+                                            "channel_id": channel_id,
+                                            "user_id": user_id,
+                                            "content": content,
+                                        })
+                                        .to_string();
+                                        server.do_send(Broadcast {
+                                            channel_id,
+                                            payload,
+                                        });
+                                    } else {
+                                        log::warn!(
+                                            "User {} denied write to channel {}",
+                                            user_id,
+                                            channel_id
+                                        );
+                                    }
+                                }
+                                .into_actor(self),
+                            );
                         }
                         ClientEvent::Typing {
                             channel_id,
                             started,
                         } => {
-                            let payload = serde_json::json!({
-                                "type": "typing",
-                                "channel_id": channel_id,
-                                "user_id": self.user_id,
-                                "started": started
-                            })
-                            .to_string();
-                            self.server.do_send(Broadcast {
-                                channel_id,
-                                payload,
-                            });
+                            let db = self.db.clone();
+                            let user_id = self.user_id.clone();
+                            let server = self.server.clone();
+                            ctx.spawn(
+                                async move {
+                                    if can_read(&db, &user_id, &channel_id).await {
+                                        let payload = serde_json::json!({
+                                            "type": "typing",
+                                            "channel_id": channel_id,
+                                            "user_id": user_id,
+                                            "started": started
+                                        })
+                                        .to_string();
+                                        server.do_send(Broadcast {
+                                            channel_id,
+                                            payload,
+                                        });
+                                    }
+                                }
+                                .into_actor(self),
+                            );
                         }
                         ClientEvent::WebrtcSignal {
                             channel_id,
@@ -267,12 +342,30 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                                 self.session_id,
                                 channel_id
                             );
-                            self.voice_channel = Some(channel_id.clone());
-                            self.server.do_send(super::server::JoinVoice {
-                                channel_id,
-                                user_id: self.user_id.clone(),
-                                session_id: self.session_id.clone(),
-                            });
+                            let db = self.db.clone();
+                            let user_id = self.user_id.clone();
+                            let session_id = self.session_id.clone();
+                            let server = self.server.clone();
+                            let cid = channel_id.clone();
+                            ctx.spawn(
+                                async move {
+                                    if can_read(&db, &user_id, &cid).await {
+                                        server.do_send(super::server::JoinVoice {
+                                            channel_id: cid,
+                                            user_id,
+                                            session_id,
+                                        });
+                                    } else {
+                                        log::warn!(
+                                            "User {} denied voice access to channel {}",
+                                            user_id,
+                                            cid
+                                        );
+                                    }
+                                }
+                                .into_actor(self),
+                            );
+                            self.voice_channel = Some(channel_id);
                         }
                         ClientEvent::LeaveCall { channel_id } => {
                             log::info!(
