@@ -326,10 +326,24 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
             // Handle video track
             store.remoteVideoStreams.set(pcId, stream);
             updateVideoGrid();
-            // Clean up when track ends
-            track.onended = () => {
+
+            // Clean up helper - track.onended doesn't always fire reliably
+            const cleanupVideo = () => {
                 store.remoteVideoStreams.delete(pcId);
                 updateVideoGrid();
+            };
+
+            // Track ended (may not fire when remote uses removeTrack)
+            track.onended = cleanupVideo;
+
+            // Track muted - fires when remote stops sharing and track receives no more data
+            track.onmute = cleanupVideo;
+
+            // Track removed from stream - fires during renegotiation when track is removed
+            stream.onremovetrack = (e) => {
+                if (e.track === track) {
+                    cleanupVideo();
+                }
             };
         } else if (track.kind === 'audio') {
             // Handle audio track
