@@ -2,6 +2,7 @@ import { store } from './store.js';
 import { $, setIf, buildFileUrl } from './utils.js';
 import { updateMe, changeMyPassword, uploadAvatar } from './users.js';
 import { logout, setBaseUrl } from './auth.js';
+import { initCloudsTheme } from './clouds.js';
 
 export function openSettings() {
     // Fill current values
@@ -39,6 +40,9 @@ export function applyTheme(theme) {
     document.body.setAttribute('data-theme', store.theme === 'mysterious' ? '' : store.theme);
     localStorage.setItem('stuffchat.theme', store.theme);
     if (store.theme === 'mysterious') document.body.removeAttribute('data-theme');
+
+    // Handle clouds theme animation
+    initCloudsTheme(store.theme);
 }
 
 export function bindSettingsEvents() {

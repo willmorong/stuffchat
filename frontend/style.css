@@ -1041,3 +1041,64 @@ body[data-theme="wegmans"] {
     max-height: 100%;
     object-fit: contain;
 }
+
+/* Background Canvas */
+#background-canvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    display: none;
+    pointer-events: none;
+}
+
+/* Clouds Theme (light blue with animated hexagonal background) */
+body[data-theme="clouds"] {
+    --bg1: #e0f4ff;
+    --bg2: #ffffff;
+    --glass: rgba(255, 255, 255, 0.6);
+    --glass-strong: rgba(255, 255, 255, 0.75);
+    --border: rgba(70, 130, 200, 0.3);
+    --text: #0b1220;
+    --text-dim: #465168;
+    --accent: #2c7cff;
+    --accent-2: #10b981;
+    --danger: #e11d48;
+}
+
+body[data-theme="clouds"] {
+    background: transparent;
+    color: var(--text);
+}
+
+body[data-theme="clouds"] #background-canvas {
+    display: block;
+}
+
+body[data-theme="clouds"] .input,
+body[data-theme="clouds"] .select,
+body[data-theme="clouds"] .button,
+body[data-theme="clouds"] .iconbtn,
+body[data-theme="clouds"] .messages,
+body[data-theme="clouds"] .topbar,
+body[data-theme="clouds"] .inputbar,
+body[data-theme="clouds"] #sidebar {
+    background: rgba(255, 255, 255, 0.5);
+}
+
+body[data-theme="clouds"] .channel.active {
+    background: linear-gradient(180deg, rgba(44, 124, 255, 0.14), rgba(44, 124, 255, 0.10));
+    border-color: rgba(44, 124, 255, 0.35);
+    color: var(--text);
+}
+
+body[data-theme="clouds"] .msg.own {
+    background: rgba(44, 124, 255, 0.12);
+    border-color: rgba(44, 124, 255, 0.30);
+}
+
+body[data-theme="clouds"] .call-status {
+    color: var(--text);
+}
