@@ -1,11 +1,12 @@
+/* Dark theme is the default */
 :root {
-    --bg1: #0b1220;
-    --bg2: #1b263b;
-    --glass: rgba(255, 255, 255, 0.08);
-    --glass-strong: rgba(255, 255, 255, 0.2);
-    --border: rgba(255, 255, 255, 0.15);
-    --text: #e9eef7;
-    --text-dim: #b7c1d1;
+    --bg1: #000000;
+    --bg2: #000000;
+    --glass: rgba(255, 255, 255, 0.06);
+    --glass-strong: rgba(255, 255, 255, 0.1);
+    --border: rgba(255, 255, 255, 0.2);
+    --text: #ffffff;
+    --text-dim: #d0d5dd;
     --accent: #7aa2ff;
     --accent-2: #4dd4ac;
     --danger: #ff6b6b;
@@ -28,11 +29,7 @@ body {
 }
 
 body {
-    background:
-        radial-gradient(1200px 800px at 10% 10%, #11151f 0%, transparent 60%),
-        radial-gradient(1200px 800px at 90% 0%, #2e3a8a 0%, transparent 55%),
-        radial-gradient(1000px 600px at 70% 90%, #133521 0%, transparent 95%),
-        linear-gradient(160deg, var(--bg1), var(--bg2));
+    background: #000000;
     display: flex;
     align-items: center;
 }
@@ -621,22 +618,28 @@ a:hover {
 }
 
 /* Theme overrides */
-body[data-theme="dark"] {
-    --bg1: #000000;
-    --bg2: #000000;
-    --glass: rgba(255, 255, 255, 0.06);
-    --glass-strong: rgba(255, 255, 255, 0.1);
-    --border: rgba(255, 255, 255, 0.2);
-    --text: #ffffff;
-    --text-dim: #d0d5dd;
+
+/* Mysterious Theme (animated rhombus background) */
+body[data-theme="mysterious"] {
+    --bg1: #0b1220;
+    --bg2: #1b263b;
+    --glass: rgba(255, 255, 255, 0.08);
+    --glass-strong: rgba(255, 255, 255, 0.2);
+    --border: rgba(255, 255, 255, 0.15);
+    --text: #e9eef7;
+    --text-dim: #b7c1d1;
     --accent: #7aa2ff;
     --accent-2: #4dd4ac;
     --danger: #ff6b6b;
 }
 
-body[data-theme="dark"] {
-    background: #000000;
+body[data-theme="mysterious"] {
+    background: transparent;
     color: var(--text);
+}
+
+body[data-theme="mysterious"] #background-canvas {
+    display: block;
 }
 
 body[data-theme="light"] {
@@ -1101,4 +1104,50 @@ body[data-theme="clouds"] .msg.own {
 
 body[data-theme="clouds"] .call-status {
     color: var(--text);
+}
+
+/* Rain Theme (gray cloudy sky with animated rain) */
+body[data-theme="rain"] {
+    --bg1: #2a2d32;
+    --bg2: #1a1c1f;
+    --glass: rgba(255, 255, 255, 0.08);
+    --glass-strong: rgba(255, 255, 255, 0.15);
+    --border: rgba(255, 255, 255, 0.18);
+    --text: #e5e7eb;
+    --text-dim: #9ca3af;
+    --accent: #60a5fa;
+    --accent-2: #6ee7b7;
+    --danger: #f87171;
+}
+
+body[data-theme="rain"] {
+    background: transparent;
+    color: var(--text);
+}
+
+body[data-theme="rain"] #background-canvas {
+    display: block;
+}
+
+body[data-theme="rain"] .input,
+body[data-theme="rain"] .select,
+body[data-theme="rain"] .button,
+body[data-theme="rain"] .iconbtn,
+body[data-theme="rain"] .messages,
+body[data-theme="rain"] .topbar,
+body[data-theme="rain"] .inputbar,
+body[data-theme="rain"] #sidebar {
+    background: rgba(30, 32, 36, 0.85);
+    backdrop-filter: blur(12px);
+}
+
+body[data-theme="rain"] .channel.active {
+    background: linear-gradient(180deg, rgba(96, 165, 250, 0.16), rgba(96, 165, 250, 0.10));
+    border-color: rgba(96, 165, 250, 0.35);
+    color: var(--text);
+}
+
+body[data-theme="rain"] .msg.own {
+    background: rgba(110, 231, 183, 0.12);
+    border-color: rgba(110, 231, 183, 0.30);
 }

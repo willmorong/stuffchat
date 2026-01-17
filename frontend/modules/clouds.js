@@ -226,11 +226,13 @@ export function startCloudsAnimation() {
 }
 
 export function stopCloudsAnimation() {
+    // Cancel animation if running
     if (animationId) {
         cancelAnimationFrame(animationId);
         animationId = null;
     }
 
+    // Remove resize listener
     window.removeEventListener('resize', resizeCanvas);
 
     // Hide canvas
@@ -238,14 +240,9 @@ export function stopCloudsAnimation() {
         canvas.style.display = 'none';
     }
 
+    // Reset all module state
+    canvas = null;
     ctx = null;
     perlin = null;
 }
 
-export function initCloudsTheme(theme) {
-    if (theme === 'clouds') {
-        startCloudsAnimation();
-    } else {
-        stopCloudsAnimation();
-    }
-}

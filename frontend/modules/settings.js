@@ -2,7 +2,39 @@ import { store } from './store.js';
 import { $, setIf, buildFileUrl } from './utils.js';
 import { updateMe, changeMyPassword, uploadAvatar } from './users.js';
 import { logout, setBaseUrl } from './auth.js';
-import { initCloudsTheme } from './clouds.js';
+import { stopCloudsAnimation, startCloudsAnimation } from './clouds.js';
+import { stopMysteriousAnimation, startMysteriousAnimation } from './mysterious.js';
+import { stopRainAnimation, startRainAnimation } from './rain.js';
+import { recreateCanvas } from './themeCanvas.js';
+
+// List of animated themes that use the background canvas
+const ANIMATED_THEMES = ['clouds', 'mysterious', 'rain'];
+
+/**
+ * Stop all animated theme backgrounds
+ */
+function stopAllAnimatedThemes() {
+    stopCloudsAnimation();
+    stopMysteriousAnimation();
+    stopRainAnimation();
+}
+
+/**
+ * Start the appropriate animated theme
+ */
+function startAnimatedTheme(theme) {
+    switch (theme) {
+        case 'clouds':
+            startCloudsAnimation();
+            break;
+        case 'mysterious':
+            startMysteriousAnimation();
+            break;
+        case 'rain':
+            startRainAnimation();
+            break;
+    }
+}
 
 export function openSettings() {
     // Fill current values
@@ -36,13 +68,20 @@ export function closeSettings() {
 }
 
 export function applyTheme(theme) {
-    store.theme = theme || 'mysterious';
-    document.body.setAttribute('data-theme', store.theme === 'mysterious' ? '' : store.theme);
+    store.theme = theme || 'dark';
+    document.body.setAttribute('data-theme', store.theme);
     localStorage.setItem('stuffchat.theme', store.theme);
-    if (store.theme === 'mysterious') document.body.removeAttribute('data-theme');
 
-    // Handle clouds theme animation
-    initCloudsTheme(store.theme);
+    // Stop all animated themes first
+    stopAllAnimatedThemes();
+
+    // If switching to an animated theme, recreate the canvas and start the animation
+    if (ANIMATED_THEMES.includes(store.theme)) {
+        // Recreate the canvas to ensure fresh context (2D vs WebGL compatibility)
+        recreateCanvas();
+        // Start the new animated theme
+        startAnimatedTheme(store.theme);
+    }
 }
 
 export function bindSettingsEvents() {
@@ -117,16 +156,4 @@ export function bindSettingsEvents() {
 
     // Logout from modal
     $('#btnLogoutSettings').addEventListener('click', () => logout());
-
-    // We bind Base URL save in auth.js or main.js?
-    // It calls setBaseUrl which is in auth.js. import setBaseUrl from auth.js?
-    // Cycle: auth -> settings (logout doesn't depend on settings, but bindSettingsEvents depends on logout).
-    // settings -> auth (bind depends on logout).
-    // If auth imports settings, that's bad.
-    // Auth doesn't need settings.
-    // But main.js will call bindSettingsEvents.
-    // setBaseUrl is in... auth.js.
-    // So settings.js needs setBaseUrl.
-    // settings -> auth.
-    // Good.
 }

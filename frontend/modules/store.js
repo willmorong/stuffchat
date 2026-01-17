@@ -17,7 +17,7 @@ export const store = {
     typingTimers: new Map(), // userId -> timeout
     sessionId: null,
     typingUsers: new Set(), // currently typing in current channel
-    theme: localStorage.getItem('stuffchat.theme') || 'mysterious',
+    theme: localStorage.getItem('stuffchat.theme') || 'dark',
     // Audio Preferences
     noiseSuppression: localStorage.getItem('stuffchat.noise_suppression') !== 'false',
     echoCancellation: localStorage.getItem('stuffchat.echo_cancellation') === 'true',
