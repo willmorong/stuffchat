@@ -851,7 +851,8 @@ body[data-theme="wegmans"] .messages,
 body[data-theme="wegmans"] .topbar,
 body[data-theme="wegmans"] .inputbar,
 body[data-theme="wegmans"] #sidebar {
-    background: rgba(255, 255, 255, 0.4);
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(5px);
 }
 
 body[data-theme="wegmans"] .channel.active {
@@ -864,7 +865,6 @@ body[data-theme="wegmans"] {
     color: var(--text);
     background-repeat: no-repeat;
     background-size: cover;
-    backdrop-filter: blur(15px);
 }
 
 body[data-theme="wegmans"] .call-status {
