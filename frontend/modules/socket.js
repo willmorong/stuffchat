@@ -84,23 +84,22 @@ export function handleWsMessage(ev) {
                 $('#messages').appendChild(renderMessageItem(ev));
                 if (atBottom) scrollToBottom();
 
-                // Mark read immediately if in channel
+                // Mark read immediately if in channel and visible
                 if (!document.hidden) {
                     markChannelRead(ev.channel_id, ev);
                 }
             } else {
                 renderChannelList();
-                if (Notification.permission === 'granted' && chItem) {
-                    // Check if not focused? No, checks if channel is different.
-                    // Don't notify if we sent it?
-                    if (ev.user_id !== store.user.id) {
-                        const n = new Notification(`#${chItem.name}`, {
-                            body: `${ev.user_id === store.user.id ? 'You' : (store.users.get(ev.user_id)?.username || 'Someone')}: ${ev.content || 'Sent a file'}`,
-                            icon: '/img/favicon.png'
-                        });
-                        n.onclick = () => { window.focus(); };
-                    }
-                }
+            }
+
+            // Show notification if message is unread (different channel OR document hidden)
+            const shouldNotify = ev.channel_id !== store.currentChannelId || document.hidden;
+            if (shouldNotify && Notification.permission === 'granted' && chItem && ev.user_id !== store.user.id) {
+                const n = new Notification(`${store.users.get(ev.user_id)?.username || 'Someone'} (#${chItem.name})`, {
+                    body: `${ev.content || 'Sent a file'}`,
+                    icon: '/img/favicon.png'
+                });
+                n.onclick = () => { window.focus(); };
             }
             break;
         }
