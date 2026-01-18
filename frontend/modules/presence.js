@@ -5,6 +5,13 @@ import { updatePresenceBadges } from './messages.js';
 
 export async function heartbeat() {
     const status = $('#presenceSelect').value || 'online';
+
+    // Update local cache immediately for instant feedback
+    if (store.user?.id) {
+        store.presenceCache.set(store.user.id, status);
+        updatePresenceBadges();
+    }
+
     try { await apiFetch('/api/presence/heartbeat', { method: 'POST', body: JSON.stringify({ status }) }); } catch (e) { console.warn('Heartbeat failed', e.message); }
     const meDot = $('#mePresence');
     meDot.className = 'presence-dot ' + presenceClass(status);
