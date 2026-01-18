@@ -61,17 +61,33 @@
     <div id="appView" class="app" style="display:none">
         <aside id="sidebar">
             <div class="profile">
-                <div class="avatar" id="meAvatar"></div>
-                <button id="btnCloseSidebar" class="iconbtn mobile-only" title="Close Sidebar"
-                    style="margin-right: -4px; order: 2;">
-                    <i class="bi bi-x-lg"></i>
-                </button>
-                <div style="min-width:0">
-                    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap">
-                        <div id="meName" style="font-weight:600">—</div>
-                        <span id="mePresence" class="presence-dot presence-offline" title="offline"></span>
+                <div class="row center">
+                    <div class="avatar" id="meAvatar"></div>
+                    <div style="min-width:0; align-items:center; flex:1">
+                        <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap">
+                            <div id="meName" style="font-weight:600">—</div>
+                            <span id="mePresence" class="presence-dot presence-offline" title="offline"></span>
+                        </div>
+                        <div id="meEmail" class="hint">—</div>
                     </div>
-                    <div id="meEmail" class="hint">—</div>
+                    <button id="btnCloseSidebar" class="iconbtn mobile-only" title="Close Sidebar">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+                <div class="row">
+                    <select id="presenceSelect" class="select grow" title="Status">
+                        <option value="online">Online</option>
+                        <option value="away">Away</option>
+                        <option value="dnd">Do Not Disturb</option>
+                        <option value="invisible">Invisible</option>
+                        <option value="offline">Offline</option>
+                    </select>
+                    <button id="btnOpenInvites" class="iconbtn" title="Invite codes">
+                        <i class="bi bi-people-fill"></i>
+                    </button>
+                    <button id="btnOpenSettings" class="iconbtn" title="Open settings">
+                        <i class="bi bi-gear-fill"></i>
+                    </button>
                 </div>
             </div>
 
@@ -82,31 +98,6 @@
                     <button id="btnOpenCreateChannel" class="button grow" title="Create Channel">
                         <i class="bi bi-plus-lg"></i> Create channel
                     </button>
-                </div>
-            </div>
-            <div class="panel settings">
-                <h3>Settings</h3>
-                <div class="row">
-                    <button id="btnPresenceShow" class="iconbtn" title="Presence">
-                        <span id="mePresenceSettings" class="presence-dot"></span>
-                    </button>
-                    <select id="presenceSelect" class="select grow" title="Status">
-                        <option value="online">Online</option>
-                        <option value="away">Away</option>
-                        <option value="dnd">Do Not Disturb</option>
-                        <option value="invisible">Invisible</option>
-                        <option value="offline">Offline</option>
-                    </select>
-                    <button id="btnOpenSettings" class="iconbtn" title="Open settings">
-                        <i class="bi bi-gear-fill"></i>
-                    </button>
-                    <button id="btnOpenInvites" class="iconbtn" title="Invite codes">
-                        <i class="bi bi-people-fill"></i>
-                    </button>
-                </div>
-
-                <div class="row">
-
                 </div>
             </div>
         </aside>

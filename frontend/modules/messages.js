@@ -1,7 +1,7 @@
 import { store } from './store.js';
 import { apiFetch } from './api.js';
 import { connectWs } from './socket.js';
-import { $, el, absFileUrl, buildFileUrl, setIf, truncateId } from './utils.js';
+import { $, el, absFileUrl, buildFileUrl, setIf, truncateId, presenceClass } from './utils.js';
 import { prefetchUsers } from './users.js';
 
 export function enableComposer(enabled) {
@@ -148,6 +148,13 @@ export function renderMessageItem(m) {
         }));
     }
 
+    // Add presence badge (only for visible statuses: online, away, dnd)
+    const status = store.presenceCache.get(m.user_id) || 'offline';
+    if (status === 'online' || status === 'away' || status === 'dnd') {
+        const badge = el('span', { class: 'presence-badge ' + presenceClass(status) });
+        avatar.appendChild(badge);
+    }
+
     const meta = el('div', { class: 'meta' }, [
         el('strong', {}, own ? (store.user?.username || 'me') : (user?.username || truncateId(m.user_id))),
         el('span', {}, '•'),
@@ -166,9 +173,30 @@ export function renderMessageItem(m) {
         );
     }
 
-    return el('div', { class: 'msg' + (own ? ' own' : '') }, [
+    return el('div', { class: 'msg' + (own ? ' own' : ''), 'data-user-id': m.user_id }, [
         avatar, el('div', { class: 'msg-right' }, [meta, content, attach]), tools
     ]);
+}
+
+/** Update presence badges in the DOM without re-rendering messages */
+export function updatePresenceBadges() {
+    const messages = document.querySelectorAll('.msg[data-user-id]');
+    messages.forEach(msgEl => {
+        const userId = msgEl.getAttribute('data-user-id');
+        const avatar = msgEl.querySelector('.avatar');
+        if (!avatar) return;
+
+        // Remove existing badge
+        const existingBadge = avatar.querySelector('.presence-badge');
+        if (existingBadge) existingBadge.remove();
+
+        // Add badge if status is visible (online, away, dnd)
+        const status = store.presenceCache.get(userId) || 'offline';
+        if (status === 'online' || status === 'away' || status === 'dnd') {
+            const badge = el('span', { class: 'presence-badge ' + presenceClass(status) });
+            avatar.appendChild(badge);
+        }
+    });
 }
 
 export function renderMessages(channelId) {

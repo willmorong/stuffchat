@@ -1,6 +1,7 @@
 import { store } from './store.js';
 import { apiFetch } from './api.js';
 import { $, presenceClass } from './utils.js';
+import { updatePresenceBadges } from './messages.js';
 
 export async function heartbeat() {
     const status = $('#presenceSelect').value || 'online';
@@ -8,9 +9,6 @@ export async function heartbeat() {
     const meDot = $('#mePresence');
     meDot.className = 'presence-dot ' + presenceClass(status);
     meDot.title = status;
-    const settingsMeDot = $('#mePresenceSettings');
-    settingsMeDot.className = 'presence-dot ' + presenceClass(status);
-    settingsMeDot.title = status;
 }
 
 let _heartbeatLoopActive = false;
@@ -42,6 +40,7 @@ export async function fetchPresenceForUsers(userIds) {
             store.presenceCache.set(p.user_id, p.status);
         });
         renderMemberInfo();
+        updatePresenceBadges();
     } catch (e) { console.warn('Presence fetch failed', e.message); }
 }
 
