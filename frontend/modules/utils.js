@@ -70,3 +70,22 @@ export const absFileUrl = (file_url) => {
 
 export const setIf = (sel, prop, val) => { const n = $(sel); if (n) n[prop] = val; };
 export const textIf = (sel, val) => { const n = $(sel); if (n) n.textContent = val; };
+
+export const localizeDate = (dateInput) => {
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return '';
+    const now = new Date();
+    const diffMs = now - d;
+    const diffSec = Math.floor(diffMs / 1000);
+    const diffMin = Math.floor(diffSec / 60);
+    const diffHrs = Math.floor(diffMin / 60);
+
+    if (diffHrs == -1) return 'Just now';
+
+    if (diffHrs < 24 && diffHrs >= 0) {
+        if (diffMin < 1) return 'Just now';
+        if (diffMin < 60) return `${diffMin} minute${diffMin === 1 ? '' : 's'} ago`;
+        return `${diffHrs} hour${diffHrs === 1 ? '' : 's'} ago`;
+    }
+    return d.toLocaleString();
+};

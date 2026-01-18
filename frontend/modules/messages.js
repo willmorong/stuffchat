@@ -1,7 +1,7 @@
 import { store } from './store.js';
 import { apiFetch } from './api.js';
 import { connectWs } from './socket.js';
-import { $, el, absFileUrl, buildFileUrl, setIf, truncateId, presenceClass } from './utils.js';
+import { $, el, absFileUrl, buildFileUrl, setIf, truncateId, presenceClass, localizeDate } from './utils.js';
 import { prefetchUsers } from './users.js';
 
 export function enableComposer(enabled) {
@@ -157,8 +157,7 @@ export function renderMessageItem(m) {
 
     const meta = el('div', { class: 'meta' }, [
         el('strong', {}, own ? (store.user?.username || 'me') : (user?.username || truncateId(m.user_id))),
-        el('span', {}, '•'),
-        el('span', {}, new Date(m.created_at || Date.now()).toLocaleString()),
+        el('span', {}, localizeDate(m.created_at || Date.now())),
         m.edited_at ? el('span', { class: 'pill' }, 'edited') : null
     ]);
     const content = el('div', { class: 'content' }, m.content || '');
