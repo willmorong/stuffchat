@@ -2,7 +2,7 @@
 :root {
     --bg1: #000000;
     --bg2: #000000;
-    --glass: rgba(255, 255, 255, 0.06);
+    --glass: rgba(0, 0, 0, 0.06);
     --glass-strong: rgba(255, 255, 255, 0.1);
     --border: rgba(255, 255, 255, 0.2);
     --text: #ffffff;
@@ -72,7 +72,7 @@ body {
     align-items: center;
     gap: 12px;
     padding: 10px;
-    background: var(--glass);
+    background: transparent;
     border: 1px solid var(--border);
     border-radius: 12px;
     justify-content: left;
@@ -449,10 +449,15 @@ body {
     border: 1px solid var(--border);
     background: rgba(255, 255, 255, 0.06);
     color: var(--text);
+    font-size: medium;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
+}
+
+.iconbtn:hover {
+    background: rgba(255, 255, 255, 0.1);
 }
 
 .typing {
@@ -832,7 +837,7 @@ body[data-theme="wegmans"] {
     --glass-strong: rgba(0, 0, 0, 0.08);
     --border: rgba(0, 0, 0, 0.2);
     --text: #0b1220;
-    --text-dim: #465168;
+    --text-dim: #404040;
     --accent: #2c5cff;
     --accent-2: #10b981;
     --danger: #e11d48;
@@ -856,12 +861,14 @@ body[data-theme="wegmans"] .channel.active {
 
 body[data-theme="wegmans"] {
     background: url("img/wegmans.jpg");
-    background-repeat: repeat;
-    background-size: auto;
     color: var(--text);
     background-repeat: no-repeat;
     background-size: cover;
-    backdrop-filter: blur(5px) contrast(50%);
+    backdrop-filter: blur(15px);
+}
+
+body[data-theme="wegmans"] .call-status {
+    color: var(--text);
 }
 
 /* Call Interface */
