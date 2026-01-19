@@ -338,6 +338,14 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
             // Clean up helper - track.onended doesn't always fire reliably
             const cleanupVideo = () => {
                 store.remoteVideoStreams.delete(pcId);
+                if (store.screenShareGainNodes.has(pcId)) {
+                    store.screenShareGainNodes.get(pcId).disconnect();
+                    store.screenShareGainNodes.delete(pcId);
+                }
+                if (store.screenShareAudioSources.has(pcId)) {
+                    store.screenShareAudioSources.get(pcId).disconnect();
+                    store.screenShareAudioSources.delete(pcId);
+                }
                 updateVideoGrid();
             };
 
@@ -355,6 +363,24 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
             };
         } else if (track.kind === 'audio') {
             // Handle audio track
+            const isScreenShareAudio = stream.getVideoTracks().length > 0;
+
+            if (isScreenShareAudio) {
+                // Setup Web Audio for screen share
+                const ctx = getAudioCtx();
+                const source = ctx.createMediaStreamSource(stream);
+                const gainNode = ctx.createGain();
+                source.connect(gainNode);
+                gainNode.connect(ctx.destination);
+
+                // Muted by default
+                gainNode.gain.value = 0;
+
+                store.screenShareAudioSources.set(pcId, source);
+                store.screenShareGainNodes.set(pcId, gainNode);
+                return;
+            }
+
             let audio = document.getElementById(`audio-${pcId}`);
             if (!audio) {
                 audio = document.createElement('audio');
@@ -426,6 +452,14 @@ function cleanupPeerConnection(pcId) {
     if (store.audioSources.has(pcId)) {
         store.audioSources.get(pcId).disconnect();
         store.audioSources.delete(pcId);
+    }
+    if (store.screenShareGainNodes.has(pcId)) {
+        store.screenShareGainNodes.get(pcId).disconnect();
+        store.screenShareGainNodes.delete(pcId);
+    }
+    if (store.screenShareAudioSources.has(pcId)) {
+        store.screenShareAudioSources.get(pcId).disconnect();
+        store.screenShareAudioSources.delete(pcId);
     }
     store.remoteVideoStreams.delete(pcId);
     store.pcs.delete(pcId);
@@ -689,7 +723,7 @@ export async function startScreenShare() {
                 cursor: 'always',
                 frameRate: { ideal: 60 }
             },
-            audio: false
+            audio: true
         });
     } catch (e) {
         console.error('Failed to get screen share', e);
@@ -699,12 +733,16 @@ export async function startScreenShare() {
     store.localVideoStream = stream;
     store.screenSharing = true;
 
-    // Add video track to all existing peer connections
+    // Add video and audio tracks to all existing peer connections
     // This will trigger onnegotiationneeded automatically - no manual renegotiation needed
     const videoTrack = stream.getVideoTracks()[0];
+    const audioTrack = stream.getAudioTracks()[0];
     store.pcs.forEach((pc, pcId) => {
-        const sender = pc.addTrack(videoTrack, stream);
-        configureVideoSender(sender, pc);
+        const videoSender = pc.addTrack(videoTrack, stream);
+        configureVideoSender(videoSender, pc);
+        if (audioTrack) {
+            pc.addTrack(audioTrack, stream);
+        }
     });
 
     // Handle stream ending (user clicks browser's stop sharing)
@@ -726,12 +764,13 @@ export function stopScreenShare() {
 
     store.screenSharing = false;
 
-    // Remove video senders from all peer connections
+    // Remove screen share senders from all peer connections
     // This will trigger onnegotiationneeded automatically
+    const tracks = store.localVideoStream ? store.localVideoStream.getTracks() : [];
     store.pcs.forEach((pc) => {
         const senders = pc.getSenders();
         senders.forEach(sender => {
-            if (sender.track && sender.track.kind === 'video') {
+            if (sender.track && tracks.includes(sender.track)) {
                 pc.removeTrack(sender);
             }
         });
@@ -790,12 +829,12 @@ function createVideoTile(id, stream, username) {
     const label = el('div', { class: 'video-label' }, username);
     tile.appendChild(label);
 
-    tile.onclick = () => toggleVideoFullscreen(stream, username);
+    tile.onclick = () => toggleVideoFullscreen(id, stream, username);
 
     return tile;
 }
 
-export function toggleVideoFullscreen(stream, username) {
+export function toggleVideoFullscreen(id, stream, username) {
     const overlay = $('#videoFullscreen');
     if (!overlay) return;
 
@@ -810,10 +849,24 @@ export function toggleVideoFullscreen(stream, username) {
         overlay.onclick = () => {
             overlay.classList.add('hidden');
             overlay.innerHTML = '';
+            // Mute screen share audio when exiting fullscreen
+            const gainNode = store.screenShareGainNodes.get(id);
+            if (gainNode) gainNode.gain.value = 0;
         };
+
+        // Unmute screen share audio when entering fullscreen
+        const gainNode = store.screenShareGainNodes.get(id);
+        if (gainNode) {
+            const [userId] = id.split(':');
+            const vol = store.userVolumes[userId] !== undefined ? store.userVolumes[userId] : 1.0;
+            gainNode.gain.value = vol;
+        }
     } else {
         // Exit fullscreen
         overlay.classList.add('hidden');
         overlay.innerHTML = '';
+        // Mute screen share audio
+        const gainNode = store.screenShareGainNodes.get(id);
+        if (gainNode) gainNode.gain.value = 0;
     }
 }

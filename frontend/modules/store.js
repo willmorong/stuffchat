@@ -36,6 +36,8 @@ export const store = {
     localVideoStream: null,
     screenSharing: false,
     remoteVideoStreams: new Map(), // pcId -> MediaStream (video)
+    screenShareGainNodes: new Map(), // pcId -> GainNode (screen share audio)
+    screenShareAudioSources: new Map(), // pcId -> MediaStreamAudioSourceNode (screen share audio)
     isMuted: false,
     isDeafened: false,
     // Pending attachment from paste/drop
