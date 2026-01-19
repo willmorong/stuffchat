@@ -114,6 +114,14 @@ export function updateCallUI() {
                         store.volumeMonitors.get(uid).stop();
                         store.volumeMonitors.delete(uid);
                     }
+                    // Preserve the volume control singleton if it's in this row
+                    const singleton = $('#voiceVolumeControl');
+                    if (singleton && row.contains(singleton)) {
+                        // Move it back to the body to prevent deletion
+                        singleton.classList.remove('visible');
+                        singleton.style.display = 'none';
+                        document.body.appendChild(singleton);
+                    }
                     row.remove();
                 }
             }
@@ -451,6 +459,12 @@ export async function handleSignal(userId, sessionId, data) {
                 // and will have mismatched ufrag/pwd when we receive the answer for our offer
                 state.pendingCandidates = [];
                 return;
+            }
+
+            // Perfect Negotiation: polite peer must rollback before accepting colliding offer
+            if (offerCollision) {
+                console.log(`[${pcId}] Rolling back local offer to accept remote offer (we are polite)`);
+                await peerConnection.setLocalDescription({ type: 'rollback' });
             }
 
             state.isSettingRemoteAnswerPending = description.type === 'answer';
