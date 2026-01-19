@@ -71,6 +71,29 @@ export const absFileUrl = (file_url) => {
 export const setIf = (sel, prop, val) => { const n = $(sel); if (n) n[prop] = val; };
 export const textIf = (sel, val) => { const n = $(sel); if (n) n.textContent = val; };
 
+/**
+ * Convert URLs in text into an array of strings and anchor elements.
+ * Suitable for passing to el() as children.
+ */
+export const linkifyText = (text) => {
+    if (!text) return [];
+    const urlRegex = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/g;
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+    while ((match = urlRegex.exec(text)) !== null) {
+        if (match.index > lastIndex) {
+            parts.push(text.slice(lastIndex, match.index));
+        }
+        parts.push(el('a', { href: match[0], target: '_blank', rel: 'noopener noreferrer' }, match[0]));
+        lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < text.length) {
+        parts.push(text.slice(lastIndex));
+    }
+    return parts.length ? parts : [text];
+};
+
 export const localizeDate = (dateInput) => {
     const d = new Date(dateInput);
     if (isNaN(d.getTime())) return '';

@@ -1,7 +1,7 @@
 import { store } from './store.js';
 import { apiFetch } from './api.js';
 import { connectWs } from './socket.js';
-import { $, el, absFileUrl, buildFileUrl, setIf, truncateId, presenceClass, localizeDate } from './utils.js';
+import { $, el, absFileUrl, buildFileUrl, setIf, truncateId, presenceClass, localizeDate, linkifyText } from './utils.js';
 import { prefetchUsers } from './users.js';
 
 export function enableComposer(enabled) {
@@ -160,7 +160,7 @@ export function renderMessageItem(m) {
         el('span', {}, localizeDate(m.created_at || Date.now())),
         m.edited_at ? el('span', { class: 'pill' }, 'edited') : null
     ]);
-    const content = el('div', { class: 'content' }, m.content || '');
+    const content = el('div', { class: 'content' }, linkifyText(m.content));
     const hasAttach = !!(m.file_url || m.file_id);
     const attach = hasAttach ? renderAttachment(m) : null;
 
