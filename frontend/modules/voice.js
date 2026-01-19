@@ -524,6 +524,9 @@ export async function handleSignal(userId, sessionId, data) {
                 await peerConnection.setLocalDescription();
                 sendSignal(userId, sessionId, { sdp: peerConnection.localDescription });
             }
+
+            // Refresh video grid after renegotiation to clean up removed tracks
+            updateVideoGrid();
         } else if (data.candidate) {
             // Queue candidates if we don't have a remote description yet
             if (!peerConnection.remoteDescription || !peerConnection.remoteDescription.type) {
@@ -809,6 +812,29 @@ export function updateVideoGrid() {
         tile.classList.add('local');
         grid.appendChild(tile);
     }
+
+    // Proactively clean up stale remote video streams
+    // Track events (onended, onmute) are unreliable, so check track state directly
+    // Only remove if track is truly ended (readyState === 'ended'), not just muted
+    const staleIds = [];
+    store.remoteVideoStreams.forEach((stream, pcId) => {
+        const videoTracks = stream.getVideoTracks();
+        const isStale = videoTracks.length === 0 || videoTracks.every(t => t.readyState === 'ended');
+        if (isStale) {
+            staleIds.push(pcId);
+        }
+    });
+    staleIds.forEach(pcId => {
+        store.remoteVideoStreams.delete(pcId);
+        if (store.screenShareGainNodes.has(pcId)) {
+            store.screenShareGainNodes.get(pcId).disconnect();
+            store.screenShareGainNodes.delete(pcId);
+        }
+        if (store.screenShareAudioSources.has(pcId)) {
+            store.screenShareAudioSources.get(pcId).disconnect();
+            store.screenShareAudioSources.delete(pcId);
+        }
+    });
 
     // Add remote video streams
     store.remoteVideoStreams.forEach((stream, pcId) => {
