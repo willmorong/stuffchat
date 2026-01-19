@@ -176,7 +176,10 @@ export function handleWsMessage(ev) {
                 const shouldInitiate = store.user.id > ev.user_id;
                 createPeerConnection(ev.user_id, ev.session_id, shouldInitiate);
             }
-            playNotificationSound('join');
+            if (store.inCall && ev.channel_id === store.callChannelId) {
+                playNotificationSound('join');
+            }
+
             break;
         }
         case 'voice_left': {
@@ -195,7 +198,10 @@ export function handleWsMessage(ev) {
                 }
             }
             updateCallUI();
-            playNotificationSound('leave');
+            if (store.inCall && ev.channel_id === store.callChannelId) {
+                playNotificationSound('leave');
+            }
+
             break;
         }
         case 'webrtc_signal': {

@@ -610,6 +610,7 @@ export async function startCall() {
 export function leaveCall() {
     if (!store.inCall) return;
     store.inCall = false;
+    playNotificationSound('leave');
 
     // Stop screen sharing if active
     if (store.screenSharing) {
