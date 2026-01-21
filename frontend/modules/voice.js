@@ -688,10 +688,10 @@ async function configureVideoSender(sender, pc) {
     if (transceiver && transceiver.setCodecPreferences) {
         const capabilities = RTCRtpSender.getCapabilities('video');
         if (capabilities) {
-            // Sort codecs to prefer AV1, then VP9, then VP8
+            // Sort codecs to prefer AV1, then H264
             const codecs = capabilities.codecs.slice();
             codecs.sort((a, b) => {
-                const order = ['video/AV1', 'video/VP9', 'video/VP8', 'video/H264'];
+                const order = ['video/AV1', 'video/H264'];
                 const aIndex = order.findIndex(c => a.mimeType.includes(c.split('/')[1]));
                 const bIndex = order.findIndex(c => b.mimeType.includes(c.split('/')[1]));
                 return (aIndex === -1 ? 999 : aIndex) - (bIndex === -1 ? 999 : bIndex);
@@ -704,13 +704,13 @@ async function configureVideoSender(sender, pc) {
         }
     }
 
-    // Set high bitrate for smooth screensharing (8 Mbps max)
+    // Set high bitrate for smooth screensharing (5 Mbps max)
     try {
         const params = sender.getParameters();
         if (!params.encodings || params.encodings.length === 0) {
             params.encodings = [{}];
         }
-        params.encodings[0].maxBitrate = 8_000_000; // 8 Mbps
+        params.encodings[0].maxBitrate = 5_000_000; // 5 Mbps
         await sender.setParameters(params);
     } catch (e) {
         console.warn('Could not set video bitrate:', e);
