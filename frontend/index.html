@@ -127,13 +127,45 @@
                             <button id="btnScreenShare" class="iconbtn" title="Share Screen">
                                 <i class="bi bi-display"></i>
                             </button>
+                            <button id="btnSharePlay" class="iconbtn" title="Share Play">
+                                <i class="bi bi-collection-play"></i>
+                            </button>
                             <button id="btnLeaveCall" class="iconbtn danger" title="Leave Call">
                                 <i class="bi bi-telephone-x-fill"></i>
                             </button>
                         </div>
                     </div>
-                    <div class="call-participants" id="callParticipants"></div>
+                    <div id="callParticipants" class="call-participants"></div>
                     <div id="videoGrid" class="video-grid"></div>
+                    <div id="shareplayContainer" class="shareplay-container" style="display:none">
+                        <div id="nowPlaying">
+                            <p id="nowPlayingTitle">Nothing is playing.</p>
+                            <div id="nowPlayingSeek"></div>
+                            <div id="shareplayControls" class="shareplay-controls">
+                                <button id="btnSharePlayPrevious" class="iconbtn">
+                                    <i class="bi bi-skip-backward"></i>
+                                </button>
+                                <button id="btnSharePlayPause" class="iconbtn">
+                                    <i class="bi bi-pause"></i>
+                                </button>
+                                <button id="btnSharePlayNext" class="iconbtn">
+                                    <i class="bi bi-skip-forward"></i>
+                                </button>
+                                <button id="btnSharePlayRepeat" class="iconbtn">
+                                    <i class="bi bi-repeat"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="shareplayQueue" class="shareplay-queue">
+                            <div id="shareplayQueueItems" class="shareplay-queue-items"></div>
+                            <div id="shareplayQueueAdd" class="shareplay-queue-add">
+                                <input type="text" id="shareplayQueueAddInput" placeholder="Enter a URL or file path">
+                                <button id="shareplayQueueAddButton" class="iconbtn">
+                                    <i class="bi bi-plus"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
