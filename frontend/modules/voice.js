@@ -260,7 +260,7 @@ function mangleSdp(sdp) {
         }
     }
     if (opusPt) {
-        const fmtpLine = `a=fmtp:${opusPt} maxaveragebitrate=128000;stereo=1;useinbandfec=1;usedtx=1`;
+        const fmtpLine = `a=fmtp:${opusPt} maxaveragebitrate=128000;stereo=0;useinbandfec=1;usedtx=1`;
         let found = false;
         for (let i = 0; i < lines.length; i++) {
             if (lines[i].startsWith(`a=fmtp:${opusPt}`)) {
