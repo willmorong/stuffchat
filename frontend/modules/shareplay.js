@@ -131,13 +131,13 @@ export class SharePlay {
 
                 // If not playing or drifted
                 if (!this.currentSource || Math.abs(this.getCurrentTime() - serverPos) > 0.5) {
-                    this.play(serverPos);
+                    if (!this.isLoading) {
+                        this.play(serverPos);
+                    }
                 }
             } else {
-                if (this.currentSource) {
-                    this.stop();
-                    this.ctx.suspend(); // Optional, or just stop source
-                }
+                this.stop();
+                if (this.ctx.state === 'running') this.ctx.suspend();
             }
 
             // Update Title
@@ -166,12 +166,43 @@ export class SharePlay {
         console.log(`[SharePlay] Loading track ID: ${id} for channel: ${channelId}`);
 
         try {
-            const res = await fetch(store.baseUrl + `/api/shareplay/${channelId}/current`);
-            if (!res.ok) throw new Error(`Failed to load: ${res.status} ${res.statusText}`);
-            const arrayBuffer = await res.arrayBuffer();
-            this.buffer = await this.ctx.decodeAudioData(arrayBuffer);
+            const res = await fetch(store.baseUrl + `/api/shareplay/${channelId}/current`, {
+                cache: 'no-store'
+            });
+            if (!res.ok) throw new Error(`Failed to load track info: ${res.status} ${res.statusText}`);
+            const { song_id } = await res.json();
+            console.log(`[SharePlay] Got song ID: ${song_id}, fetching audio file...`);
+
+            const audioRes = await fetch(store.baseUrl + `/api/shareplay/song/${song_id}`);
+            if (!audioRes.ok) throw new Error(`Failed to load audio: ${audioRes.status} ${audioRes.statusText}`);
+
+            const arrayBuffer = await audioRes.arrayBuffer();
+            const decoded = await this.ctx.decodeAudioData(arrayBuffer);
+
+            // Check if we already moved on to another track during the fetch
+            if (this.fileId !== id) {
+                console.warn(`[SharePlay] Track ID mismatch after load: ${this.fileId} vs ${id}. Discarding buffer.`);
+                return;
+            }
+
+            this.buffer = decoded;
             this.isLoading = false;
             console.log(`[SharePlay] Track loaded successfully, buffer duration: ${this.buffer.duration}`);
+
+            // If the server state is still playing this track, start it
+            if (this.serverState?.status === 'playing' && this.serverState?.current_index !== null) {
+                const currentItem = this.serverState.queue[this.serverState.current_index];
+                if (currentItem && currentItem.id === id) {
+                    // Re-sync position
+                    let serverPos = this.serverState.current_position_secs;
+                    if (this.serverState.start_time) {
+                        const saved = new Date(this.serverState.start_time).getTime();
+                        const elapsed = (Date.now() - saved) / 1000;
+                        serverPos += elapsed;
+                    }
+                    this.play(serverPos);
+                }
+            }
         } catch (e) {
             console.error("[SharePlay] Error loading audio:", e);
             this.isLoading = false;
@@ -215,6 +246,23 @@ export class SharePlay {
             cancelAnimationFrame(this.animationFrameId);
             this.animationFrameId = null;
         }
+    }
+
+    reset() {
+        console.log("[SharePlay] Resetting state");
+        this.stop();
+        this.buffer = null;
+        this.fileId = null;
+        this.isLoading = false;
+        this.serverState = null;
+        if (this.ctx && this.ctx.state !== 'closed') {
+            this.ctx.suspend().catch(() => { });
+        }
+        if (this.ui.title) this.ui.title.textContent = "SharePlay inactive";
+        if (this.ui.seek) this.ui.seek.style.background = 'var(--bg-3)';
+        if (this.ui.currentTime) this.ui.currentTime.textContent = '0:00';
+        if (this.ui.totalTime) this.ui.totalTime.textContent = '0:00';
+        if (this.ui.queue) this.ui.queue.innerHTML = '';
     }
 
     getCurrentTime() {

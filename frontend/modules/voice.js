@@ -1,6 +1,7 @@
 import { store } from './store.js';
 import { $ } from './utils.js';
 import { playNotificationSound, buildFileUrl, el } from './utils.js';
+import { sharePlay } from './shareplay.js';
 
 let sharedAudioCtx = null;
 function getAudioCtx() {
@@ -675,6 +676,7 @@ export function leaveCall() {
     }
 
     store.callChannelId = null;
+    sharePlay.reset();
     updateCallUI();
     updateVideoGrid();
 }

@@ -1,34 +1,64 @@
-use crate::ws::server::{ChatServer, GetSharePlayCurrent};
+use crate::ws::server::{ChatServer, GetSharePlaySongId, GetSharePlaySongPath};
 use actix_files::NamedFile;
-use actix_web::{Error, web};
+use actix_web::{Error, HttpResponse, http::header, web};
 use std::path::PathBuf;
 
 pub async fn get_current_track(
     path: web::Path<String>,
     app_state: web::Data<actix::Addr<ChatServer>>,
-) -> Result<NamedFile, Error> {
+) -> Result<HttpResponse, Error> {
     let channel_id = path.into_inner();
-    log::info!("get_current_track called for channel_id={}", channel_id);
+    log::info!(
+        "get_current_track (ID lookup) called for channel_id={}",
+        channel_id
+    );
 
     let res = app_state
-        .send(GetSharePlayCurrent {
+        .send(GetSharePlaySongId {
             channel_id: channel_id.clone(),
         })
         .await;
 
-    log::info!("GetSharePlayCurrent result: {:?}", res);
+    match res {
+        Ok(Ok(Some(song_id))) => Ok(HttpResponse::Ok()
+            .insert_header((
+                header::CACHE_CONTROL,
+                "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+            ))
+            .insert_header((header::PRAGMA, "no-cache"))
+            .insert_header((header::EXPIRES, "0"))
+            .json(serde_json::json!({ "song_id": song_id }))),
+        Ok(Ok(None)) => {
+            log::warn!("No current track ID for channel {}", channel_id);
+            Err(actix_web::error::ErrorNotFound(
+                "No track currently playing",
+            ))
+        }
+        _ => {
+            log::error!("Error getting song ID for channel {}", channel_id);
+            Err(actix_web::error::ErrorInternalServerError(
+                "Internal server error",
+            ))
+        }
+    }
+}
+
+pub async fn get_song_by_id(
+    path: web::Path<String>,
+    app_state: web::Data<actix::Addr<ChatServer>>,
+) -> Result<NamedFile, Error> {
+    let song_id = path.into_inner();
+    log::info!("get_song_by_id called for song_id={}", song_id);
+
+    let res = app_state
+        .send(GetSharePlaySongPath {
+            song_id: song_id.clone(),
+        })
+        .await;
 
     match res {
         Ok(Ok(Some(file_path))) => {
-            log::info!(
-                "Serving SharePlay file for channel {}: {}",
-                channel_id,
-                file_path
-            );
-
             let path = PathBuf::from(&file_path);
-
-            // Check if file exists before trying to open
             if !path.exists() {
                 log::error!("File does not exist: {}", file_path);
                 return Err(actix_web::error::ErrorNotFound(format!(
@@ -36,21 +66,14 @@ pub async fn get_current_track(
                     file_path
                 )));
             }
-
             Ok(NamedFile::open(path)?)
         }
         Ok(Ok(None)) => {
-            log::warn!("No current track for channel {}", channel_id);
-            Err(actix_web::error::ErrorNotFound(
-                "No track currently playing",
-            ))
+            log::warn!("Song ID {} not found", song_id);
+            Err(actix_web::error::ErrorNotFound("Song not found"))
         }
-        Ok(Err(_)) => {
-            log::warn!("SharePlay state error for channel {}", channel_id);
-            Err(actix_web::error::ErrorNotFound("SharePlay state not found"))
-        }
-        Err(e) => {
-            log::error!("Actor mailbox error: {}", e);
+        _ => {
+            log::error!("Error getting song path for ID {}", song_id);
             Err(actix_web::error::ErrorInternalServerError(
                 "Internal server error",
             ))

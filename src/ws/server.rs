@@ -127,8 +127,14 @@ pub struct SharePlayMetadataResult {
 
 #[derive(Message)]
 #[rtype(result = "Result<Option<String>, ()>")]
-pub struct GetSharePlayCurrent {
+pub struct GetSharePlaySongId {
     pub channel_id: String,
+}
+
+#[derive(Message)]
+#[rtype(result = "Result<Option<String>, ()>")]
+pub struct GetSharePlaySongPath {
+    pub song_id: String,
 }
 
 impl Handler<Join> for ChatServer {
@@ -514,37 +520,30 @@ impl Handler<SharePlayMetadataResult> for ChatServer {
     }
 }
 
-impl Handler<GetSharePlayCurrent> for ChatServer {
+impl Handler<GetSharePlaySongId> for ChatServer {
     type Result = Result<Option<String>, ()>;
 
-    fn handle(&mut self, msg: GetSharePlayCurrent, _: &mut Context<Self>) -> Self::Result {
-        log::info!("GetSharePlayCurrent handler: channel_id={}", msg.channel_id);
-
+    fn handle(&mut self, msg: GetSharePlaySongId, _: &mut Context<Self>) -> Self::Result {
         if let Some(state) = self.shareplay_states.get(&msg.channel_id) {
-            log::info!(
-                "Found shareplay state: current_index={:?}, queue_len={}, status={}",
-                state.current_index,
-                state.queue.len(),
-                state.status
-            );
-
             if let Some(idx) = state.current_index {
                 if let Some(item) = state.queue.get(idx) {
-                    log::info!(
-                        "Current track: id={}, title={}, file_path={:?}",
-                        item.id,
-                        item.title,
-                        item.file_path
-                    );
-                    return Ok(item.file_path.clone());
-                } else {
-                    log::warn!("Index {} out of bounds for queue", idx);
+                    return Ok(Some(item.id.clone()));
                 }
-            } else {
-                log::info!("No current_index set");
             }
-        } else {
-            log::warn!("No shareplay state found for channel {}", msg.channel_id);
+        }
+        Ok(None)
+    }
+}
+
+impl Handler<GetSharePlaySongPath> for ChatServer {
+    type Result = Result<Option<String>, ()>;
+
+    fn handle(&mut self, msg: GetSharePlaySongPath, _: &mut Context<Self>) -> Self::Result {
+        // Search across all channels for this song ID
+        for state in self.shareplay_states.values() {
+            if let Some(item) = state.queue.iter().find(|i| i.id == msg.song_id) {
+                return Ok(item.file_path.clone());
+            }
         }
         Ok(None)
     }
