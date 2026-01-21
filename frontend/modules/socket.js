@@ -4,6 +4,7 @@ import { fetchUser } from './users.js';
 import { renderMessages, renderMessageItem, isScrolledToBottom, scrollToBottom } from './messages.js';
 import { updateCallUI, createPeerConnection, handleSignal } from './voice.js';
 import { renderChannelList, markChannelRead } from './channels.js';
+import { sharePlay } from './shareplay.js';
 
 export function connectWs(reconnect = false) {
     const url = toWsUrl(store.baseUrl);
@@ -165,6 +166,13 @@ export function handleWsMessage(ev) {
             updateCallUI();
             break;
         }
+        case 'shareplay_state': {
+            if (ev.channel_id === store.callChannelId) {
+                sharePlay.sync(ev.state, ev.channel_id);
+                $('#shareplayContainer').style.display = 'flex';
+            }
+            break;
+        }
         case 'voice_joined': {
             if (!store.voiceUsers.has(ev.channel_id)) store.voiceUsers.set(ev.channel_id, new Set());
             const compositeid = `${ev.user_id}:${ev.session_id}`;
@@ -212,6 +220,16 @@ export function handleWsMessage(ev) {
             // If it's targeted at us, or untargeted (legacy/broadcast)
             if (!ev.to_session_id || ev.to_session_id === store.sessionId) {
                 handleSignal(ev.from_user_id, ev.from_session_id, ev.data);
+            }
+            break;
+        }
+        case 'shareplay_update': {
+            if (ev.channel_id === store.callChannelId) {
+                sharePlay.sync(ev.state, ev.channel_id);
+                // Ensure UI is visible if it wasn't
+                if (ev.state.status === 'playing' || ev.state.queue.length > 0) {
+                    $('#shareplayContainer').style.display = 'flex';
+                }
             }
             break;
         }

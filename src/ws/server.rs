@@ -1,3 +1,4 @@
+use crate::shareplay::SharePlayState;
 use actix::{Actor, AsyncContext, Context, Handler, Message};
 use std::collections::{HashMap, HashSet};
 
@@ -5,6 +6,7 @@ pub struct ChatServer {
     rooms: HashMap<String, HashSet<actix::Addr<super::session::WsSession>>>,
     voice_participants: HashMap<String, HashSet<(String, String)>>, // channel_id -> set of (user_id, session_id)
     user_sessions: HashMap<String, HashMap<String, actix::Addr<super::session::WsSession>>>, // user_id -> { session_id -> addr }
+    pub shareplay_states: HashMap<String, SharePlayState>,
 }
 
 impl ChatServer {
@@ -13,6 +15,7 @@ impl ChatServer {
             rooms: HashMap::new(),
             voice_participants: HashMap::new(),
             user_sessions: HashMap::new(),
+            shareplay_states: HashMap::new(),
         }
     }
 }
@@ -90,6 +93,44 @@ pub struct NotifyUsers {
     pub skip_channel: Option<String>,
 }
 
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct SharePlayAction {
+    pub channel_id: String,
+    pub user_id: String,
+    pub action_type: String, // "play", "pause", "next", "prev", "seek", "add", "track", "toggle_repeat"
+    pub data: Option<String>, // url for add, timestamp for seek, index for track
+}
+
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct SharePlayDownloadResult {
+    pub channel_id: String,
+    pub id: String,
+    pub success: bool,
+    pub title: String,
+    pub file_path: Option<String>,
+    pub duration: u64,
+    pub error: Option<String>,
+}
+
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct SharePlayMetadataResult {
+    pub channel_id: String,
+    pub id: String,
+    pub success: bool,
+    pub title: String,
+    pub duration: u64,
+    pub error: Option<String>,
+}
+
+#[derive(Message)]
+#[rtype(result = "Result<Option<String>, ()>")]
+pub struct GetSharePlayCurrent {
+    pub channel_id: String,
+}
+
 impl Handler<Join> for ChatServer {
     type Result = ();
     fn handle(&mut self, msg: Join, _: &mut Context<Self>) {
@@ -106,9 +147,20 @@ impl Handler<Join> for ChatServer {
             // Let's include session IDs in room state too.
             let users_vec: Vec<(String, String)> = voice_users.iter().cloned().collect();
             msg.addr.do_send(super::session::RoomState {
-                channel_id: msg.channel_id,
+                channel_id: msg.channel_id.clone(),
                 voice_users: users_vec,
             });
+        }
+
+        // Send SharePlay state if exists
+        if let Some(state) = self.shareplay_states.get(&msg.channel_id) {
+            let payload = serde_json::json!({
+                "type": "shareplay_state",
+                "channel_id": msg.channel_id,
+                "state": state
+            })
+            .to_string();
+            msg.addr.do_send(super::session::ServerMsg { payload });
         }
     }
 }
@@ -142,9 +194,28 @@ impl Handler<Leave> for ChatServer {
                         })
                         .to_string();
                         ctx.notify(Broadcast {
-                            channel_id: msg.channel_id,
+                            channel_id: msg.channel_id.clone(),
                             payload,
                         });
+                    }
+
+                    // If NO ONE is left in voice, clean up SharePlay
+                    if voice_users.is_empty() {
+                        if let Some(state) = self.shareplay_states.remove(&msg.channel_id) {
+                            crate::shareplay::cleanup_channel_files(&state);
+                            log::info!("Cleaned up SharePlay for empty channel {}", msg.channel_id);
+
+                            // Notify clients
+                            let clear_payload = serde_json::json!({
+                                "type": "shareplay_cleared",
+                                "channel_id": msg.channel_id
+                            })
+                            .to_string();
+                            ctx.notify(Broadcast {
+                                channel_id: msg.channel_id.clone(),
+                                payload: clear_payload,
+                            });
+                        }
                     }
                 }
             }
@@ -213,9 +284,28 @@ impl Handler<LeaveVoice> for ChatServer {
                     })
                     .to_string();
                     ctx.notify(Broadcast {
-                        channel_id: msg.channel_id,
+                        channel_id: msg.channel_id.clone(),
                         payload,
                     });
+                }
+
+                // If NO ONE is left in voice, clean up SharePlay
+                if voice_users.is_empty() {
+                    if let Some(state) = self.shareplay_states.remove(&msg.channel_id) {
+                        crate::shareplay::cleanup_channel_files(&state);
+                        log::info!("Cleaned up SharePlay for empty channel {}", msg.channel_id);
+
+                        // Notify clients
+                        let clear_payload = serde_json::json!({
+                            "type": "shareplay_cleared",
+                            "channel_id": msg.channel_id
+                        })
+                        .to_string();
+                        ctx.notify(Broadcast {
+                            channel_id: msg.channel_id.clone(),
+                            payload: clear_payload,
+                        });
+                    }
                 }
             }
         }
@@ -287,5 +377,175 @@ impl Handler<NotifyUsers> for ChatServer {
                 }
             }
         }
+    }
+}
+
+impl Handler<SharePlayAction> for ChatServer {
+    type Result = ();
+    fn handle(&mut self, msg: SharePlayAction, ctx: &mut Context<Self>) {
+        let state = self
+            .shareplay_states
+            .entry(msg.channel_id.clone())
+            .or_insert_with(SharePlayState::new);
+
+        log::info!(
+            "ChatServer handling SharePlayAction: channel_id={}, user_id={}, action={}",
+            msg.channel_id,
+            msg.user_id,
+            msg.action_type
+        );
+
+        match msg.action_type.as_str() {
+            "add" => {
+                if let Some(url) = msg.data {
+                    let id = state.add_item(url.clone());
+                    // Trigger download
+                    crate::shareplay::start_download(
+                        url,
+                        id,
+                        ctx.address(),
+                        msg.channel_id.clone(),
+                    );
+                }
+            }
+            "play" => state.play(),
+            "pause" => state.pause(),
+            "next" => state.next(),
+            "prev" => state.prev(),
+            "seek" => {
+                if let Some(ts_str) = msg.data {
+                    if let Ok(ts) = ts_str.parse::<f64>() {
+                        state.seek(ts);
+                    }
+                }
+            }
+            "track" => {
+                if let Some(idx_str) = msg.data {
+                    if let Ok(idx) = idx_str.parse::<usize>() {
+                        state.set_track(idx);
+                    }
+                }
+            }
+            "toggle_repeat" => state.toggle_repeat(),
+            _ => {}
+        }
+
+        // Broadcast update
+        let payload = serde_json::json!({
+            "type": "shareplay_update",
+            "channel_id": msg.channel_id,
+            "state": state
+        })
+        .to_string();
+
+        ctx.notify(Broadcast {
+            channel_id: msg.channel_id,
+            payload,
+        });
+    }
+}
+
+impl Handler<SharePlayDownloadResult> for ChatServer {
+    type Result = ();
+    fn handle(&mut self, msg: SharePlayDownloadResult, ctx: &mut Context<Self>) {
+        log::info!(
+            "ChatServer received SharePlayDownloadResult: channel_id={}, id={}, success={}",
+            msg.channel_id,
+            msg.id,
+            msg.success
+        );
+        if let Some(state) = self.shareplay_states.get_mut(&msg.channel_id) {
+            if msg.success {
+                state.update_item_success(
+                    &msg.id,
+                    msg.title,
+                    msg.file_path.unwrap_or_default(),
+                    msg.duration,
+                );
+            } else {
+                state.update_item_error(&msg.id, msg.error.unwrap_or("Unknown error".to_string()));
+            }
+
+            // Broadcast update
+            let payload = serde_json::json!({
+                "type": "shareplay_update",
+                "channel_id": msg.channel_id,
+                "state": state
+            })
+            .to_string();
+
+            ctx.notify(Broadcast {
+                channel_id: msg.channel_id,
+                payload,
+            });
+        }
+    }
+}
+
+impl Handler<SharePlayMetadataResult> for ChatServer {
+    type Result = ();
+    fn handle(&mut self, msg: SharePlayMetadataResult, ctx: &mut Context<Self>) {
+        log::info!(
+            "ChatServer received SharePlayMetadataResult: channel_id={}, id={}, success={}",
+            msg.channel_id,
+            msg.id,
+            msg.success
+        );
+        if let Some(state) = self.shareplay_states.get_mut(&msg.channel_id) {
+            if msg.success {
+                state.update_item_metadata(&msg.id, msg.title, msg.duration);
+            } else {
+                state.update_item_error(&msg.id, msg.error.unwrap_or("Unknown error".to_string()));
+            }
+
+            // Broadcast update
+            let payload = serde_json::json!({
+                "type": "shareplay_update",
+                "channel_id": msg.channel_id,
+                "state": state
+            })
+            .to_string();
+
+            ctx.notify(Broadcast {
+                channel_id: msg.channel_id,
+                payload,
+            });
+        }
+    }
+}
+
+impl Handler<GetSharePlayCurrent> for ChatServer {
+    type Result = Result<Option<String>, ()>;
+
+    fn handle(&mut self, msg: GetSharePlayCurrent, _: &mut Context<Self>) -> Self::Result {
+        log::info!("GetSharePlayCurrent handler: channel_id={}", msg.channel_id);
+
+        if let Some(state) = self.shareplay_states.get(&msg.channel_id) {
+            log::info!(
+                "Found shareplay state: current_index={:?}, queue_len={}, status={}",
+                state.current_index,
+                state.queue.len(),
+                state.status
+            );
+
+            if let Some(idx) = state.current_index {
+                if let Some(item) = state.queue.get(idx) {
+                    log::info!(
+                        "Current track: id={}, title={}, file_path={:?}",
+                        item.id,
+                        item.title,
+                        item.file_path
+                    );
+                    return Ok(item.file_path.clone());
+                } else {
+                    log::warn!("Index {} out of bounds for queue", idx);
+                }
+            } else {
+                log::info!("No current_index set");
+            }
+        } else {
+            log::warn!("No shareplay state found for channel {}", msg.channel_id);
+        }
+        Ok(None)
     }
 }

@@ -5,6 +5,7 @@ mod errors;
 mod models;
 mod permissions;
 mod routes;
+mod shareplay;
 mod utils;
 mod ws;
 
@@ -35,6 +36,20 @@ async fn main() -> std::io::Result<()> {
 
     let chat_server = ChatServer::new().start();
     log::info!("Starting server at {}", cfg.listen);
+
+    // Clean up temp folder on startup
+    let temp_dir = std::path::Path::new("temp");
+    if temp_dir.exists() {
+        if let Err(e) = std::fs::remove_dir_all(temp_dir) {
+            log::warn!("Failed to clean temp directory on startup: {}", e);
+        } else {
+            log::info!("Cleaned temp directory on startup");
+        }
+    }
+    // Recreate empty temp directory
+    if let Err(e) = std::fs::create_dir_all(temp_dir) {
+        log::warn!("Failed to create temp directory: {}", e);
+    }
 
     let listen_addr = cfg.listen.clone();
     HttpServer::new(move || {
@@ -144,6 +159,10 @@ async fn main() -> std::io::Result<()> {
                     )
                     .service(
                         web::scope("/files").route("", web::post().to(files_routes::upload_file)),
+                    )
+                    .route(
+                        "/shareplay/{channel_id}/current",
+                        web::get().to(routes::shareplay::get_current_track),
                     ),
             )
             .route("/ws", web::get().to(ws::session::ws_route))

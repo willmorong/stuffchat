@@ -1,4 +1,6 @@
-use super::server::{Broadcast, ChatServer, Connect, DirectSignal, Disconnect, Join, Leave};
+use super::server::{
+    Broadcast, ChatServer, Connect, DirectSignal, Disconnect, Join, Leave, SharePlayAction,
+};
 use crate::{auth, config::Config, db::Db};
 use actix::{Actor, ActorContext, Addr, AsyncContext, Handler, Message, StreamHandler, WrapFuture};
 use actix_web::{Error, HttpRequest, HttpResponse, web};
@@ -207,6 +209,12 @@ enum ClientEvent {
     LeaveCall {
         channel_id: String,
     },
+    #[serde(rename = "shareplay_action")]
+    SharePlayAction {
+        channel_id: String,
+        action_type: String,
+        data: Option<String>,
+    },
     Ping,
 }
 
@@ -380,6 +388,32 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                                 user_id: self.user_id.clone(),
                                 session_id: self.session_id.clone(),
                             });
+                        }
+                        ClientEvent::SharePlayAction {
+                            channel_id,
+                            action_type,
+                            data,
+                        } => {
+                            let db = self.db.clone();
+                            let user_id = self.user_id.clone();
+                            let server = self.server.clone();
+                            let cid = channel_id.clone();
+                            ctx.spawn(
+                                async move {
+                                    // Must be in voice/read permission to control?
+                                    // For now check read permission
+                                    if can_read(&db, &user_id, &cid).await {
+                                        log::info!("WsSession sending SharePlayAction to server: user_id={}, channel_id={}, action={}", user_id, cid, action_type);
+                                        server.do_send(SharePlayAction {
+                                            channel_id: cid,
+                                            user_id,
+                                            action_type,
+                                            data,
+                                        });
+                                    }
+                                }
+                                .into_actor(self),
+                            );
                         }
                     }
                 }

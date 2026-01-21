@@ -140,7 +140,11 @@
                     <div id="shareplayContainer" class="shareplay-container" style="display:none">
                         <div id="nowPlaying">
                             <p id="nowPlayingTitle">Nothing is playing.</p>
-                            <div id="nowPlayingSeek"></div>
+                            <div class="shareplay-seek-row">
+                                <span id="nowPlayingCurrentTime" class="shareplay-timestamp">0:00</span>
+                                <div id="nowPlayingSeek"></div>
+                                <span id="nowPlayingTotalTime" class="shareplay-timestamp">0:00</span>
+                            </div>
                             <div id="shareplayControls" class="shareplay-controls">
                                 <button id="btnSharePlayPrevious" class="iconbtn">
                                     <i class="bi bi-skip-backward"></i>

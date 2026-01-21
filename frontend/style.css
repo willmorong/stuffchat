@@ -1246,3 +1246,30 @@ body[data-theme="rain"] .msg.own {
     border-color: var(--accent);
     background: rgba(255, 255, 255, 0.1);
 }
+
+.shareplay-queue-item {
+    font-size: 10pt;
+    padding: 4px 10px;
+}
+
+.shareplay-queue-item.error .title {
+    color: var(--danger);
+}
+
+.shareplay-seek-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+}
+
+.shareplay-seek-row #nowPlayingSeek {
+    flex: 1;
+}
+
+.shareplay-timestamp {
+    font-size: 11px;
+    color: var(--text-dim);
+    min-width: 35px;
+    text-align: center;
+}

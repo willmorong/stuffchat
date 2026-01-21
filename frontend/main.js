@@ -235,6 +235,14 @@ function bindUI() {
             startScreenShare();
         }
     });
+    $('#btnSharePlay').addEventListener('click', () => {
+        const el = $('#shareplayContainer');
+        if (el.style.display === 'none') {
+            el.style.display = 'flex';
+        } else {
+            el.style.display = 'none';
+        }
+    });
 
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) {
