@@ -6,6 +6,7 @@ export class SharePlay {
     constructor() {
         this.ctx = new (window.AudioContext || window.webkitAudioContext)();
         this.gainNode = this.ctx.createGain();
+        this.gainNode.gain.value = 0.4; // Default to 40%
         this.gainNode.connect(this.ctx.destination);
 
         this.currentSource = null;
@@ -30,6 +31,7 @@ export class SharePlay {
             btnPause: $('#btnSharePlayPause'),
             btnNext: $('#btnSharePlayNext'),
             btnRepeat: $('#btnSharePlayRepeat'),
+            volume: $('#shareplayVolume'),
         };
 
         this.animationFrameId = null;
@@ -59,6 +61,11 @@ export class SharePlay {
             if (duration > 0) {
                 this.sendAction('seek', (percent * duration).toString());
             }
+        };
+
+        this.ui.volume.oninput = () => {
+            const val = parseInt(this.ui.volume.value);
+            this.gainNode.gain.value = val / 100;
         };
     }
 
@@ -259,7 +266,7 @@ export class SharePlay {
             this.ctx.suspend().catch(() => { });
         }
         if (this.ui.title) this.ui.title.textContent = "SharePlay inactive";
-        if (this.ui.seek) this.ui.seek.style.background = 'var(--bg-3)';
+        if (this.ui.seek) this.ui.seek.style.background = 'var(--border)';
         if (this.ui.currentTime) this.ui.currentTime.textContent = '0:00';
         if (this.ui.totalTime) this.ui.totalTime.textContent = '0:00';
         if (this.ui.queue) this.ui.queue.innerHTML = '';
@@ -351,7 +358,7 @@ export class SharePlay {
         const duration = storedDuration || 1; // avoid /0
 
         const percent = Math.min(100, (current / duration) * 100);
-        this.ui.seek.style.background = `linear-gradient(to right, var(--accent) ${percent}%, var(--bg-3) ${percent}%)`;
+        this.ui.seek.style.background = `linear-gradient(to right, var(--accent) ${percent}%, var(--border) ${percent}%)`;
     }
 
     startSeekLoop() {

@@ -93,9 +93,9 @@ const COLORS = [
     { r: 0, g: 0, b: 0 },      // Black (--bg1)
     { r: 27, g: 38, b: 59 },      // Mid blue (--bg2)
     { r: 60, g: 50, b: 120 },     // Purple accent
-    { r: 90, g: 70, b: 150 },     // Lighter purple
+    { r: 50, g: 30, b: 75 },     // Darker purple
     { r: 100, g: 150, b: 255 },   // Vibrant blue (--accent)
-    { r: 70, g: 240, b: 170 }     // Vibrant teal (--accent-2)
+    { r: 35, g: 120, b: 85 }     // Dark teal (--accent-2)
 ];
 
 // Pixel step for performance (render every Nth pixel, interpolate the rest)
