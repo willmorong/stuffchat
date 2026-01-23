@@ -219,6 +219,8 @@ export function updateCallUI() {
 
         updateMuteButton();
         updateDeafenButton();
+        const iconsDiv = $('#voiceCallParticipantsIcons');
+        if (iconsDiv) iconsDiv.innerHTML = '';
     } else {
         callUI.style.display = 'none';
         // Cleanup volume monitors if not in call
@@ -227,12 +229,34 @@ export function updateCallUI() {
 
         if (isVoice) {
             btnStart.style.display = 'block';
-            btnStart.style.marginLeft = 'auto';
+            btnStart.style.marginLeft = '8px';
             btnStart.style.width = 'fit-content';
             btnStart.textContent = voiceUsersHere.size > 0 ? 'Join Call' : 'Start Call';
             btnStart.className = voiceUsersHere.size > 0 ? 'button small success' : 'button small';
+
+            const iconsDiv = $('#voiceCallParticipantsIcons');
+            if (iconsDiv) {
+                iconsDiv.innerHTML = '';
+                if (voiceUsersHere.size > 0) {
+                    // Unique user IDs (voiceUsersHere contains uid:sid)
+                    const uniqueUids = new Set();
+                    voiceUsersHere.forEach(cid => uniqueUids.add(cid.split(':')[0]));
+
+                    uniqueUids.forEach(uid => {
+                        const u = store.users.get(uid);
+                        if (!u) return;
+                        const icon = el('div', { class: 'participant-icon', title: u.username });
+                        if (u.avatar_file_id) {
+                            icon.appendChild(el('img', { src: buildFileUrl(u.avatar_file_id, 'avatar'), alt: u.username }));
+                        }
+                        iconsDiv.appendChild(icon);
+                    });
+                }
+            }
         } else {
             btnStart.style.display = 'none';
+            const iconsDiv = $('#voiceCallParticipantsIcons');
+            if (iconsDiv) iconsDiv.innerHTML = '';
         }
     }
 }
