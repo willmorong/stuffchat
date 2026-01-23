@@ -101,6 +101,7 @@ export function handleWsMessage(ev) {
                     icon: '/img/favicon.png'
                 });
                 n.onclick = () => { window.focus(); };
+                playNotificationSound('message');
             }
             break;
         }

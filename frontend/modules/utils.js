@@ -42,7 +42,10 @@ export const presenceClass = status => ({
 }[status] || 'presence-offline');
 
 export function playNotificationSound(type) {
-    const file = type === 'join' ? 'audio/stuffchat_join_v3.wav' : 'audio/stuffchat_leave_v3.wav';
+    let file = 'audio/stuffchat_join_v3.wav';
+    if (type === 'leave') file = 'audio/stuffchat_leave_v3.wav';
+    if (type === 'message') file = 'audio/stuffchat_message.wav';
+
     const audio = new Audio(file);
     audio.volume = 0.25;
     audio.play().catch(e => console.warn('Audio playback failed', e));

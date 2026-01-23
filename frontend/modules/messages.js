@@ -264,7 +264,7 @@ export async function sendMessage() {
 
     if (!content && !file_id) return;
     $('#msgInput').value = '';
-    $('#msgInput').placeholder = 'Write a message…';
+    $('#msgInput').placeholder = ' ';
     fileInput.value = '';
     store.pendingAttachment = null; // Clear pending attachment
 

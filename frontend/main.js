@@ -154,7 +154,7 @@ function bindUI() {
             // Clear any pending attachment from paste/drop when file input is used
             setPendingAttachment(null);
         } else {
-            $('#msgInput').placeholder = 'Write a message…';
+            $('#msgInput').placeholder = ' ';
         }
     });
 
