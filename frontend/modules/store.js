@@ -42,6 +42,8 @@ export const store = {
     isDeafened: false,
     // Pending attachment from paste/drop
     pendingAttachment: null,
+    // Clock sync: offset = serverTime - clientTime (positive means server is ahead)
+    timeOffset: 0,
 };
 
 export function setPendingAttachment(file) {

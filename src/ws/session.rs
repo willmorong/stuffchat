@@ -47,11 +47,12 @@ pub async fn ws_route(
     };
     let (addr, resp) = ws::WsResponseBuilder::new(session, &req, stream).start_with_addr()?;
 
-    // Send session_id to client
+    // Send session_id and server_time to client (for clock sync)
     addr.do_send(ServerMsg {
         payload: serde_json::json!({
             "type": "connection_metadata",
-            "session_id": session_id
+            "session_id": session_id,
+            "server_time": Utc::now().to_rfc3339()
         })
         .to_string(),
     });

@@ -125,14 +125,13 @@ export class SharePlay {
             if (state.status === 'playing') {
                 if (this.ctx.state === 'suspended') this.ctx.resume();
 
-                // Calculate current server position
+                // Calculate current server position using clock-synced time
                 let serverPos = state.current_position_secs;
                 if (state.start_time) {
                     const saved = new Date(state.start_time).getTime();
-                    const now = Date.now() + (store.timeOffset || 0); // Assuming store.timeOffset if we had one, but we don't.
-                    // Use local clock relative diff if close enough or just trust server time if synced reasonably
-                    // For now simple elapsed:
-                    const elapsed = (Date.now() - saved) / 1000;
+                    // Use timeOffset to convert client time to server time
+                    const now = Date.now() + (store.timeOffset || 0);
+                    const elapsed = (now - saved) / 1000;
                     serverPos += elapsed;
                 }
 
@@ -200,11 +199,12 @@ export class SharePlay {
             if (this.serverState?.status === 'playing' && this.serverState?.current_index !== null) {
                 const currentItem = this.serverState.queue[this.serverState.current_index];
                 if (currentItem && currentItem.id === id) {
-                    // Re-sync position
+                    // Re-sync position using clock-synced time
                     let serverPos = this.serverState.current_position_secs;
                     if (this.serverState.start_time) {
                         const saved = new Date(this.serverState.start_time).getTime();
-                        const elapsed = (Date.now() - saved) / 1000;
+                        const now = Date.now() + (store.timeOffset || 0);
+                        const elapsed = (now - saved) / 1000;
                         serverPos += elapsed;
                     }
                     this.play(serverPos);

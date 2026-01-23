@@ -153,6 +153,13 @@ export function handleWsMessage(ev) {
         case 'connection_metadata': {
             store.sessionId = ev.session_id;
             console.log('Session ID:', store.sessionId);
+            // Calculate clock offset for SharePlay sync
+            if (ev.server_time) {
+                const serverTime = new Date(ev.server_time).getTime();
+                const clientTime = Date.now();
+                store.timeOffset = serverTime - clientTime;
+                console.log('Clock offset:', store.timeOffset, 'ms (positive = server ahead)');
+            }
             break;
         }
         case 'room_state': {
