@@ -237,10 +237,13 @@ function bindUI() {
     });
     $('#btnSharePlay').addEventListener('click', () => {
         const el = $('#shareplayContainer');
+        const btn = $('#btnSharePlay');
         if (el.style.display === 'none') {
             el.style.display = 'flex';
+            btn.innerHTML = '<i class="bi bi-collection-play-fill"></i>';
         } else {
             el.style.display = 'none';
+            btn.innerHTML = '<i class="bi bi-collection-play"></i>';
         }
     });
 

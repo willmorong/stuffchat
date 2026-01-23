@@ -1253,6 +1253,18 @@ body[data-theme="rain"] .msg.own {
 .shareplay-queue-item {
     font-size: 10pt;
     padding: 4px 10px;
+    border-radius: var(--small-radius);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.shareplay-queue-item:hover {
+    background: linear-gradient(180deg, var(--glass), var(--glass-strong));
+}
+
+.shareplay-queue-item.playing {
+    border-color: var(--accent);
 }
 
 .shareplay-queue-item.error .title {

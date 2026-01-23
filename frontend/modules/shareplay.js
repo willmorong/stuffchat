@@ -282,7 +282,7 @@ export class SharePlay {
         state.queue.forEach((item, idx) => {
             const el = document.createElement('div');
             el.className = 'shareplay-queue-item';
-            if (idx === state.current_index) el.classList.add('active');
+            if (idx === state.current_index) el.classList.add('playing');
 
             const title = document.createElement('div');
             title.className = 'title';
