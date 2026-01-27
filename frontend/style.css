@@ -308,6 +308,10 @@ body {
     color: var(--text-dim)
 }
 
+.member-count-tooltip {
+    cursor: help;
+}
+
 .messages {
     flex: 1;
     min-height: 0;

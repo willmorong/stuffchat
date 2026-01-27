@@ -34,8 +34,23 @@ export async function startHeartbeatLoop() {
 
 export function renderMemberInfo() {
     const ids = store.members.get(store.currentChannelId) || [];
-    const onlineCount = ids.filter(id => (store.presenceCache.get(id) || 'offline') !== 'offline').length;
-    $('#memberInfo').textContent = `${ids.length} members • ${onlineCount} online`;
+    const onlineIds = ids.filter(id => (store.presenceCache.get(id) || 'offline') !== 'offline');
+
+    // Get usernames for all members
+    const allUsernames = ids.map(id => {
+        const user = store.users.get(id);
+        return user?.username || id.substring(0, 8);
+    }).join(', ');
+
+    // Get usernames for online members
+    const onlineUsernames = onlineIds.map(id => {
+        const user = store.users.get(id);
+        return user?.username || id.substring(0, 8);
+    }).join(', ');
+
+    // Create the display with tooltips
+    const memberInfo = $('#memberInfo');
+    memberInfo.innerHTML = `<span class="member-count-tooltip" title="${allUsernames}">${ids.length} members</span> • <span class="member-count-tooltip" title="${onlineUsernames}">${onlineIds.length} online</span>`;
 }
 
 export async function fetchPresenceForUsers(userIds) {
