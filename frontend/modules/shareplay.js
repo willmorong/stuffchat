@@ -9,8 +9,12 @@ export class SharePlay {
         this.gainNode.gain.value = 0.4; // Default to 40%
         this.gainNode.connect(this.ctx.destination);
 
-        this.currentSource = null;
-        this.buffer = null;
+        // HTML5 Audio element for streaming playback
+        this.audio = new Audio();
+        this.audio.crossOrigin = 'anonymous'; // Required for CORS with Web Audio API
+        this.audio.preload = 'metadata';
+        this.mediaSource = null; // MediaElementSourceNode - only create once per audio element
+
         this.isLoading = false;
         this.fileId = null; // To track if we need to load a new file
         this.channelId = null; // Current channel for API calls
@@ -36,6 +40,20 @@ export class SharePlay {
 
         this.animationFrameId = null;
 
+        // Set up audio event handlers
+        this.audio.addEventListener('ended', () => {
+            console.log('[SharePlay] Audio ended naturally');
+            this.sendAction('next');
+        });
+
+        this.audio.addEventListener('canplay', () => {
+            console.log('[SharePlay] Audio can play (enough buffered)');
+        });
+
+        this.audio.addEventListener('error', (e) => {
+            console.error('[SharePlay] Audio error:', this.audio.error);
+        });
+
         this.bindEvents();
     }
 
@@ -57,8 +75,8 @@ export class SharePlay {
             const rect = this.ui.seek.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const percent = Math.max(0, Math.min(1, x / rect.width));
-            const duration = this.buffer ? this.buffer.duration : 0;
-            if (duration > 0) {
+            const duration = this.audio.duration || 0;
+            if (duration > 0 && isFinite(duration)) {
                 this.sendAction('seek', (percent * duration).toString());
             }
         };
@@ -136,7 +154,8 @@ export class SharePlay {
                 }
 
                 // If not playing or drifted
-                if (!this.currentSource || Math.abs(this.getCurrentTime() - serverPos) > 0.5) {
+                const isPlaying = !this.audio.paused && !this.audio.ended;
+                if (!isPlaying || Math.abs(this.getCurrentTime() - serverPos) > 0.5) {
                     if (!this.isLoading) {
                         this.play(serverPos);
                     }
@@ -165,7 +184,6 @@ export class SharePlay {
 
     async loadTrack(id, channelId) {
         this.stop();
-        this.buffer = null;
         this.fileId = id;
         this.isLoading = true;
         this.ui.title.textContent = "Loading audio...";
@@ -177,23 +195,43 @@ export class SharePlay {
             });
             if (!res.ok) throw new Error(`Failed to load track info: ${res.status} ${res.statusText}`);
             const { song_id } = await res.json();
-            console.log(`[SharePlay] Got song ID: ${song_id}, fetching audio file...`);
-
-            const audioRes = await fetch(store.baseUrl + `/api/shareplay/song/${song_id}`);
-            if (!audioRes.ok) throw new Error(`Failed to load audio: ${audioRes.status} ${audioRes.statusText}`);
-
-            const arrayBuffer = await audioRes.arrayBuffer();
-            const decoded = await this.ctx.decodeAudioData(arrayBuffer);
+            console.log(`[SharePlay] Got song ID: ${song_id}, setting audio source for streaming...`);
 
             // Check if we already moved on to another track during the fetch
             if (this.fileId !== id) {
-                console.warn(`[SharePlay] Track ID mismatch after load: ${this.fileId} vs ${id}. Discarding buffer.`);
+                console.warn(`[SharePlay] Track ID mismatch after load: ${this.fileId} vs ${id}. Aborting.`);
                 return;
             }
 
-            this.buffer = decoded;
+            // Set the audio source - browser handles streaming via HTTP Range requests
+            this.audio.src = store.baseUrl + `/api/shareplay/song/${song_id}`;
+
+            // Connect to Web Audio API for gain control (only once per audio element)
+            if (!this.mediaSource) {
+                this.mediaSource = this.ctx.createMediaElementSource(this.audio);
+                this.mediaSource.connect(this.gainNode);
+                console.log('[SharePlay] Connected audio element to Web Audio API');
+            }
+
+            // Wait for enough data to start playing
+            await new Promise((resolve, reject) => {
+                const onCanPlay = () => {
+                    this.audio.removeEventListener('canplay', onCanPlay);
+                    this.audio.removeEventListener('error', onError);
+                    resolve();
+                };
+                const onError = () => {
+                    this.audio.removeEventListener('canplay', onCanPlay);
+                    this.audio.removeEventListener('error', onError);
+                    reject(new Error('Audio failed to load'));
+                };
+                this.audio.addEventListener('canplay', onCanPlay);
+                this.audio.addEventListener('error', onError);
+                this.audio.load();
+            });
+
             this.isLoading = false;
-            console.log(`[SharePlay] Track loaded successfully, buffer duration: ${this.buffer.duration}`);
+            console.log(`[SharePlay] Track ready for streaming, duration: ${this.audio.duration}`);
 
             // If the server state is still playing this track, start it
             if (this.serverState?.status === 'playing' && this.serverState?.current_index !== null) {
@@ -217,36 +255,35 @@ export class SharePlay {
         }
     }
 
-    play(offset = 0) {
-        if (!this.buffer) return;
-        // Clamp offset to valid range to prevent RangeError
-        offset = Math.max(0, Math.min(offset, this.buffer.duration - 0.01));
-        if (this.currentSource) this.currentSource.stop();
+    async play(offset = 0) {
+        if (!this.audio.src) return;
+        // Resume AudioContext if suspended (browser autoplay policy)
+        if (this.ctx.state === 'suspended') {
+            await this.ctx.resume();
+        }
 
-        this.currentSource = this.ctx.createBufferSource();
-        this.currentSource.buffer = this.buffer;
-        this.currentSource.connect(this.gainNode);
+        // Clamp offset to valid range
+        const duration = this.audio.duration || 0;
+        if (isFinite(duration) && duration > 0) {
+            offset = Math.max(0, Math.min(offset, duration - 0.01));
+        }
 
-        this.currentSource.start(0, offset);
-        this.startTime = this.ctx.currentTime - offset;
+        this.audio.currentTime = offset;
+
+        try {
+            await this.audio.play();
+            console.log(`[SharePlay] Playing from offset: ${offset}`);
+        } catch (e) {
+            console.error('[SharePlay] Playback failed:', e);
+        }
 
         // Start the seek bar update loop
         this.startSeekLoop();
-
-        this.currentSource.onended = () => {
-            // Determine if it ended naturally or was stopped
-            if (this.ctx.currentTime - this.startTime >= this.buffer.duration - 0.5) {
-                // Song ended
-                this.sendAction('next');
-            }
-        };
     }
 
     stop() {
-        if (this.currentSource) {
-            this.currentSource.onended = null; // Prevent skipping
-            try { this.currentSource.stop(); } catch (e) { }
-            this.currentSource = null;
+        if (this.audio && !this.audio.paused) {
+            this.audio.pause();
         }
         // Cancel the seek loop
         if (this.animationFrameId) {
@@ -258,7 +295,7 @@ export class SharePlay {
     reset() {
         console.log("[SharePlay] Resetting state");
         this.stop();
-        this.buffer = null;
+        this.audio.src = '';
         this.fileId = null;
         this.isLoading = false;
         this.serverState = null;
@@ -273,8 +310,7 @@ export class SharePlay {
     }
 
     getCurrentTime() {
-        if (!this.currentSource) return 0;
-        return this.ctx.currentTime - this.startTime;
+        return this.audio?.currentTime || 0;
     }
 
     renderQueue(state) {
@@ -351,11 +387,12 @@ export class SharePlay {
     }
 
     updateSeekBar() {
-        if (!this.serverState || !this.buffer) return;
+        if (!this.serverState || !this.audio.src) return;
 
         const current = this.getCurrentTime();
-        const storedDuration = this.serverState.queue[this.serverState.current_index]?.duration_seconds || this.buffer.duration;
-        const duration = storedDuration || 1; // avoid /0
+        const storedDuration = this.serverState.queue[this.serverState.current_index]?.duration_seconds;
+        const audioDuration = this.audio.duration;
+        const duration = storedDuration || (isFinite(audioDuration) ? audioDuration : 0) || 1;
 
         const percent = Math.min(100, (current / duration) * 100);
         this.ui.seek.style.background = `linear-gradient(to right, var(--accent) ${percent}%, var(--border) ${percent}%)`;
@@ -367,7 +404,8 @@ export class SharePlay {
         const update = () => {
             this.updateSeekBar();
             this.updateTimestamps();
-            if (this.serverState?.status === 'playing' && this.currentSource) {
+            const isPlaying = this.audio && !this.audio.paused && !this.audio.ended;
+            if (this.serverState?.status === 'playing' && isPlaying) {
                 this.animationFrameId = requestAnimationFrame(update);
             }
         };
@@ -375,10 +413,11 @@ export class SharePlay {
     }
 
     updateTimestamps() {
-        if (!this.buffer || !this.serverState) return;
+        if (!this.audio.src || !this.serverState) return;
         const current = this.getCurrentTime();
-        const duration = this.serverState.queue[this.serverState.current_index]?.duration_seconds
-            || this.buffer.duration;
+        const storedDuration = this.serverState.queue[this.serverState.current_index]?.duration_seconds;
+        const audioDuration = this.audio.duration;
+        const duration = storedDuration || (isFinite(audioDuration) ? audioDuration : 0);
         if (this.ui.currentTime) this.ui.currentTime.textContent = this.formatTime(current);
         if (this.ui.totalTime) this.ui.totalTime.textContent = this.formatTime(duration);
     }
