@@ -51,7 +51,12 @@ export class SharePlay {
         });
 
         this.audio.addEventListener('error', (e) => {
-            console.error('[SharePlay] Audio error:', this.audio.error);
+            // MediaError code 4 with empty src is expected when clearing the source
+            if (this.audio.error?.code === 4) {
+                console.log('[SharePlay] Source cleared');
+            } else {
+                console.error('[SharePlay] Audio error:', this.audio.error);
+            }
         });
 
         this.bindEvents();
