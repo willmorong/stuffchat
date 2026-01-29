@@ -208,6 +208,55 @@ impl SharePlayState {
         };
     }
 
+    pub fn remove_item(&mut self, index: usize) {
+        if index >= self.queue.len() {
+            return;
+        }
+
+        // Delete the file if it exists
+        let item = &self.queue[index];
+        if let Some(file_path) = &item.file_path {
+            let _ = std::fs::remove_file(file_path);
+        }
+
+        // Also try to delete by ID pattern
+        let temp_dir = std::path::PathBuf::from("temp");
+        if temp_dir.exists() {
+            if let Ok(entries) = std::fs::read_dir(&temp_dir) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if name.starts_with(&item.id) {
+                        let _ = std::fs::remove_file(entry.path());
+                    }
+                }
+            }
+        }
+
+        self.queue.remove(index);
+
+        // Adjust current_index
+        if let Some(curr) = self.current_index {
+            if self.queue.is_empty() {
+                self.current_index = None;
+                self.status = "paused".to_string();
+                self.start_time = None;
+            } else if index == curr {
+                // If removing current track, stay at same index (next track slides down)
+                // but if we're at the end, go to previous
+                if curr >= self.queue.len() {
+                    self.current_index = Some(self.queue.len() - 1);
+                }
+                self.current_position_secs = 0.0;
+                if self.status == "playing" {
+                    self.start_time = Some(Utc::now());
+                }
+            } else if index < curr {
+                // Decrement current_index since items shifted
+                self.current_index = Some(curr - 1);
+            }
+        }
+    }
+
     fn get_current_position(&self) -> f64 {
         if self.status == "paused" {
             self.current_position_secs

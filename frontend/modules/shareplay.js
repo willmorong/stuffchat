@@ -349,8 +349,19 @@ export class SharePlay {
             duration.className = 'duration';
             duration.textContent = this.formatTime(item.duration_seconds);
 
+            // Remove button (appears on hover)
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'shareplay-queue-remove';
+            removeBtn.innerHTML = '<i class="bi bi-x"></i>';
+            removeBtn.title = 'Remove from queue';
+            removeBtn.onclick = (e) => {
+                e.stopPropagation(); // Prevent triggering track selection
+                this.sendAction('remove', idx.toString());
+            };
+
             el.appendChild(title);
             el.appendChild(duration);
+            el.appendChild(removeBtn);
 
             el.onclick = () => {
                 this.sendAction('track', idx.toString());

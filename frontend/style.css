@@ -1268,6 +1268,48 @@ body[data-theme="rain"] .msg.own {
     border: 1px solid transparent;
     cursor: pointer;
     transition: background 0.15s ease, border-color 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.shareplay-queue-item .title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.shareplay-queue-item .duration {
+    flex-shrink: 0;
+    color: var(--text-dim);
+    font-size: 9pt;
+}
+
+.shareplay-queue-remove {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    border-radius: var(--small-radius);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.shareplay-queue-item:hover .shareplay-queue-remove {
+    opacity: 1;
+}
+
+.shareplay-queue-remove:hover {
+    background: rgba(255, 107, 107, 0.2);
+    color: var(--danger);
 }
 
 .shareplay-queue-item:hover {

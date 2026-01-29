@@ -98,7 +98,7 @@ pub struct NotifyUsers {
 pub struct SharePlayAction {
     pub channel_id: String,
     pub user_id: String,
-    pub action_type: String, // "play", "pause", "next", "prev", "seek", "add", "track", "toggle_repeat"
+    pub action_type: String, // "play", "pause", "next", "prev", "seek", "add", "track", "toggle_repeat", "remove"
     pub data: Option<String>, // url for add, timestamp for seek, index for track
 }
 
@@ -433,6 +433,13 @@ impl Handler<SharePlayAction> for ChatServer {
                 }
             }
             "toggle_repeat" => state.toggle_repeat(),
+            "remove" => {
+                if let Some(idx_str) = msg.data {
+                    if let Ok(idx) = idx_str.parse::<usize>() {
+                        state.remove_item(idx);
+                    }
+                }
+            }
             _ => {}
         }
 
