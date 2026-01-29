@@ -4,6 +4,10 @@ import { playNotificationSound, buildFileUrl, el } from './utils.js';
 import { sharePlay } from './shareplay.js';
 
 let sharedAudioCtx = null;
+
+/**
+ * Returns the shared audio context, creating it if it doesn't exist.
+ */
 function getAudioCtx() {
     if (!sharedAudioCtx) {
         sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -14,6 +18,9 @@ function getAudioCtx() {
     return sharedAudioCtx;
 }
 
+/**
+ * Periodically calculates and updates the visual volume indicator for a stream.
+ */
 class VolumeMonitor {
     constructor(stream, element) {
         this.stream = stream;
@@ -39,7 +46,6 @@ class VolumeMonitor {
         }
         const average = sum / this.dataArray.length;
 
-        // Map average volume (0-255) to border size (0-5px)
         const borderSize = Math.min(5, (average / 30) * 5);
         this.element.style.boxShadow = `0 0 0 ${borderSize}px #4dd4ac`;
     }
@@ -56,10 +62,11 @@ class VolumeMonitor {
     }
 }
 
-// Perfect Negotiation state per peer connection
-// Maps pcId -> { makingOffer, ignoreOffer, isSettingRemoteAnswerPending, polite, pendingCandidates }
 const negotiationState = new Map();
 
+/**
+ * Retrieves or initializes the perfect negotiation state for a peer connection.
+ */
 function getNegotiationState(pcId) {
     if (!negotiationState.has(pcId)) {
         negotiationState.set(pcId, {
@@ -73,10 +80,16 @@ function getNegotiationState(pcId) {
     return negotiationState.get(pcId);
 }
 
+/**
+ * Clears the negotiation state for a specific peer connection.
+ */
 function cleanupNegotiationState(pcId) {
     negotiationState.delete(pcId);
 }
 
+/**
+ * Updates the visibility and content of the voice call user interface.
+ */
 export function updateCallUI() {
     const ch = store.channels.find(c => c.id === store.currentChannelId);
     if (!ch) return;
@@ -103,22 +116,18 @@ export function updateCallUI() {
         const callUsersSet = new Set();
         callUsersComposite.forEach(cid => callUsersSet.add(cid.split(':')[0]));
 
-        // Remove rows for users no longer in call
         const currentUids = Array.from(callUsersSet);
         participantsDiv.querySelectorAll('.call-participant-row').forEach(row => {
             const uid = row.dataset.uid;
             if (!currentUids.includes(uid)) {
-                // Check if any session for this user is still in the call
                 const userStillIn = Array.from(callUsersComposite).some(cid => cid.startsWith(uid + ':'));
                 if (!userStillIn) {
                     if (store.volumeMonitors.has(uid)) {
                         store.volumeMonitors.get(uid).stop();
                         store.volumeMonitors.delete(uid);
                     }
-                    // Preserve the volume control singleton if it's in this row
                     const singleton = $('#voiceVolumeControl');
                     if (singleton && row.contains(singleton)) {
-                        // Move it back to the body to prevent deletion
                         singleton.classList.remove('visible');
                         singleton.style.display = 'none';
                         document.body.appendChild(singleton);
@@ -128,7 +137,6 @@ export function updateCallUI() {
             }
         });
 
-        // Add or update rows for users in call
         currentUids.forEach(uid => {
             let row = participantsDiv.querySelector(`.call-participant-row[data-uid="${uid}"]`);
             if (!row) {
@@ -151,7 +159,6 @@ export function updateCallUI() {
                         const singleton = $('#voiceVolumeControl');
                         if (!singleton) return;
 
-                        // If already open for this user, close it
                         if (singleton.dataset.uid === uid && singleton.classList.contains('visible')) {
                             singleton.classList.remove('visible');
                             setTimeout(() => {
@@ -162,7 +169,6 @@ export function updateCallUI() {
                             return;
                         }
 
-                        // Otherwise, move and show it
                         singleton.dataset.uid = uid;
                         row.appendChild(singleton);
 
@@ -197,14 +203,12 @@ export function updateCallUI() {
                 participantsDiv.appendChild(row);
             }
 
-            // Always check if we need to initialize or update the volume monitor
             const avatar = row.querySelector('.avatar');
             if (uid === store.user.id && store.localStream) {
                 if (!store.volumeMonitors.has(uid)) {
                     store.volumeMonitors.set(uid, new VolumeMonitor(store.localStream, avatar));
                 }
             } else {
-                // Check if we have any PC for this user (any session)
                 for (const [pcid, pc] of store.pcs) {
                     if (pcid.startsWith(uid + ':')) {
                         const audio = document.getElementById(`audio-${pcid}`);
@@ -223,7 +227,6 @@ export function updateCallUI() {
         if (iconsDiv) iconsDiv.innerHTML = '';
     } else {
         callUI.style.display = 'none';
-        // Cleanup volume monitors if not in call
         store.volumeMonitors.forEach(v => v.stop());
         store.volumeMonitors.clear();
 
@@ -238,7 +241,6 @@ export function updateCallUI() {
             if (iconsDiv) {
                 iconsDiv.innerHTML = '';
                 if (voiceUsersHere.size > 0) {
-                    // Unique user IDs (voiceUsersHere contains uid:sid)
                     const uniqueUids = new Set();
                     voiceUsersHere.forEach(cid => uniqueUids.add(cid.split(':')[0]));
 
@@ -261,6 +263,9 @@ export function updateCallUI() {
     }
 }
 
+/**
+ * Sends a WebRTC signaling message to a specific user session via WebSocket.
+ */
 function sendSignal(toUserId, toSessionId, data) {
     if (store.ws && store.ws.readyState === 1) {
         store.ws.send(JSON.stringify({
@@ -274,6 +279,9 @@ function sendSignal(toUserId, toSessionId, data) {
     }
 }
 
+/**
+ * Modifies the SDP to prefer Opus and set specific bitrate/channels.
+ */
 function mangleSdp(sdp) {
     const lines = sdp.split('\n');
     let opusPt = null;
@@ -305,6 +313,9 @@ function mangleSdp(sdp) {
     return lines.join('\n');
 }
 
+/**
+ * Creates and configures a new RTCPeerConnection for a target user.
+ */
 export async function createPeerConnection(targetUserId, targetSessionId, initiator) {
     const pcId = `${targetUserId}:${targetSessionId}`;
     if (store.pcs.has(pcId)) return store.pcs.get(pcId);
@@ -314,8 +325,6 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
     });
     store.pcs.set(pcId, peerConnection);
 
-    // Initialize negotiation state for this connection
-    // Polite peer has lower user ID - they will yield during glare
     const state = getNegotiationState(pcId);
     state.polite = store.user.id < targetUserId;
 
@@ -325,12 +334,10 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
         }
     };
 
-    // Perfect Negotiation: onnegotiationneeded handler
     peerConnection.onnegotiationneeded = async () => {
         const state = getNegotiationState(pcId);
         try {
             state.makingOffer = true;
-            // setLocalDescription with no arguments creates and sets offer automatically
             await peerConnection.setLocalDescription();
             sendSignal(targetUserId, targetSessionId, { sdp: peerConnection.localDescription });
         } catch (e) {
@@ -343,7 +350,6 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
     peerConnection.onconnectionstatechange = () => {
         console.log(`Connection State [${pcId}]: ${peerConnection.connectionState}`);
         if (peerConnection.connectionState === 'connected') {
-            // Refresh video grid when connection is fully established
             updateVideoGrid();
         }
         if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'closed') {
@@ -356,11 +362,9 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
         const stream = event.streams[0];
 
         if (track.kind === 'video') {
-            // Handle video track
             store.remoteVideoStreams.set(pcId, stream);
             updateVideoGrid();
 
-            // Clean up helper - track.onended doesn't always fire reliably
             const cleanupVideo = () => {
                 store.remoteVideoStreams.delete(pcId);
                 if (store.screenShareGainNodes.has(pcId)) {
@@ -374,31 +378,22 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
                 updateVideoGrid();
             };
 
-            // Track ended (may not fire when remote uses removeTrack)
             track.onended = cleanupVideo;
-
-            // Track muted - fires when remote stops sharing and track receives no more data
             track.onmute = cleanupVideo;
-
-            // Track removed from stream - fires during renegotiation when track is removed
             stream.onremovetrack = (e) => {
                 if (e.track === track) {
                     cleanupVideo();
                 }
             };
         } else if (track.kind === 'audio') {
-            // Handle audio track
             const isScreenShareAudio = stream.getVideoTracks().length > 0;
 
             if (isScreenShareAudio) {
-                // Setup Web Audio for screen share
                 const ctx = getAudioCtx();
                 const source = ctx.createMediaStreamSource(stream);
                 const gainNode = ctx.createGain();
                 source.connect(gainNode);
                 gainNode.connect(ctx.destination);
-
-                // Muted by default
                 gainNode.gain.value = 0;
 
                 store.screenShareAudioSources.set(pcId, source);
@@ -414,9 +409,8 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
                 document.body.appendChild(audio);
             }
             audio.srcObject = stream;
-            audio.muted = true; // Use Web Audio API for playback to support boosting
+            audio.muted = true;
 
-            // Setup Web Audio API
             const ctx = getAudioCtx();
             const source = ctx.createMediaStreamSource(stream);
             const gainNode = ctx.createGain();
@@ -426,7 +420,6 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
             store.audioSources.set(pcId, source);
             store.gainNodes.set(pcId, gainNode);
 
-            // Apply saved volume
             if (store.isDeafened) {
                 gainNode.gain.value = 0;
             } else {
@@ -435,16 +428,14 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
                     gainNode.gain.value = initialVol;
                 }
             }
-            updateCallUI(); // Trigger UI update to attach volume monitor to the new stream
+            updateCallUI();
         }
     };
 
-    // Add local audio track
     if (store.localStream) {
         store.localStream.getTracks().forEach(track => peerConnection.addTrack(track, store.localStream));
     }
 
-    // Add video track if screen sharing is active
     if (store.localVideoStream) {
         store.localVideoStream.getTracks().forEach(track => {
             const sender = peerConnection.addTrack(track, store.localVideoStream);
@@ -452,12 +443,17 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
         });
     }
 
-    // Initial offer only if we are the initiator
-    // After this, onnegotiationneeded will handle all subsequent negotiations
     if (initiator) {
-        // Trigger onnegotiationneeded by adding transceiver if no tracks yet
-        // The onnegotiationneeded handler will create and send the offer
-        // Since we already added tracks above, onnegotiationneeded will fire automatically
+        const state = getNegotiationState(pcId);
+        try {
+            state.makingOffer = true;
+            await peerConnection.setLocalDescription();
+            sendSignal(targetUserId, targetSessionId, { sdp: peerConnection.localDescription });
+        } catch (e) {
+            console.error(`Initial offer error [${pcId}]:`, e);
+        } finally {
+            state.makingOffer = false;
+        }
     }
 
     updateVideoGrid();
@@ -465,6 +461,9 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
     return peerConnection;
 }
 
+/**
+ * Closes and cleans up a peer connection and its associated resources.
+ */
 function cleanupPeerConnection(pcId) {
     const audio = document.getElementById(`audio-${pcId}`);
     if (audio) {
@@ -493,6 +492,9 @@ function cleanupPeerConnection(pcId) {
     updateVideoGrid();
 }
 
+/**
+ * Handles incoming signaling messages (offers, answers, ICE candidates).
+ */
 export async function handleSignal(userId, sessionId, data) {
     const pcId = `${userId}:${sessionId}`;
     let peerConnection = store.pcs.get(pcId);
@@ -504,7 +506,6 @@ export async function handleSignal(userId, sessionId, data) {
 
     try {
         if (data.sdp) {
-            // Perfect Negotiation: handle offer/answer with glare detection
             const description = new RTCSessionDescription(data.sdp);
             const readyForOffer =
                 !state.makingOffer &&
@@ -514,13 +515,10 @@ export async function handleSignal(userId, sessionId, data) {
             state.ignoreOffer = !state.polite && offerCollision;
             if (state.ignoreOffer) {
                 console.log(`[${pcId}] Ignoring colliding offer (we are impolite)`);
-                // Clear any pending candidates - they're for the ignored offer's session
-                // and will have mismatched ufrag/pwd when we receive the answer for our offer
                 state.pendingCandidates = [];
                 return;
             }
 
-            // Perfect Negotiation: polite peer must rollback before accepting colliding offer
             if (offerCollision) {
                 console.log(`[${pcId}] Rolling back local offer to accept remote offer (we are polite)`);
                 await peerConnection.setLocalDescription({ type: 'rollback' });
@@ -530,13 +528,11 @@ export async function handleSignal(userId, sessionId, data) {
             await peerConnection.setRemoteDescription(description);
             state.isSettingRemoteAnswerPending = false;
 
-            // Process any queued ICE candidates now that we have remote description
             if (state.pendingCandidates.length > 0) {
                 for (const candidate of state.pendingCandidates) {
                     try {
                         await peerConnection.addIceCandidate(candidate);
                     } catch (e) {
-                        // Ignore stale candidate errors
                         if (!e.message?.includes('Unknown ufrag')) {
                             console.warn(`Failed to add queued candidate [${pcId}]:`, e);
                         }
@@ -550,17 +546,14 @@ export async function handleSignal(userId, sessionId, data) {
                 sendSignal(userId, sessionId, { sdp: peerConnection.localDescription });
             }
 
-            // Refresh video grid after renegotiation to clean up removed tracks
             updateVideoGrid();
         } else if (data.candidate) {
-            // Queue candidates if we don't have a remote description yet
             if (!peerConnection.remoteDescription || !peerConnection.remoteDescription.type) {
                 state.pendingCandidates.push(new RTCIceCandidate(data.candidate));
             } else {
                 try {
                     await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
                 } catch (e) {
-                    // Ignore stale candidate errors
                     if (!e.message?.includes('Unknown ufrag')) {
                         console.warn(`Failed to add ICE candidate [${pcId}]:`, e);
                     }
@@ -568,13 +561,15 @@ export async function handleSignal(userId, sessionId, data) {
             }
         }
     } catch (e) {
-        // Log unexpected errors
         if (e.name !== 'InvalidStateError') {
             console.error(`Signal error [${pcId}]:`, e);
         }
     }
 }
 
+/**
+ * Toggles the local user's microphone mute state.
+ */
 export function toggleMute() {
     store.isMuted = !store.isMuted;
     if (store.localStream) {
@@ -585,15 +580,15 @@ export function toggleMute() {
     updateMuteButton();
 }
 
+/**
+ * Toggles the local user's deafen state, muting or unmuting all remote users.
+ */
 export function toggleDeafen() {
     store.isDeafened = !store.isDeafened;
-
-    // Apply to all current gain nodes
     store.gainNodes.forEach((gainNode, pcId) => {
         if (store.isDeafened) {
             gainNode.gain.value = 0;
         } else {
-            // Restore saved volume or 1.0
             const [uid] = pcId.split(':');
             gainNode.gain.value = store.userVolumes[uid] !== undefined ? store.userVolumes[uid] : 1.0;
         }
@@ -602,6 +597,9 @@ export function toggleDeafen() {
     updateDeafenButton();
 }
 
+/**
+ * Updates the visual state of the mute button.
+ */
 function updateMuteButton() {
     const btn = $('#btnMute');
     if (!btn) return;
@@ -616,6 +614,9 @@ function updateMuteButton() {
     }
 }
 
+/**
+ * Updates the visual state of the deafen button.
+ */
 function updateDeafenButton() {
     const btn = $('#btnDeafen');
     if (!btn) return;
@@ -630,6 +631,9 @@ function updateDeafenButton() {
     }
 }
 
+/**
+ * Initiates joining a voice call, acquiring media and signaling other users.
+ */
 export async function startCall() {
     if (store.inCall) return;
     let stream;
@@ -662,19 +666,20 @@ export async function startCall() {
     existingUsers.forEach(cid => {
         const [uid, sid] = cid.split(':');
         if (uid !== store.user.id) {
-            // Higher user ID initiates the connection
             const shouldInitiate = store.user.id > uid;
             createPeerConnection(uid, sid, shouldInitiate);
         }
     });
 }
 
+/**
+ * Leaves the current voice call, cleaning up all peer connections and media.
+ */
 export function leaveCall() {
     if (!store.inCall) return;
     store.inCall = false;
     playNotificationSound('leave');
 
-    // Stop screen sharing if active
     if (store.screenSharing) {
         stopScreenShare();
     }
@@ -705,17 +710,17 @@ export function leaveCall() {
     updateVideoGrid();
 }
 
-// Configure video sender for high-quality screensharing with AV1 preference
+/**
+ * Configures the video sender for high-quality screen share.
+ */
 async function configureVideoSender(sender, pc) {
-    // Set codec preference to AV1 if supported
     const transceiver = pc.getTransceivers().find(t => t.sender === sender);
     if (transceiver && transceiver.setCodecPreferences) {
         const capabilities = RTCRtpSender.getCapabilities('video');
         if (capabilities) {
-            // Sort codecs to prefer AV1, then H264
             const codecs = capabilities.codecs.slice();
             codecs.sort((a, b) => {
-                const order = [/**'video/AV1',**/ 'video/H264'];
+                const order = ['video/H264'];
                 const aIndex = order.findIndex(c => a.mimeType.includes(c.split('/')[1]));
                 const bIndex = order.findIndex(c => b.mimeType.includes(c.split('/')[1]));
                 return (aIndex === -1 ? 999 : aIndex) - (bIndex === -1 ? 999 : bIndex);
@@ -728,20 +733,21 @@ async function configureVideoSender(sender, pc) {
         }
     }
 
-    // Set high bitrate for smooth screensharing (5 Mbps max)
     try {
         const params = sender.getParameters();
         if (!params.encodings || params.encodings.length === 0) {
             params.encodings = [{}];
         }
-        params.encodings[0].maxBitrate = 5000000; // 5 Mbps
+        params.encodings[0].maxBitrate = 5000000;
         await sender.setParameters(params);
     } catch (e) {
         console.warn('Could not set video bitrate:', e);
     }
 }
 
-// Screen sharing functions
+/**
+ * Acquires screen share media and adds it to all active peer connections.
+ */
 export async function startScreenShare() {
     if (store.screenSharing) return;
 
@@ -762,8 +768,6 @@ export async function startScreenShare() {
     store.localVideoStream = stream;
     store.screenSharing = true;
 
-    // Add video and audio tracks to all existing peer connections
-    // This will trigger onnegotiationneeded automatically - no manual renegotiation needed
     const videoTrack = stream.getVideoTracks()[0];
     const audioTrack = stream.getAudioTracks()[0];
     store.pcs.forEach((pc, pcId) => {
@@ -774,7 +778,6 @@ export async function startScreenShare() {
         }
     });
 
-    // Handle stream ending (user clicks browser's stop sharing)
     videoTrack.onended = () => {
         stopScreenShare();
     };
@@ -783,6 +786,9 @@ export async function startScreenShare() {
     updateVideoGrid();
 }
 
+/**
+ * Stops screen sharing and removes the associated tracks from all peer connections.
+ */
 export function stopScreenShare() {
     if (!store.screenSharing) return;
 
@@ -793,8 +799,6 @@ export function stopScreenShare() {
 
     store.screenSharing = false;
 
-    // Remove screen share senders from all peer connections
-    // This will trigger onnegotiationneeded automatically
     const tracks = store.localVideoStream ? store.localVideoStream.getTracks() : [];
     store.pcs.forEach((pc) => {
         const senders = pc.getSenders();
@@ -809,6 +813,9 @@ export function stopScreenShare() {
     updateVideoGrid();
 }
 
+/**
+ * Updates the visual state of the screen share toggle button.
+ */
 function updateScreenShareButton() {
     const btn = $('#btnScreenShare');
     if (!btn) return;
@@ -824,24 +831,21 @@ function updateScreenShareButton() {
     }
 }
 
-// Video grid functions
+/**
+ * Updates the video grid display with local and remote video streams.
+ */
 export function updateVideoGrid() {
     const grid = $('#videoGrid');
     if (!grid) return;
 
-    // Clear existing tiles
     grid.innerHTML = '';
 
-    // Add local video if screen sharing
     if (store.localVideoStream && store.screenSharing) {
         const tile = createVideoTile('local', store.localVideoStream, store.user?.username || 'You');
         tile.classList.add('local');
         grid.appendChild(tile);
     }
 
-    // Proactively clean up stale remote video streams
-    // Track events (onended, onmute) are unreliable, so check track state directly
-    // Only remove if track is truly ended (readyState === 'ended'), not just muted
     const staleIds = [];
     store.remoteVideoStreams.forEach((stream, pcId) => {
         const videoTracks = stream.getVideoTracks();
@@ -862,7 +866,6 @@ export function updateVideoGrid() {
         }
     });
 
-    // Add remote video streams
     store.remoteVideoStreams.forEach((stream, pcId) => {
         const [userId] = pcId.split(':');
         const user = store.users.get(userId);
@@ -872,6 +875,9 @@ export function updateVideoGrid() {
     });
 }
 
+/**
+ * Creates a video tile element for a stream.
+ */
 function createVideoTile(id, stream, username) {
     const tile = el('div', { class: 'video-tile', 'data-stream-id': id });
     const video = el('video', { autoplay: true, playsinline: true, muted: id === 'local' });
@@ -886,12 +892,14 @@ function createVideoTile(id, stream, username) {
     return tile;
 }
 
+/**
+ * Toggles a video stream into or out of fullscreen mode.
+ */
 export function toggleVideoFullscreen(id, stream, username) {
     const overlay = $('#videoFullscreen');
     if (!overlay) return;
 
     if (overlay.classList.contains('hidden')) {
-        // Enter fullscreen
         overlay.innerHTML = '';
         const video = el('video', { autoplay: true, playsinline: true });
         video.srcObject = stream;
@@ -901,12 +909,10 @@ export function toggleVideoFullscreen(id, stream, username) {
         overlay.onclick = () => {
             overlay.classList.add('hidden');
             overlay.innerHTML = '';
-            // Mute screen share audio when exiting fullscreen
             const gainNode = store.screenShareGainNodes.get(id);
             if (gainNode) gainNode.gain.value = 0;
         };
 
-        // Unmute screen share audio when entering fullscreen
         const gainNode = store.screenShareGainNodes.get(id);
         if (gainNode) {
             const [userId] = id.split(':');
@@ -914,10 +920,8 @@ export function toggleVideoFullscreen(id, stream, username) {
             gainNode.gain.value = vol;
         }
     } else {
-        // Exit fullscreen
         overlay.classList.add('hidden');
         overlay.innerHTML = '';
-        // Mute screen share audio
         const gainNode = store.screenShareGainNodes.get(id);
         if (gainNode) gainNode.gain.value = 0;
     }
