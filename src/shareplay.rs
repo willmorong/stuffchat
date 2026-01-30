@@ -272,6 +272,31 @@ impl SharePlayState {
 /// Downloads audio from a URL using yt-dlp in two steps:
 /// 1. Simulate to get metadata (title, duration) - updates status to "downloading"
 /// 2. Actual download with audio extraction - updates status to "ready"
+/// Determines if the input looks like a URL or a search term.
+fn is_url(input: &str) -> bool {
+    let input_lower = input.to_lowercase();
+    // Check for common URL schemes
+    if input_lower.starts_with("http://") || input_lower.starts_with("https://") {
+        return true;
+    }
+    // Check for common video site patterns (without scheme)
+    let video_patterns = [
+        "youtube.com",
+        "youtu.be",
+        "vimeo.com",
+        "dailymotion.com",
+        "twitch.tv",
+        "soundcloud.com",
+        "bandcamp.com",
+    ];
+    for pattern in video_patterns {
+        if input_lower.contains(pattern) {
+            return true;
+        }
+    }
+    false
+}
+
 pub fn start_download(
     url: String,
     id: String,
@@ -279,13 +304,26 @@ pub fn start_download(
     channel_id: String,
 ) {
     std::thread::spawn(move || {
+        // Determine if input is a URL or a search term
+        let effective_url = if is_url(&url) {
+            url.clone()
+        } else {
+            // Treat as a search term - use ytsearch1: to get first result
+            format!("ytsearch1:{}", url)
+        };
+        log::info!(
+            "Input '{}' resolved to effective URL: {}",
+            url,
+            effective_url
+        );
+
         // Step 1: Simulate to get metadata
-        log::info!("Step 1: Getting metadata for url={}", url);
+        log::info!("Step 1: Getting metadata for url={}", effective_url);
 
         let sim_output = Command::new("yt-dlp")
             .arg("--simulate")
             .arg("--print-json")
-            .arg(&url)
+            .arg(&effective_url)
             .output();
 
         let (title, duration) = match sim_output {
@@ -357,7 +395,7 @@ pub fn start_download(
         };
 
         // Step 2: Actual download
-        log::info!("Step 2: Downloading audio for url={}", url);
+        log::info!("Step 2: Downloading audio for url={}", effective_url);
 
         let temp_dir = std::path::PathBuf::from("temp");
         if let Err(e) = std::fs::create_dir_all(&temp_dir) {
@@ -376,7 +414,7 @@ pub fn start_download(
             .arg("youtube:player_client=default,-android_sdkless")
             .arg("-o")
             .arg(output_template.to_str().unwrap())
-            .arg(&url)
+            .arg(&effective_url)
             .output();
 
         match download_output {
