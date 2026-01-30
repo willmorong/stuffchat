@@ -692,7 +692,7 @@ body[data-theme="light"] {
     --text: #0b1220;
     --text-dim: #465168;
     --accent: #2c5cff;
-    --accent-2: #10b981;
+    --accent-2: #006329;
     --danger: #e11d48;
 }
 
@@ -918,7 +918,7 @@ body[data-theme="wegmans"] .call-status {
 .call-status {
     font-weight: 600;
     font-size: 14px;
-    color: #2ecc71;
+    color: var(--accent-2);
     padding: 6px;
 }
 
