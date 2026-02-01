@@ -33,7 +33,7 @@ class VolumeMonitor {
         this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
         this.running = true;
         this.lastBorderSize = -1;
-        this.intervalId = setInterval(() => this.update(), 30);
+        this.intervalId = setInterval(() => this.update(), 16);
     }
 
     update() {
@@ -46,11 +46,10 @@ class VolumeMonitor {
         }
         const average = sum / this.dataArray.length;
 
-        // Quantize to 0.5px to reduce DOM updates
-        const borderSize = Math.round(Math.min(5, (average / 30) * 5) * 2) / 2;
+        const borderSize = Math.round(Math.min(5, (average / 30) * 5));
         if (borderSize !== this.lastBorderSize) {
-            this.element.style.boxShadow = borderSize > 0
-                ? `0 0 0 ${borderSize}px #4dd4ac`
+            this.element.style.outline = borderSize > 0
+                ? `${borderSize}px solid var(--accent-2)`
                 : 'none';
             this.lastBorderSize = borderSize;
         }
