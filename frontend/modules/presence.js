@@ -1,6 +1,6 @@
 import { store } from './store.js';
 import { apiFetch } from './api.js';
-import { $, presenceClass } from './utils.js';
+import { $, presenceClass, buildFileUrl } from './utils.js';
 import { updatePresenceBadges } from './messages.js';
 
 export async function heartbeat() {
@@ -32,25 +32,47 @@ export async function startHeartbeatLoop() {
     _heartbeatLoopActive = false;
 }
 
-export function renderMemberInfo() {
+export function openMembersModal() {
     const ids = store.members.get(store.currentChannelId) || [];
-    const onlineIds = ids.filter(id => (store.presenceCache.get(id) || 'offline') !== 'offline');
+    const membersList = $('#membersList');
 
-    // Get usernames for all members
-    const allUsernames = ids.map(id => {
-        const user = store.users.get(id);
-        return user?.username || id.substring(0, 8);
-    }).join(', ');
+    if (ids.length === 0) {
+        membersList.innerHTML = '<div class="hint">No members in this channel</div>';
+    } else {
+        membersList.innerHTML = ids.map(id => {
+            const user = store.users.get(id);
+            const username = user?.username || id.substring(0, 8);
+            const avatarUrl = user?.avatar_file_id ? buildFileUrl(user.avatar_file_id, 'avatar') : null;
+            const status = store.presenceCache.get(id) || 'offline';
 
-    // Get usernames for online members
-    const onlineUsernames = onlineIds.map(id => {
-        const user = store.users.get(id);
-        return user?.username || id.substring(0, 8);
-    }).join(', ');
+            const avatarHtml = avatarUrl
+                ? `<img src="${avatarUrl}" alt="${username}" onerror="this.style.display='none'">`
+                : '';
 
-    // Create the display with tooltips
-    const memberInfo = $('#memberInfo');
-    memberInfo.innerHTML = `<span class="member-count-tooltip" title="${allUsernames}">${ids.length} members</span> • <span class="member-count-tooltip" title="${onlineUsernames}">${onlineIds.length} online</span>`;
+            return `
+                <div class="member-item">
+                    <div class="avatar">
+                        ${avatarHtml}
+                        <div class="presence-badge ${presenceClass(status)}"></div>
+                    </div>
+                    <span class="member-name">${username}</span>
+                    <span class="member-status">${status}</span>
+                </div>
+            `;
+        }).join('');
+    }
+
+    $('#membersModal').classList.remove('hidden');
+}
+
+export function closeMembersModal() {
+    $('#membersModal').classList.add('hidden');
+}
+
+export function setupMembersModalListeners() {
+    $('#btnMemberInfo').addEventListener('click', openMembersModal);
+    $('#btnCloseMembers').addEventListener('click', closeMembersModal);
+    $('#membersModal .modal-backdrop').addEventListener('click', closeMembersModal);
 }
 
 export async function fetchPresenceForUsers(userIds) {
@@ -61,9 +83,16 @@ export async function fetchPresenceForUsers(userIds) {
         res.forEach(p => {
             store.presenceCache.set(p.user_id, p.status);
         });
-        renderMemberInfo();
+        refreshMembersModalIfOpen();
         updatePresenceBadges();
     } catch (e) { console.warn('Presence fetch failed', e.message); }
+}
+
+function refreshMembersModalIfOpen() {
+    const modal = $('#membersModal');
+    if (modal && !modal.classList.contains('hidden')) {
+        openMembersModal();
+    }
 }
 
 export const PRESENCE_INTERVAL = 30000;

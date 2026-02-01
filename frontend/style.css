@@ -303,13 +303,60 @@ body {
     font-weight: 600
 }
 
-.members {
-    font-size: 12px;
-    color: var(--text-dim)
+.members-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
-.member-count-tooltip {
-    cursor: help;
+.member-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border-radius: var(--small-radius);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid transparent;
+}
+
+.member-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.member-item .avatar {
+    width: 36px;
+    height: 36px;
+    position: relative;
+}
+
+.member-item .presence-badge {
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 2px solid var(--bg1, #000);
+    box-sizing: content-box;
+}
+
+.member-item .member-name {
+    font-weight: 500;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.member-item .member-status {
+    font-size: 12px;
+    color: var(--text-dim);
+    text-transform: capitalize;
+}
+
+#membersModal .modal-card {
+    max-width: 400px;
+    width: 90vw;
 }
 
 .messages {
@@ -442,7 +489,6 @@ body {
     font-family: sans-serif;
     font-size: 1em;
     scrollbar-width: none;
-    transition: border-color 0.2s ease, background 0.2s ease;
     resize: none;
 }
 
@@ -1273,7 +1319,6 @@ body[data-theme="rain"] .msg.highlight,
     border-radius: var(--small-radius);
     border: 1px solid transparent;
     cursor: pointer;
-    transition: background 0.15s ease, border-color 0.15s ease;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -1306,7 +1351,6 @@ body[data-theme="rain"] .msg.highlight,
     align-items: center;
     justify-content: center;
     opacity: 0;
-    transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
 .shareplay-queue-item:hover .shareplay-queue-remove {

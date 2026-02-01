@@ -23,7 +23,7 @@ import {
 import {
     openInviteModal, closeInviteModal, createInvite
 } from './modules/invites.js';
-import { heartbeat } from './modules/presence.js';
+import { heartbeat, setupMembersModalListeners } from './modules/presence.js';
 
 // Dependency injection to break cycles
 setupApi(logout, connectWs);
@@ -218,6 +218,9 @@ function bindUI() {
 
     // Settings
     bindSettingsEvents();
+
+    // Members Modal
+    setupMembersModalListeners();
 
     window.addEventListener('beforeunload', () => {
         if (store.ws) try { store.ws.close(); } catch { }

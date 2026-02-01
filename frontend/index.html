@@ -105,12 +105,11 @@
         </aside>
         <main id="main">
             <div class="topbar">
-                <div class="left">
-                    <button class="iconbtn toggle-sidebar" id="btnToggleSidebar" title="Menu"><i
-                            class="bi bi-list"></i></button>
-                    <div class="name" id="channelName">Select a channel</div>
-                </div>
-                <div class="members" id="memberInfo">—</div>
+                <button class="iconbtn toggle-sidebar" id="btnToggleSidebar" title="Menu"><i
+                        class="bi bi-list"></i></button>
+                <button id="btnMemberInfo" class="iconbtn" title="Channel members"><i
+                        class="bi bi-info-circle"></i></button>
+                <div class="name" id="channelName">Select a channel</div>
                 <div id="voiceCallParticipantsIcons" class="voice-participants-icons"></div>
                 <button id="btnStartCall" class="iconbtn" style="display:none; margin-left:6px;">
                     <i class="bi bi-telephone"></i>
@@ -410,6 +409,21 @@
                             </tbody>
                         </table>
                     </div>
+                </section>
+            </div>
+        </div>
+    </div>
+    <!-- Members Modal -->
+    <div id="membersModal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-card glass">
+            <div class="modal-header">
+                <div class="brand small"><i class="bi bi-people"></i> Channel Members</div>
+                <button id="btnCloseMembers" class="iconbtn" title="Close"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <div class="modal-content">
+                <section class="panel">
+                    <div id="membersList" class="members-list"></div>
                 </section>
             </div>
         </div>
