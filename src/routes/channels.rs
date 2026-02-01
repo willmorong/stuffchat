@@ -404,6 +404,63 @@ pub async fn list_members(
     Ok(HttpResponse::Ok().json(members))
 }
 
+#[derive(Serialize)]
+pub struct ChannelInfoResp {
+    pub name: String,
+    pub owner_username: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub message_count: i64,
+}
+
+pub async fn get_channel_info(
+    db: web::Data<Db>,
+    user: AuthUser,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ApiError> {
+    let id = path.into_inner();
+
+    // Verify membership
+    let membership = sqlx::query(
+        "SELECT 1 FROM channel_members WHERE channel_id = ? AND user_id = ? AND can_read = 1",
+    )
+    .bind(&id)
+    .bind(&user.user_id)
+    .fetch_optional(&db.0)
+    .await?;
+
+    if membership.is_none() {
+        return Err(ApiError::Forbidden);
+    }
+
+    // Fetch channel info and owner username
+    let channel_row = sqlx::query(
+        "SELECT c.name, c.created_at, u.username as owner_username
+         FROM channels c
+         JOIN users u ON c.created_by = u.id
+         WHERE c.id = ? AND c.deleted_at IS NULL",
+    )
+    .bind(&id)
+    .fetch_optional(&db.0)
+    .await?;
+
+    let channel_row = channel_row.ok_or(ApiError::NotFound)?;
+
+    // Fetch message count
+    let count_row = sqlx::query(
+        "SELECT COUNT(*) as count FROM messages WHERE channel_id = ? AND deleted_at IS NULL",
+    )
+    .bind(&id)
+    .fetch_one(&db.0)
+    .await?;
+
+    Ok(HttpResponse::Ok().json(ChannelInfoResp {
+        name: channel_row.get("name"),
+        owner_username: channel_row.get("owner_username"),
+        created_at: channel_row.get("created_at"),
+        message_count: count_row.get("count"),
+    }))
+}
+
 // Admin/manager: add or remove users
 #[derive(Deserialize)]
 pub struct ModifyMembersReq {

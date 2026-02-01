@@ -107,7 +107,7 @@
             <div class="topbar">
                 <button class="iconbtn toggle-sidebar" id="btnToggleSidebar" title="Menu"><i
                         class="bi bi-list"></i></button>
-                <button id="btnMemberInfo" class="iconbtn" title="Channel members"><i
+                <button id="btnMemberInfo" class="iconbtn" title="Channel info"><i
                         class="bi bi-info-circle"></i></button>
                 <div class="name" id="channelName">Select a channel</div>
                 <div id="voiceCallParticipantsIcons" class="voice-participants-icons"></div>
@@ -418,11 +418,33 @@
         <div class="modal-backdrop"></div>
         <div class="modal-card glass">
             <div class="modal-header">
-                <div class="brand small"><i class="bi bi-people"></i> Channel Members</div>
+                <div class="brand small"><i class="bi bi-info-circle"></i> Channel Info</div>
                 <button id="btnCloseMembers" class="iconbtn" title="Close"><i class="bi bi-x-lg"></i></button>
             </div>
             <div class="modal-content">
                 <section class="panel">
+                    <h3>Details</h3>
+                    <div class="channel-info-grid">
+                        <div class="channel-info-item">
+                            <div class="channel-info-label">Name</div>
+                            <div class="channel-info-value" id="channelInfoName">—</div>
+                        </div>
+                        <div class="channel-info-item">
+                            <div class="channel-info-label">Owner</div>
+                            <div class="channel-info-value" id="channelInfoOwner">—</div>
+                        </div>
+                        <div class="channel-info-item">
+                            <div class="channel-info-label">Created</div>
+                            <div class="channel-info-value" id="channelInfoCreated">—</div>
+                        </div>
+                        <div class="channel-info-item">
+                            <div class="channel-info-label">Messages</div>
+                            <div class="channel-info-value" id="channelInfoMessages">—</div>
+                        </div>
+                    </div>
+                </section>
+                <section class="panel">
+                    <h3>Members</h3>
                     <div id="membersList" class="members-list"></div>
                 </section>
             </div>

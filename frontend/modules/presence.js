@@ -32,9 +32,21 @@ export async function startHeartbeatLoop() {
     _heartbeatLoopActive = false;
 }
 
-export function openMembersModal() {
-    const ids = store.members.get(store.currentChannelId) || [];
+export async function openMembersModal() {
+    const channelId = store.currentChannelId;
+    const ids = store.members.get(channelId) || [];
     const membersList = $('#membersList');
+
+    // Fetch and populate channel info
+    try {
+        const info = await apiFetch(`/api/channels/${channelId}/info`);
+        $('#channelInfoName').textContent = info.name;
+        $('#channelInfoOwner').textContent = info.owner_username;
+        $('#channelInfoCreated').textContent = new Date(info.created_at).toLocaleDateString();
+        $('#channelInfoMessages').textContent = info.message_count.toLocaleString();
+    } catch (e) {
+        console.warn('Failed to fetch channel info', e);
+    }
 
     if (ids.length === 0) {
         membersList.innerHTML = '<div class="hint">No members in this channel</div>';

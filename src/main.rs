@@ -126,6 +126,10 @@ async fn main() -> std::io::Result<()> {
                                 web::post().to(channels_routes::modify_members),
                             )
                             .route(
+                                "/{id}/info",
+                                web::get().to(channels_routes::get_channel_info),
+                            )
+                            .route(
                                 "/{id}/messages",
                                 web::get().to(messages_routes::list_messages),
                             )
