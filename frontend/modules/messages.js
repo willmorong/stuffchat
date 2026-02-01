@@ -155,9 +155,10 @@ export function renderMessageItem(m) {
         avatar.appendChild(badge);
     }
 
+    const createdAt = m.created_at || new Date().toISOString();
     const meta = el('div', { class: 'meta' }, [
         el('strong', {}, own ? (store.user?.username || 'me') : (user?.username || truncateId(m.user_id))),
-        el('span', {}, localizeDate(m.created_at || Date.now())),
+        el('span', { class: 'msg-timestamp', 'data-created-at': createdAt }, localizeDate(createdAt)),
         m.edited_at ? el('span', { class: 'pill' }, 'edited') : null
     ]);
     const content = el('div', { class: 'content' }, linkifyText(m.content));
@@ -197,6 +198,20 @@ export function updatePresenceBadges() {
         }
     });
 }
+
+/** Update all message timestamps in the DOM */
+export function updateAllTimestamps() {
+    const timestamps = document.querySelectorAll('.msg-timestamp[data-created-at]');
+    timestamps.forEach(span => {
+        const createdAt = span.getAttribute('data-created-at');
+        if (createdAt) {
+            span.textContent = localizeDate(createdAt);
+        }
+    });
+}
+
+// Update timestamps every minute
+setInterval(updateAllTimestamps, 60000);
 
 export function renderMessages(channelId) {
     if (channelId !== store.currentChannelId) return;
