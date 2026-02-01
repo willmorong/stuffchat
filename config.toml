@@ -1,4 +1,4 @@
-listen = "punkhazard.local:22800"
+listen = "100.114.19.67:22800"
 database_path = "./stuffchat.sqlite3"
 uploads_dir = "./uploads"
 allowed_origins = ["punkhazard.local", "https://chat.stuffcity.org"]
