@@ -173,7 +173,7 @@ export function renderMessageItem(m) {
         );
     }
 
-    return el('div', { class: 'msg' + (own ? ' own' : ''), 'data-user-id': m.user_id }, [
+    return el('div', { class: 'msg' + (own ? ' highlight' : ''), 'data-user-id': m.user_id }, [
         avatar, el('div', { class: 'msg-right' }, [meta, content, attach]), tools
     ]);
 }

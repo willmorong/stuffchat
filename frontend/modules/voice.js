@@ -241,10 +241,9 @@ export function updateCallUI() {
 
         if (isVoice) {
             btnStart.style.display = 'block';
-            btnStart.style.marginLeft = '8px';
-            btnStart.style.width = 'fit-content';
-            btnStart.textContent = voiceUsersHere.size > 0 ? 'Join Call' : 'Start Call';
-            btnStart.className = voiceUsersHere.size > 0 ? 'button small success' : 'button small';
+            btnStart.style.marginLeft = '6px';
+            btnStart.innerHTML = voiceUsersHere.size > 0 ? '<i class="bi bi-telephone-fill"></i>' : '<i class="bi bi-telephone"></i>';
+            btnStart.className = voiceUsersHere.size > 0 ? 'iconbtn own' : 'iconbtn';
 
             const iconsDiv = $('#voiceCallParticipantsIcons');
             if (iconsDiv) {

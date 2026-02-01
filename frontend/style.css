@@ -348,7 +348,8 @@ body {
     border: 1px solid transparent;
 }
 
-.msg.own {
+.msg.highlight,
+.highlight {
     background: rgba(77, 212, 172, 0.10);
     border-color: rgba(77, 212, 172, 0.25)
 }
@@ -752,7 +753,8 @@ body[data-theme="question"] .channel.active {
     color: var(--text);
 }
 
-body[data-theme="question"] .msg.own {
+body[data-theme="question"] .msg.highlight,
+.highlight {
     background: rgba(255, 165, 0, 0.12);
     border-color: rgba(255, 165, 0, 0.40);
 }
@@ -797,7 +799,8 @@ body[data-theme="pink"] .msg .content {
     /* deeper pink message text */
 }
 
-body[data-theme="pink"] .msg.own {
+body[data-theme="pink"] .msg.highlight,
+.highlight {
     background: rgba(236, 72, 153, 0.10);
     border-color: rgba(236, 72, 153, 0.35);
 }
@@ -833,7 +836,8 @@ body[data-theme="billzinga"] .channel.active {
     color: var(--text);
 }
 
-body[data-theme="billzinga"] .msg.own {
+body[data-theme="billzinga"] .msg.highlight,
+.highlight {
     background: rgba(255, 255, 255, 0.10);
     border-color: rgba(255, 255, 255, 0.35);
 }
@@ -1141,7 +1145,8 @@ body[data-theme="clouds"] .channel.active {
     color: var(--text);
 }
 
-body[data-theme="clouds"] .msg.own {
+body[data-theme="clouds"] .msg.highlight,
+.highlight {
     background: rgba(44, 124, 255, 0.12);
     border-color: rgba(44, 124, 255, 0.30);
 }
@@ -1191,7 +1196,8 @@ body[data-theme="rain"] .channel.active {
     color: var(--text);
 }
 
-body[data-theme="rain"] .msg.own {
+body[data-theme="rain"] .msg.highlight,
+.highlight {
     background: rgba(110, 231, 183, 0.12);
     border-color: rgba(110, 231, 183, 0.30);
 }
