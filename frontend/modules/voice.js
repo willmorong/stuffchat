@@ -954,7 +954,7 @@ export function updateVideoGrid() {
  */
 function createVideoTile(id, stream, username) {
     const tile = el('div', { class: 'video-tile', 'data-stream-id': id });
-    const video = el('video', { autoplay: true, playsinline: true, muted: id === 'local' });
+    const video = el('video', { autoplay: true, playsinline: true, muted: true });
     video.srcObject = stream;
     tile.appendChild(video);
 
@@ -975,7 +975,7 @@ export function toggleVideoFullscreen(id, stream, username) {
 
     if (overlay.classList.contains('hidden')) {
         overlay.innerHTML = '';
-        const video = el('video', { autoplay: true, playsinline: true });
+        const video = el('video', { autoplay: true, playsinline: true, muted: true });
         video.srcObject = stream;
         overlay.appendChild(video);
         overlay.classList.remove('hidden');
