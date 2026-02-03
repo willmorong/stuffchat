@@ -720,6 +720,7 @@ export function leaveCall() {
 
 /**
  * Configures the video sender for high-quality screen share.
+ * Respects codec preferences from store (VP9, AV1) over default H264.
  */
 async function configureVideoSender(sender, pc) {
     const transceiver = pc.getTransceivers().find(t => t.sender === sender);
@@ -727,8 +728,15 @@ async function configureVideoSender(sender, pc) {
         const capabilities = RTCRtpSender.getCapabilities('video');
         if (capabilities) {
             const codecs = capabilities.codecs.slice();
+
+            // Build codec preference order based on settings
+            // Higher priority codecs come first in the order array
+            const order = [];
+            if (store.preferAV1) order.push('video/AV1');
+            if (store.preferVP9) order.push('video/VP9');
+            order.push('video/H264'); // Always include H264 as fallback
+
             codecs.sort((a, b) => {
-                const order = ['video/H264'];
                 const aIndex = order.findIndex(c => a.mimeType.includes(c.split('/')[1]));
                 const bIndex = order.findIndex(c => b.mimeType.includes(c.split('/')[1]));
                 return (aIndex === -1 ? 999 : aIndex) - (bIndex === -1 ? 999 : bIndex);
@@ -755,9 +763,15 @@ async function configureVideoSender(sender, pc) {
 
 /**
  * Acquires screen share media and adds it to all active peer connections.
+ * In Electron, handles source selection from the main process.
  */
 export async function startScreenShare() {
     if (store.screenSharing) return;
+
+    // Set up Electron source selection listener if running in Electron
+    if (window.electronAPI?.isElectron) {
+        setupElectronSourcePicker();
+    }
 
     let stream;
     try {
@@ -793,6 +807,58 @@ export async function startScreenShare() {
     updateScreenShareButton();
     updateVideoGrid();
 }
+
+/**
+ * Sets up the Electron source picker modal listener.
+ * Called before getDisplayMedia to intercept the select-source event from main.
+ */
+function setupElectronSourcePicker() {
+    if (!window.electronAPI?.onSelectSource) return;
+
+    window.electronAPI.onSelectSource((sources) => {
+        const modal = $('#sourcePickerModal');
+        const grid = $('#sourcePickerGrid');
+        if (!modal || !grid) return;
+
+        grid.innerHTML = '';
+        sources.forEach(source => {
+            const item = el('div', { class: 'source-picker-item' });
+            const img = el('img', { src: source.thumbnail, alt: source.name });
+            const name = el('div', { class: 'source-name' }, source.name);
+            item.appendChild(img);
+            item.appendChild(name);
+
+            item.onclick = () => {
+                window.electronAPI.selectSource(source.id);
+                modal.classList.add('hidden');
+            };
+
+            grid.appendChild(item);
+        });
+
+        modal.classList.remove('hidden');
+
+        // Set up close button
+        const closeBtn = $('#btnCloseSourcePicker');
+        if (closeBtn) {
+            closeBtn.onclick = () => {
+                modal.classList.add('hidden');
+                // Signal cancellation
+                window.electronAPI.selectSource(null);
+            };
+        }
+
+        // Close on backdrop click
+        const backdrop = modal.querySelector('.modal-backdrop');
+        if (backdrop) {
+            backdrop.onclick = () => {
+                modal.classList.add('hidden');
+                window.electronAPI.selectSource(null);
+            };
+        }
+    });
+}
+
 
 /**
  * Stops screen sharing and removes the associated tracks from all peer connections.

@@ -1666,3 +1666,51 @@ body[data-theme="rain"] .msg.highlight,
     height: 48px;
     width: 48px;
 }
+
+/* Screen Share Source Picker (Electron) */
+.source-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 16px;
+    padding: 8px;
+}
+
+.source-picker-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    border: 2px solid var(--border);
+    border-radius: var(--small-radius);
+    background: rgba(255, 255, 255, 0.05);
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.source-picker-item:hover {
+    border-color: var(--accent);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.source-picker-item img {
+    width: 150px;
+    height: 100px;
+    object-fit: contain;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.3);
+}
+
+.source-picker-item .source-name {
+    font-size: 12px;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 160px;
+    color: var(--text);
+}
+
+#sourcePickerModal .modal-card {
+    max-width: 700px;
+}

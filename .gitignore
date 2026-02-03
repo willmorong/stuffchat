@@ -3,3 +3,5 @@
 /uploads
 stuffchat.sqlite3*
 Cargo.lock
+*/node_modules/
+desktop/dist/

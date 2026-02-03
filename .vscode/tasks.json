@@ -74,6 +74,71 @@
         "kind": "test",
         "isDefault": false
       }
+    },
+    {
+      "label": "Desktop: Run Electron",
+      "type": "shell",
+      "command": "npm start",
+      "options": {
+        "cwd": "${workspaceFolder}/desktop"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Desktop: Build (current platform)",
+      "type": "shell",
+      "command": "npm run build",
+      "options": {
+        "cwd": "${workspaceFolder}/desktop"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Desktop: Build Linux",
+      "type": "shell",
+      "command": "npm run build:linux",
+      "options": {
+        "cwd": "${workspaceFolder}/desktop"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Desktop: Build macOS",
+      "type": "shell",
+      "command": "npm run build:mac",
+      "options": {
+        "cwd": "${workspaceFolder}/desktop"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Desktop: Build Windows",
+      "type": "shell",
+      "command": "npm run build:win",
+      "options": {
+        "cwd": "${workspaceFolder}/desktop"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
     }
   ]
 }

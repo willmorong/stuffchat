@@ -89,6 +89,13 @@ export function openSettings() {
     setIf('#prefEchoCancellation', 'checked', store.echoCancellation);
     setIf('#prefAutoGainControl', 'checked', store.autoGainControl);
 
+    // Video codec preferences
+    setIf('#prefVP9', 'checked', store.preferVP9);
+    setIf('#prefAV1', 'checked', store.preferAV1);
+
+    // Debug information
+    setIf('#debugUserAgent', 'textContent', navigator.userAgent);
+
     renderEmojiList();
 
     $('#settingsModal').classList.remove('hidden');
@@ -183,6 +190,16 @@ export function bindSettingsEvents() {
     $('#prefAutoGainControl').addEventListener('change', (e) => {
         store.autoGainControl = e.target.checked;
         localStorage.setItem('stuffchat.auto_gain_control', store.autoGainControl);
+    });
+
+    // Video codec preferences
+    $('#prefVP9').addEventListener('change', (e) => {
+        store.preferVP9 = e.target.checked;
+        localStorage.setItem('stuffchat.prefer_vp9', store.preferVP9);
+    });
+    $('#prefAV1').addEventListener('change', (e) => {
+        store.preferAV1 = e.target.checked;
+        localStorage.setItem('stuffchat.prefer_av1', store.preferAV1);
     });
 
     // Logout from modal
