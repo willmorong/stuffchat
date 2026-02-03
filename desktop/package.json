@@ -42,7 +42,11 @@
                 "zip"
             ],
             "category": "public.app-category.social-networking",
-            "icon": "icon.png"
+            "icon": "icon.png",
+            "extendInfo": {
+                "NSMicrophoneUsageDescription": "stuffchat needs microphone access for voice calls."
+            },
+            "entitlements": "entitlements.mac.plist"
         },
         "win": {
             "target": [

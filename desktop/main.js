@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, desktopCapturer, ipcMain, session, Notification } = require('electron');
+const { app, BrowserWindow, shell, desktopCapturer, ipcMain, session, Notification, systemPreferences } = require('electron');
 const path = require('path');
 
 const STUFFCHAT_URL = 'https://chat.stuffcity.org';
@@ -96,15 +96,41 @@ ipcMain.handle('show-notification', (event, title, body) => {
     return true;
 });
 
+// Handle microphone permission status/request
+ipcMain.handle('get-mic-permission', async () => {
+    if (process.platform !== 'darwin') return 'granted';
+    return systemPreferences.getMediaAccessStatus('microphone');
+});
+
+ipcMain.handle('request-mic-permission', async () => {
+    if (process.platform !== 'darwin') return true;
+    return await systemPreferences.askForMediaAccess('microphone');
+});
+
 app.whenReady().then(() => {
-    // Auto-grant notification permissions
+    // Auto-grant notification and media permissions where appropriate
     session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-        if (permission === 'notifications') {
+        const url = webContents.getURL();
+        if (!url.startsWith(STUFFCHAT_URL)) {
+            return callback(false); // Only grant permissions to our trusted URL
+        }
+
+        if (permission === 'notifications' || permission === 'media') {
             callback(true);
         } else {
             callback(true); // Grant other permissions as needed
         }
     });
+
+    // Check and request microphone permission on macOS startup
+    if (process.platform === 'darwin') {
+        const micStatus = systemPreferences.getMediaAccessStatus('microphone');
+        if (micStatus === 'not-determined') {
+            systemPreferences.askForMediaAccess('microphone').then(granted => {
+                console.log(`Initial microphone permission: ${granted}`);
+            });
+        }
+    }
 
     // Handle getDisplayMedia requests for screen sharing
     session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {

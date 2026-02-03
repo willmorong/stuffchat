@@ -16,6 +16,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Show a native notification
     showNotification: (title, body) => ipcRenderer.invoke('show-notification', title, body),
 
+    // Microphone permissions
+    getMicPermission: () => ipcRenderer.invoke('get-mic-permission'),
+    requestMicPermission: () => ipcRenderer.invoke('request-mic-permission'),
+
     // Check if running in Electron
     isElectron: true
 });
