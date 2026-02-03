@@ -322,6 +322,19 @@ function mangleSdp(sdp) {
 }
 
 /**
+ * Modifies the SDP for video tracks to set a high start bitrate and minimum floor.
+ */
+function mangleSdpVideo(sdp) {
+    // b=AS:8000 sets the application-specific maximum bandwidth to 8Mbps
+    sdp = sdp.replace(/a=mid:video\r\n/g, 'a=mid:video\r\nb=AS:8000\r\n');
+
+    // x-google-flags are effective in Chromium-based browsers for controlling start/min bitrate
+    sdp = sdp.replace(/(a=fmtp:\d+.+)/g, '$1;x-google-min-bitrate=3000;x-google-start-bitrate=6000');
+
+    return sdp;
+}
+
+/**
  * Creates and configures a new RTCPeerConnection for a target user.
  */
 export async function createPeerConnection(targetUserId, targetSessionId, initiator) {
@@ -456,7 +469,9 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
         try {
             state.makingOffer = true;
             await peerConnection.setLocalDescription();
-            sendSignal(targetUserId, targetSessionId, { sdp: peerConnection.localDescription });
+            let sdp = peerConnection.localDescription.sdp;
+            sdp = mangleSdpVideo(sdp);
+            sendSignal(targetUserId, targetSessionId, { sdp: { ...peerConnection.localDescription.toJSON(), sdp } });
         } catch (e) {
             console.error(`Initial offer error [${pcId}]:`, e);
         } finally {
@@ -551,7 +566,9 @@ export async function handleSignal(userId, sessionId, data) {
 
             if (description.type === 'offer') {
                 await peerConnection.setLocalDescription();
-                sendSignal(userId, sessionId, { sdp: peerConnection.localDescription });
+                let sdp = peerConnection.localDescription.sdp;
+                sdp = mangleSdpVideo(sdp);
+                sendSignal(userId, sessionId, { sdp: { ...peerConnection.localDescription.toJSON(), sdp } });
             }
 
             updateVideoGrid();
@@ -754,7 +771,9 @@ async function configureVideoSender(sender, pc) {
         if (!params.encodings || params.encodings.length === 0) {
             params.encodings = [{}];
         }
-        params.encodings[0].maxBitrate = 5000000;
+        params.encodings[0].maxBitrate = 8000000; // 8 Mbps
+        params.encodings[0].networkPriority = 'high';
+        params.encodings[0].maxFramerate = 60;
         await sender.setParameters(params);
     } catch (e) {
         console.warn('Could not set video bitrate:', e);
@@ -791,6 +810,9 @@ export async function startScreenShare() {
     store.screenSharing = true;
 
     const videoTrack = stream.getVideoTracks()[0];
+    if (videoTrack && 'contentHint' in videoTrack) {
+        videoTrack.contentHint = 'motion';
+    }
     const audioTrack = stream.getAudioTracks()[0];
     store.pcs.forEach((pc, pcId) => {
         const videoSender = pc.addTrack(videoTrack, stream);

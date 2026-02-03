@@ -5,6 +5,15 @@ const STUFFCHAT_URL = 'https://chat.stuffcity.org';
 
 let mainWindow;
 
+// Optimizing high-motion video and screensharing
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+app.commandLine.appendSwitch('enable-zero-copy');
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('disable-background-timer-throttling');
+app.commandLine.appendSwitch('enable-features', 'VaapiVideoDecoder,VaapiVideoEncoder,WebRTCPipeWireCapturer');
+app.commandLine.appendSwitch('force-fieldtrials', 'WebRTC-FlexFEC-03/Enabled/');
+
 function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1200,
