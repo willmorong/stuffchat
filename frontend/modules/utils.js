@@ -1,3 +1,4 @@
+import { fetchEmojis } from './emojis.js';
 import { store } from './store.js';
 
 export const $ = sel => document.querySelector(sel);
@@ -115,6 +116,7 @@ export const replaceEmojisAndLinkify = (text) => {
         let lastIndex = 0;
         let match;
         while ((match = emojiRegex.exec(part)) !== null) {
+            fetchEmojis();
             const emojiName = match[1];
             if (store.customEmojis.has(emojiName)) {
                 if (match.index > lastIndex) {
