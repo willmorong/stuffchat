@@ -1,7 +1,7 @@
 import { store } from './store.js';
 import { apiFetch } from './api.js';
 import { connectWs } from './socket.js';
-import { $, el, absFileUrl, buildFileUrl, setIf, truncateId, presenceClass, localizeDate, replaceEmojisAndLinkify, isEmojiOnly } from './utils.js';
+import { $, el, absFileUrl, buildFileUrl, setIf, truncateId, presenceClass, localizeDate, replaceEmojisAndLinkify, isEmojiOnly, formatFileSize } from './utils.js';
 import { prefetchUsers } from './users.js';
 
 export function enableComposer(enabled) {
@@ -59,28 +59,72 @@ function renderAttachment(message) {
         ? absFileUrl(message.file_url)
         : buildFileUrl(message.file_id, 'file');
 
+    // If we have metadata, use it
+    const filename = message.filename || 'attachment';
+    const size = message.file_size !== undefined ? message.file_size : null;
+    let ext = (filename.split('.').pop() || '').toLowerCase();
+    // If no filename from server, try to guess from URL
+    if (ext === 'attachment' || !ext) {
+        ext = (url.split('?')[0].split('.').pop() || '').toLowerCase();
+    }
+
     const clearBox = () => {
         while (box.firstChild) box.removeChild(box.firstChild);
     };
 
-    const showLink = () => {
+    const renderFileCard = () => {
         clearBox();
-        box.appendChild(
-            el('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, 'Download attachment')
-        );
+        const sizeStr = size !== null ? formatFileSize(size) : '';
+        const info = el('div', { class: 'file-info' }, [
+            el('div', { class: 'file-name' }, filename),
+            sizeStr ? el('div', { class: 'file-size' }, sizeStr) : null
+        ]);
+        const icon = el('i', { class: 'bi bi-file-earmark-arrow-down file-icon' });
+
+        // We'll use a flex container for the card
+        const card = el('a', {
+            href: url,
+            target: '_blank',
+            rel: 'noopener noreferrer',
+            class: 'file-card'
+        }, [icon, info]);
+
+        box.replaceChildren(card);
+    };
+
+    // If it's clearly not media, just show the card immediately.
+    // Use a known list of media extensions.
+    const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif', 'heic', 'heif', 'tiff', 'tif', 'ico', 'jfif', 'jxl'];
+    const videoExts = ['mp4', 'webm', 'ogv', 'mov', 'm4v', 'avi', 'wmv', 'mkv'];
+    const audioExts = ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac', 'opus'];
+
+    const isImage = imageExts.includes(ext);
+    const isVideo = videoExts.includes(ext);
+    const isAudio = audioExts.includes(ext);
+    const isMedia = isImage || isVideo || isAudio;
+
+    // If we have filename and it's not media, render card immediately.
+    if (message.filename && !isMedia) {
+        renderFileCard();
+        return box;
+    }
+
+    const showLink = () => {
+        renderFileCard();
     };
 
     const tryImage = () =>
         new Promise((resolve, reject) => {
             const img = new Image();
-            img.alt = 'attachment';
+            img.alt = filename;
             img.onload = () => resolve(img);
             img.onerror = reject;
             img.src = url;
+            // Add a timeout in case it hangs? 
+            // relying on standard timeout might be enough, but let's be safe
+            setTimeout(reject, 10000);
         });
-    // ... video/audio helpers ...
-    // Simplified: reuse logic or copy it. Copying for robust module.
-    // To save lines, I'll be concise.
+
     const createMedia = (tag) => new Promise((resolve, reject) => {
         const m = el(tag, { src: url, controls: true, preload: 'metadata' });
         const onOK = () => { cleanup(); resolve(m); };
@@ -94,6 +138,9 @@ function renderAttachment(message) {
         m.addEventListener('canplay', onOK, { once: true });
         m.addEventListener('error', onErr, { once: true });
         try { m.load(); } catch { }
+
+        // Timeout for media too
+        setTimeout(() => { cleanup(); reject(); }, 5000);
     });
     const tryVideo = () => createMedia('video');
     const tryAudio = () => createMedia('audio');
@@ -102,35 +149,60 @@ function renderAttachment(message) {
         fns.reduce((p, fn) => p.catch(() => fn()), Promise.reject());
 
     const handleByType = (ct) => {
-        if (!ct) return tryInOrder([tryImage, tryVideo, tryAudio]);
+        if (!ct) {
+            // No type hint, just try based on extension or fallback
+            if (isImage) return tryImage();
+            if (isVideo) return tryVideo();
+            if (isAudio) return tryAudio();
+            // If unknown extension and no CT, try standard order or just show link?
+            // "Download attachment" logic was a fallback.
+            // If we already know it's likely not media, we shouldn't be here (handled above).
+            return tryInOrder([tryImage, tryVideo, tryAudio]);
+        }
         if (ct.startsWith('image/')) return tryImage();
         if (ct.startsWith('video/')) return tryInOrder([tryVideo, tryAudio, tryImage]);
         if (ct.startsWith('audio/')) return tryInOrder([tryAudio, tryVideo, tryImage]);
         return tryInOrder([tryImage, tryVideo, tryAudio]);
     };
 
-    fetch(url, { method: 'HEAD' })
-        .then((res) => {
-            if (!res.ok) throw new Error('HEAD failed');
-            return handleByType((res.headers.get('Content-Type') || '').toLowerCase());
-        })
-        .catch(() => {
-            const ext = (url.split('?')[0].split('.').pop() || '').toLowerCase();
-            let guess = '';
-            if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif'].includes(ext)) guess = 'image/';
-            else if (['mp4', 'webm', 'ogv', 'mov', 'm4v'].includes(ext)) guess = 'video/';
-            else if (['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac', 'opus'].includes(ext)) guess = 'audio/';
-            return handleByType(guess);
-        })
+    // If we think it's media, try to load it.
+    // We can skip the HEAD request if we trust the extension, 
+    // BUT the HEAD request is useful for Content-Type if extension is missing/wrong.
+    // To speed up: if extension is strong indicator, try that first?
+    // The original code did HEAD request first.
+
+    // Optimization: If we have an extension, try that specific media loader FIRST before doing HEAD.
+    // If that fails, then maybe fallback or show link.
+    // This avoids the HEAD request latency for valid images/videos.
+
+    let promise = Promise.reject();
+    if (isImage) promise = tryImage();
+    else if (isVideo) promise = tryVideo();
+    else if (isAudio) promise = tryAudio();
+    else {
+        // No clear extension match, do HEAD to find out mime
+        promise = fetch(url, { method: 'HEAD' })
+            .then((res) => {
+                if (!res.ok) throw new Error('HEAD failed');
+                return handleByType((res.headers.get('Content-Type') || '').toLowerCase());
+            });
+    }
+
+    promise
         .then((node) => {
             clearBox();
             if (node && node.tagName === 'IMG') {
+                // Wrap images in link too? 
+                // Original: box.appendChild(el('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, node));
                 box.appendChild(el('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, node));
             } else {
                 box.appendChild(node);
             }
         })
-        .catch(showLink);
+        .catch(() => {
+            // Fallback if media load failed (e.g. 404 or corrupted) or if it wasn't media
+            showLink();
+        });
 
     return box;
 }

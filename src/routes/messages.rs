@@ -40,7 +40,7 @@ pub async fn list_messages(
         let ts: chrono::DateTime<chrono::Utc> =
             ref_row.map(|r| r.get("created_at")).unwrap_or(Utc::now());
         sqlx::query(
-            "SELECT m.id, m.user_id, m.content, m.file_id, m.created_at, m.edited_at, f.original_name
+            "SELECT m.id, m.user_id, m.content, m.file_id, m.created_at, m.edited_at, f.original_name, f.size_bytes
              FROM messages m
              LEFT JOIN files f ON f.id = m.file_id
              WHERE m.channel_id = ? AND m.deleted_at IS NULL AND m.created_at < ?
@@ -49,7 +49,7 @@ pub async fn list_messages(
             .bind(&channel_id).bind(ts).bind(limit).fetch_all(&db.0).await?
     } else {
         sqlx::query(
-            "SELECT m.id, m.user_id, m.content, m.file_id, m.created_at, m.edited_at, f.original_name
+            "SELECT m.id, m.user_id, m.content, m.file_id, m.created_at, m.edited_at, f.original_name, f.size_bytes
              FROM messages m
              LEFT JOIN files f ON f.id = m.file_id
              WHERE m.channel_id = ? AND m.deleted_at IS NULL
@@ -63,6 +63,7 @@ pub async fn list_messages(
         .map(|r| {
             let file_id: Option<String> = r.get("file_id");
             let original_name: Option<String> = r.get("original_name");
+            let size_bytes: Option<i64> = r.get("size_bytes");
             let file_url = match (file_id.as_deref(), original_name.as_deref()) {
                 (Some(fid), Some(name)) => Some(format!("/files/{}/{}", fid, name)),
                 _ => None,
@@ -74,6 +75,8 @@ pub async fn list_messages(
                 "user_id": r.get::<String,_>("user_id"),
                 "content": r.get::<Option<String>,_>("content"),
                 "file_url": file_url,
+                "filename": original_name,
+                "file_size": size_bytes,
                 "created_at": r.get::<chrono::DateTime<chrono::Utc>,_>("created_at"),
                 "edited_at": r.get::<Option<chrono::DateTime<chrono::Utc>>,_>("edited_at"),
             })
@@ -121,17 +124,24 @@ pub async fn post_message(
     }
 
     // Resolve original filename for broadcast (if a file is attached)
-    let file_url = if let Some(fid) = &body.file_id {
-        let row = sqlx::query("SELECT original_name FROM files WHERE id = ?")
+    let (file_url, filename, file_size) = if let Some(fid) = &body.file_id {
+        let row = sqlx::query("SELECT original_name, size_bytes FROM files WHERE id = ?")
             .bind(fid)
             .fetch_optional(&db.0)
             .await?;
-        row.map(|r| {
+        if let Some(r) = row {
             let original: String = r.get("original_name");
-            format!("/files/{}/{}", fid, original)
-        })
+            let size: i64 = r.get("size_bytes");
+            (
+                Some(format!("/files/{}/{}", fid, original)),
+                Some(original),
+                Some(size),
+            )
+        } else {
+            (None, None, None)
+        }
     } else {
-        None
+        (None, None, None)
     };
 
     let id = uuid::Uuid::new_v4().to_string();
@@ -149,6 +159,8 @@ pub async fn post_message(
         "user_id": user.user_id,
         "content": body.content,
         "file_url": file_url,
+        "filename": filename,
+        "file_size": file_size,
         "created_at": now,
     })
     .to_string();
