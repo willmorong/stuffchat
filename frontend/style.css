@@ -919,6 +919,44 @@ body[data-theme="billzinga"] .msg.highlight,
     border-color: rgba(255, 255, 255, 0.35);
 }
 
+/* China (red background, yellow/gold text and borders) */
+body[data-theme="china"] {
+    --bg1: #8b0000;
+    /* deep red */
+    --bg2: #de2910;
+    /* china red */
+    --glass: rgba(255, 255, 255, 0.06);
+    --glass-strong: rgba(255, 255, 255, 0.10);
+    --border: rgba(255, 222, 0, 0.35);
+    /* gold borders */
+    --text: #ffffff;
+    --text-dim: #ffde00;
+    --accent: #ffde00;
+    --accent-2: #ffde00;
+    --danger: #ff6b6b;
+}
+
+body[data-theme="china"] {
+    background:
+        radial-gradient(1200px 800px at 10% 10%, #600000 0%, transparent 60%),
+        radial-gradient(1200px 800px at 90% 0%, #a00000 0%, transparent 55%),
+        radial-gradient(1000px 600px at 70% 90%, #800000 0%, transparent 95%),
+        linear-gradient(160deg, var(--bg1), var(--bg2));
+    color: var(--text);
+}
+
+body[data-theme="china"] .channel.active {
+    background: linear-gradient(180deg, rgba(255, 222, 0, 0.14), rgba(255, 222, 0, 0.10));
+    border-color: rgba(255, 222, 0, 0.35);
+    color: var(--text);
+}
+
+body[data-theme="china"] .msg.highlight,
+body[data-theme="china"] .highlight {
+    background: rgba(255, 222, 0, 0.10);
+    border-color: rgba(255, 222, 0, 0.35);
+}
+
 body[data-theme="wegmans"] {
     --bg1: #e9f0ff;
     --bg2: #ffffff;
