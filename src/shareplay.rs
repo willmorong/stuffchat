@@ -410,8 +410,8 @@ pub fn start_download(
             .arg("opus")
             .arg("--audio-quality")
             .arg("0") // Best quality
-            .arg("--extractor-args")
-            .arg("youtube:player_client=default,-android_sdkless")
+            //.arg("--extractor-args")
+            //.arg("youtube:player_client=default,-android_sdkless")
             .arg("--cookies-from-browser")
             .arg("firefox")
             .arg("-o")
