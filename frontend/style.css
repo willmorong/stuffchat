@@ -939,9 +939,10 @@ body[data-theme="wegmans"] .iconbtn,
 body[data-theme="wegmans"] .messages,
 body[data-theme="wegmans"] .topbar,
 body[data-theme="wegmans"] .inputbar,
-body[data-theme="wegmans"] #sidebar {
+body[data-theme="wegmans"] #sidebar,
+body[data-theme="wegmans"] .call-interface {
     background: rgba(255, 255, 255, 0.6);
-    backdrop-filter: blur(5px);
+    backdrop-filter: blur(10px);
 }
 
 body[data-theme="wegmans"] .channel.active {
@@ -958,6 +959,12 @@ body[data-theme="wegmans"] {
 
 body[data-theme="wegmans"] .call-status {
     color: var(--text);
+}
+
+body[data-theme="wegmans"] .emoji-picker {
+    background: url("img/wegmans.jpg");
+    background-repeat: no-repeat;
+    background-size: cover;
 }
 
 /* Call Interface */
@@ -1296,7 +1303,7 @@ body[data-theme="rain"] .msg.highlight,
     gap: 8px;
     min-width: 0;
     max-height: 300px;
-    overflow: scroll;
+    overflow: auto;
 }
 
 #nowPlayingTitle {
@@ -1583,6 +1590,8 @@ body[data-theme="rain"] .msg.highlight,
     grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
     gap: 8px;
 }
+
+
 
 .emoji-picker.hidden {
     display: none;
