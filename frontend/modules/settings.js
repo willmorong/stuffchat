@@ -1,11 +1,12 @@
 import { store } from './store.js';
-import { $, setIf, buildFileUrl } from './utils.js';
+import { $, el, setIf, buildFileUrl } from './utils.js';
 import { updateMe, changeMyPassword, uploadAvatar } from './users.js';
 import { logout, setBaseUrl } from './auth.js';
 import { stopCloudsAnimation, startCloudsAnimation } from './clouds.js';
 import { stopMysteriousAnimation, startMysteriousAnimation } from './mysterious.js';
 import { stopRainAnimation, startRainAnimation } from './rain.js';
 import { recreateCanvas } from './themeCanvas.js';
+import { fetchEmojis, uploadEmoji, deleteEmoji, buildEmojiUrl } from './emojis.js';
 
 // List of animated themes that use the background canvas
 const ANIMATED_THEMES = ['clouds', 'mysterious', 'rain'];
@@ -36,6 +37,34 @@ function startAnimatedTheme(theme) {
     }
 }
 
+/**
+ * Render the list of custom emojis in the settings modal
+ */
+export function renderEmojiList() {
+    const list = $('#customEmojiList');
+    if (!list) return;
+    list.innerHTML = '';
+
+    store.customEmojis.forEach((emoji, name) => {
+        const item = el('div', { class: 'emoji-item', title: `:${name}:` }, [
+            el('img', { src: buildEmojiUrl(name), alt: name }),
+            el('div', { class: 'emoji-name' }, name),
+            el('button', {
+                class: 'btn-delete-emoji',
+                onclick: async () => {
+                    if (confirm(`Delete emoji :${name}:?`)) {
+                        try {
+                            await deleteEmoji(name);
+                            renderEmojiList();
+                        } catch (e) { alert(e.message); }
+                    }
+                }
+            }, el('i', { class: 'bi bi-x' }))
+        ]);
+        list.appendChild(item);
+    });
+}
+
 export function openSettings() {
     // Fill current values
     setIf('#profileUsername', 'value', store.user?.username || '');
@@ -59,6 +88,8 @@ export function openSettings() {
     setIf('#prefNoiseSuppression', 'checked', store.noiseSuppression);
     setIf('#prefEchoCancellation', 'checked', store.echoCancellation);
     setIf('#prefAutoGainControl', 'checked', store.autoGainControl);
+
+    renderEmojiList();
 
     $('#settingsModal').classList.remove('hidden');
 }
@@ -156,4 +187,27 @@ export function bindSettingsEvents() {
 
     // Logout from modal
     $('#btnLogoutSettings').addEventListener('click', () => logout());
+
+    // Emoji add
+    $('#btnAddEmoji').addEventListener('click', async () => {
+        const nameInput = $('#newEmojiName');
+        const fileInput = $('#newEmojiFile');
+        const name = nameInput.value.trim().toLowerCase();
+        const file = fileInput.files && fileInput.files[0];
+
+        if (!name) return alert('Enter emoji name.');
+        if (!file) return alert('Select an image.');
+
+        // Validate name: lowercase letters, numbers, dashes, and underscores
+        if (!/^[a-z0-9_-]+$/.test(name)) {
+            return alert('Name can only contain lowercase letters, numbers, dashes, and underscores.');
+        }
+
+        try {
+            await uploadEmoji(name, file);
+            nameInput.value = '';
+            fileInput.value = '';
+            renderEmojiList();
+        } catch (e) { alert(e.message); }
+    });
 }

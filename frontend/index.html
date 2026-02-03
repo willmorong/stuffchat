@@ -195,11 +195,15 @@
 
             <div class="typing" id="typingIndicator" style="display:none">Someone is typing…</div>
 
-            <div class="inputbar">
+            <div class="inputbar" style="position: relative;">
                 <label class="iconbtn" title="Attach file" style="cursor:pointer">
                     <i class="bi bi-paperclip"></i>
                     <input id="attachFile" type="file" style="display:none" />
                 </label>
+                <button id="btnEmojiPicker" class="iconbtn" title="Choose emoji">
+                    <i class="bi bi-emoji-smile"></i>
+                </button>
+                <div id="emojiPicker" class="emoji-picker glass hidden"></div>
                 <textarea id="msgInput" disabled></textarea>
                 <button id="btnSend" class="iconbtn" title="Send" disabled><i class="bi bi-send-fill"></i></button>
             </div>
@@ -269,6 +273,18 @@
                         <label><input type="radio" name="themeSel" value="wegmans" /> Wegmans</label>
                         <label><input type="radio" name="themeSel" value="clouds" /> Clouds</label>
                         <label><input type="radio" name="themeSel" value="rain" /> Rain</label>
+                    </div>
+                </section>
+                <section class="panel">
+                    <h3>Custom Emojis</h3>
+                    <div id="customEmojiList" class="emoji-grid"></div>
+                    <div class="row" style="margin-top: 12px; gap: 8px;">
+                        <input id="newEmojiName" class="input" placeholder="Emoji name" style="flex: 1;" />
+                        <label for="newEmojiFile" class="iconbtn">
+                            <i class="bi bi-image"></i>
+                        </label>
+                        <input id="newEmojiFile" type="file" accept="image/*" style="display:none" />
+                        <button id="btnAddEmoji" class="button" style="width: auto;">Add</button>
                     </div>
                 </section>
                 <section class="panel">

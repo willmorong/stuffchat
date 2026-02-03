@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod call;
 pub mod channels;
+pub mod emojis;
 pub mod files;
 pub mod health;
 pub mod invites;

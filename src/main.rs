@@ -12,8 +12,9 @@ mod ws;
 use crate::config::Config;
 use crate::db::Db;
 use crate::routes::{
-    auth as auth_routes, channels as channels_routes, files as files_routes,
-    invites as invites_routes, messages as messages_routes, users as users_routes,
+    auth as auth_routes, channels as channels_routes, emojis as emojis_routes,
+    files as files_routes, invites as invites_routes, messages as messages_routes,
+    users as users_routes,
 };
 use actix::Actor;
 use actix_cors::Cors;
@@ -164,6 +165,12 @@ async fn main() -> std::io::Result<()> {
                     .service(
                         web::scope("/files").route("", web::post().to(files_routes::upload_file)),
                     )
+                    .service(
+                        web::scope("/emojis")
+                            .route("", web::get().to(emojis_routes::list_emojis))
+                            .route("", web::post().to(emojis_routes::upload_emoji))
+                            .route("/{name}", web::delete().to(emojis_routes::delete_emoji)),
+                    )
                     .route(
                         "/shareplay/{channel_id}/current",
                         web::get().to(routes::shareplay::get_current_track),
@@ -178,6 +185,10 @@ async fn main() -> std::io::Result<()> {
                 web::resource("/files/{id}/{filename:.*}")
                     .route(web::get().to(files_routes::get_file))
                     .route(web::head().to(files_routes::get_file)),
+            )
+            .route(
+                "/emojis/{name}/image",
+                web::get().to(emojis_routes::get_emoji_image),
             )
     })
     .bind(listen_addr)?

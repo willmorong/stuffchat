@@ -24,6 +24,7 @@ import {
     openInviteModal, closeInviteModal, createInvite
 } from './modules/invites.js';
 import { heartbeat, setupMembersModalListeners } from './modules/presence.js';
+import { initEmojiPicker } from './modules/emojis.js';
 
 // Dependency injection to break cycles
 setupApi(logout, connectWs);
@@ -221,6 +222,9 @@ function bindUI() {
 
     // Members Modal
     setupMembersModalListeners();
+
+    // Emoji Picker
+    initEmojiPicker();
 
     window.addEventListener('beforeunload', () => {
         if (store.ws) try { store.ws.close(); } catch { }

@@ -1491,3 +1491,131 @@ body[data-theme="rain"] .msg.highlight,
     object-fit: cover;
     display: block;
 }
+
+/* Custom Emojis */
+.emoji-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+    gap: 12px;
+    margin-top: 8px;
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--small-radius);
+    background: rgba(0, 0, 0, 0.1);
+}
+
+.emoji-item {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px;
+    background: var(--glass);
+    border: 1px solid var(--border);
+    border-radius: var(--small-radius);
+    transition: transform 0.1s ease;
+}
+
+.emoji-item:hover {
+    transform: scale(1.05);
+    background: var(--glass-strong);
+}
+
+.emoji-item img {
+    width: 32px;
+    height: 32px;
+    object-fit: contain;
+}
+
+.emoji-item .emoji-name {
+    font-size: 10px;
+    color: var(--text-dim);
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.emoji-item .btn-delete-emoji {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--danger);
+    color: white;
+    border: none;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 10px;
+    z-index: 10;
+}
+
+.emoji-item:hover .btn-delete-emoji {
+    display: flex;
+}
+
+.emoji-inline {
+    height: 22px;
+    width: 22px;
+    vertical-align: middle;
+    object-fit: contain;
+    margin: 0 1px;
+}
+
+/* Emoji Picker Popover */
+.emoji-picker {
+    position: absolute;
+    bottom: calc(100% + 12px);
+    left: 0;
+    width: 280px;
+    max-height: 350px;
+    overflow-y: auto;
+    z-index: 1000;
+    padding: 12px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+    gap: 8px;
+}
+
+.emoji-picker.hidden {
+    display: none;
+}
+
+.emoji-picker .picker-item {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border-radius: var(--small-radius);
+    transition: background 0.1s ease;
+}
+
+.emoji-picker .picker-item:hover {
+    background: var(--glass-strong);
+}
+
+.emoji-picker .picker-item img {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+}
+
+/* Jumbo Emojis */
+.content.jumbo {
+    font-size: 48px;
+    line-height: 1.0;
+}
+
+.content.jumbo .emoji-inline {
+    height: 48px;
+    width: 48px;
+}

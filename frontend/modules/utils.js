@@ -97,6 +97,64 @@ export const linkifyText = (text) => {
     return parts.length ? parts : [text];
 };
 
+/**
+ * Handle both emojis and links in text.
+ */
+export const replaceEmojisAndLinkify = (text) => {
+    if (!text) return [];
+    const linkified = linkifyText(text);
+    const finalParts = [];
+
+    linkified.forEach(part => {
+        if (typeof part !== 'string') {
+            finalParts.push(part);
+            return;
+        }
+
+        const emojiRegex = /:([a-z0-9_-]+):/g;
+        let lastIndex = 0;
+        let match;
+        while ((match = emojiRegex.exec(part)) !== null) {
+            const emojiName = match[1];
+            if (store.customEmojis.has(emojiName)) {
+                if (match.index > lastIndex) {
+                    finalParts.push(part.slice(lastIndex, match.index));
+                }
+                const url = `${store.baseUrl}/emojis/${encodeURIComponent(emojiName)}/image`;
+                finalParts.push(el('img', { src: url, class: 'emoji-inline', alt: `:${emojiName}:`, title: `:${emojiName}:` }));
+                lastIndex = match.index + match[0].length;
+            }
+        }
+        if (lastIndex < part.length) {
+            finalParts.push(part.slice(lastIndex));
+        }
+    });
+
+    return finalParts;
+};
+
+/**
+ * Check if a message consists only of emojis (custom or native) and whitespace.
+ */
+export const isEmojiOnly = (text) => {
+    if (!text) return false;
+
+    // Remove custom emoji patterns
+    let remaining = text.replace(/:([a-z0-9_-]+):/g, (match, name) => {
+        return store.customEmojis.has(name) ? ' ' : match;
+    });
+
+    // Remove all whitespace
+    remaining = remaining.replace(/\s+/g, '');
+
+    if (remaining.length === 0) return true;
+
+    // Check if what's left is only native emojis
+    // This is a broad regex for common emojis
+    const nativeEmojiRegex = /^(\u2714\uFE0F|\u2714|\u2122\uFE0F|\u2122|[\u203C-\u3299]|[\uD83C-\uD83E][\uDC00-\uDFFF])+$/;
+    return nativeEmojiRegex.test(remaining);
+};
+
 export const localizeDate = (dateInput) => {
     const d = new Date(dateInput);
     if (isNaN(d.getTime())) return '';

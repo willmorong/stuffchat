@@ -6,6 +6,7 @@ import { loadMe } from './users.js';
 import { loadChannels } from './channels.js';
 import { enableComposer } from './messages.js';
 import { heartbeat, presencePollLoop, startHeartbeatLoop } from './presence.js';
+import { fetchEmojis } from './emojis.js';
 
 export function showServerStep() {
     $('#serverStep').style.display = 'block';
@@ -94,4 +95,5 @@ export async function bootstrapAfterAuth() {
     enableComposer(false);
     startHeartbeatLoop();
     presencePollLoop();
+    fetchEmojis();
 }
