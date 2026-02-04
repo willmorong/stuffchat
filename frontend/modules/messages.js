@@ -175,7 +175,7 @@ function renderAttachment(message) {
     // If that fails, then maybe fallback or show link.
     // This avoids the HEAD request latency for valid images/videos.
 
-    let promise = Promise.reject();
+    let promise;
     if (isImage) promise = tryImage();
     else if (isVideo) promise = tryVideo();
     else if (isAudio) promise = tryAudio();
