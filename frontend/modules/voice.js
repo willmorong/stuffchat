@@ -1002,33 +1002,85 @@ export function toggleVideoFullscreen(id, stream, username) {
     if (overlay.classList.contains('hidden')) {
         overlay.innerHTML = '';
 
-        // For local screenshare, only display video (no audio) to prevent feedback
-        let videoStream = stream;
-        if (id === 'local') {
-            videoStream = new MediaStream(stream.getVideoTracks());
+        // Always use video-only stream for display - audio routes through Web Audio gain nodes
+        const videoOnlyStream = new MediaStream(stream.getVideoTracks());
+        const video = el('video', { autoplay: true, playsinline: true, muted: true });
+        video.srcObject = videoOnlyStream;
+        overlay.appendChild(video);
+
+        // Add volume control for remote screenshares (not local)
+        const gainNode = store.screenShareGainNodes.get(id);
+        if (id !== 'local' && gainNode) {
+            const [userId] = id.split(':');
+            const initialVol = store.screenShareVolumes[userId] !== undefined ? store.screenShareVolumes[userId] : 1.0;
+
+            const volumeControl = el('div', { class: 'fullscreen-volume-control' });
+            const volumeIcon = el('i', { class: 'bi bi-volume-up-fill volume-icon' });
+            const volumeSlider = el('input', {
+                type: 'range',
+                class: 'fullscreen-volume-slider',
+                min: '0',
+                max: '2',
+                step: '0.01',
+                value: String(initialVol)
+            });
+            const volumeLabel = el('span', { class: 'fullscreen-volume-label' }, `${Math.round(initialVol * 100)}%`);
+
+            volumeControl.appendChild(volumeIcon);
+            volumeControl.appendChild(volumeSlider);
+            volumeControl.appendChild(volumeLabel);
+            overlay.appendChild(volumeControl);
+
+            // Prevent click on volume control from closing fullscreen
+            volumeControl.onclick = (e) => e.stopPropagation();
+
+            // Update volume on slider change
+            volumeSlider.oninput = () => {
+                const val = parseFloat(volumeSlider.value);
+                volumeLabel.textContent = `${Math.round(val * 100)}%`;
+                gainNode.gain.value = val;
+                store.screenShareVolumes[userId] = val;
+                localStorage.setItem('stuffchat.screenshare_volumes', JSON.stringify(store.screenShareVolumes));
+            };
+
+            // Show volume control when hovering in the bottom-right quadrant
+            overlay.onmousemove = (e) => {
+                const rect = overlay.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                const inRightHalf = x > rect.width / 2;
+                const inBottomHalf = y > rect.height / 2;
+
+                if (inRightHalf && inBottomHalf) {
+                    volumeControl.classList.add('visible');
+                } else {
+                    volumeControl.classList.remove('visible');
+                }
+            };
+
+            overlay.onmouseleave = () => {
+                volumeControl.classList.remove('visible');
+            };
+
+            // Set initial volume
+            gainNode.gain.value = initialVol;
         }
 
-        const video = el('video', { autoplay: true, playsinline: true, muted: true });
-        video.srcObject = videoStream;
-        overlay.appendChild(video);
         overlay.classList.remove('hidden');
 
         overlay.onclick = () => {
             overlay.classList.add('hidden');
             overlay.innerHTML = '';
-            const gainNode = store.screenShareGainNodes.get(id);
-            if (gainNode) gainNode.gain.value = 0;
+            overlay.onmousemove = null;
+            overlay.onmouseleave = null;
+            const gn = store.screenShareGainNodes.get(id);
+            if (gn) gn.gain.value = 0;
         };
-
-        const gainNode = store.screenShareGainNodes.get(id);
-        if (gainNode) {
-            const [userId] = id.split(':');
-            const vol = store.userVolumes[userId] !== undefined ? store.userVolumes[userId] : 1.0;
-            gainNode.gain.value = vol;
-        }
     } else {
         overlay.classList.add('hidden');
         overlay.innerHTML = '';
+        overlay.onmousemove = null;
+        overlay.onmouseleave = null;
         const gainNode = store.screenShareGainNodes.get(id);
         if (gainNode) gainNode.gain.value = 0;
     }

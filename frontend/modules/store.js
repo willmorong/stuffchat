@@ -41,6 +41,7 @@ export const store = {
     remoteVideoStreams: new Map(), // pcId -> MediaStream (video)
     screenShareGainNodes: new Map(), // pcId -> GainNode (screen share audio)
     screenShareAudioSources: new Map(), // pcId -> MediaStreamAudioSourceNode (screen share audio)
+    screenShareVolumes: JSON.parse(localStorage.getItem('stuffchat.screenshare_volumes') || '{}'), // userId -> volume for screenshare
     isMuted: false,
     isDeafened: false,
     // Pending attachment from paste/drop
