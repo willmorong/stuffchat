@@ -120,8 +120,6 @@ function renderAttachment(message) {
             img.onload = () => resolve(img);
             img.onerror = reject;
             img.src = url;
-            // Add a timeout in case it hangs? 
-            // relying on standard timeout might be enough, but let's be safe
             setTimeout(reject, 10000);
         });
 
