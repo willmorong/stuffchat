@@ -23,7 +23,7 @@ export class SharePlay {
 
         // Bind UI
         this.ui = {
-            container: $('#shareplayContainer'),
+            container: $('#shareplayModal'),
             title: $('#nowPlayingTitle'),
             seek: $('#nowPlayingSeek'),
             currentTime: $('#nowPlayingCurrentTime'),

@@ -140,43 +140,7 @@
                     </div>
                     <div id="callParticipants" class="call-participants"></div>
                     <div id="videoGrid" class="video-grid"></div>
-                    <div id="shareplayContainer" class="shareplay-container" style="display:none">
-                        <div id="nowPlaying">
-                            <p id="nowPlayingTitle">Nothing is playing.</p>
-                            <div class="shareplay-seek-row">
-                                <span id="nowPlayingCurrentTime" class="shareplay-timestamp">0:00</span>
-                                <div id="nowPlayingSeek"></div>
-                                <span id="nowPlayingTotalTime" class="shareplay-timestamp">0:00</span>
-                            </div>
-                            <div id="shareplayControls" class="shareplay-controls">
-                                <button id="btnSharePlayPrevious" class="iconbtn">
-                                    <i class="bi bi-skip-backward"></i>
-                                </button>
-                                <button id="btnSharePlayPause" class="iconbtn">
-                                    <i class="bi bi-pause"></i>
-                                </button>
-                                <button id="btnSharePlayNext" class="iconbtn">
-                                    <i class="bi bi-skip-forward"></i>
-                                </button>
-                                <button id="btnSharePlayRepeat" class="iconbtn">
-                                    <i class="bi bi-repeat"></i>
-                                </button>
-                                <div class="shareplay-volume-row">
-                                    <i class="bi bi-volume-up-fill"></i>
-                                    <input type="range" id="shareplayVolume" min="0" max="100" value="40">
-                                </div>
-                            </div>
-                        </div>
-                        <div id="shareplayQueue" class="shareplay-queue">
-                            <div id="shareplayQueueItems" class="shareplay-queue-items"></div>
-                            <div id="shareplayQueueAdd" class="shareplay-queue-add">
-                                <input type="text" id="shareplayQueueAddInput" placeholder="Enter a URL or file path">
-                                <button id="shareplayQueueAddButton" class="iconbtn">
-                                    <i class="bi bi-plus"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
+
                 </div>
             </div>
 
@@ -502,6 +466,57 @@
             </div>
             <div class="modal-content">
                 <div id="sourcePickerGrid" class="source-picker-grid"></div>
+            </div>
+        </div>
+    </div>
+    <!-- SharePlay Modal -->
+    <div id="shareplayModal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-card glass">
+            <div class="modal-header">
+                <div class="brand small"><i class="bi bi-collection-play-fill"></i> SharePlay</div>
+                <button id="btnCloseSharePlay" class="iconbtn" title="Close"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <div class="modal-content">
+                <div id="nowPlaying">
+                    <p id="nowPlayingTitle">Nothing is playing.</p>
+                    <div class="shareplay-seek-row">
+                        <span id="nowPlayingCurrentTime" class="shareplay-timestamp">0:00</span>
+                        <div id="nowPlayingSeek"></div>
+                        <span id="nowPlayingTotalTime" class="shareplay-timestamp">0:00</span>
+                    </div>
+                    <div id="shareplayControls" class="shareplay-controls">
+                        <button id="btnSharePlayPrevious" class="iconbtn">
+                            <i class="bi bi-skip-backward"></i>
+                        </button>
+                        <button id="btnSharePlayPause" class="iconbtn">
+                            <i class="bi bi-pause"></i>
+                        </button>
+                        <button id="btnSharePlayNext" class="iconbtn">
+                            <i class="bi bi-skip-forward"></i>
+                        </button>
+                        <button id="btnSharePlayRepeat" class="iconbtn">
+                            <i class="bi bi-repeat"></i>
+                        </button>
+                        <div class="shareplay-volume-row">
+                            <i class="bi bi-volume-up-fill"></i>
+                            <input type="range" id="shareplayVolume" min="0" max="100" value="40">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <div id="shareplayQueue" class="shareplay-queue">
+                    <div id="shareplayQueueAdd" class="shareplay-queue-add">
+                        <input type="text" id="shareplayQueueAddInput" placeholder="Enter a URL or file path">
+                        <button id="shareplayQueueAddButton" class="iconbtn">
+                            <i class="bi bi-plus"></i>
+                        </button>
+                    </div>
+                    <div id="shareplayQueueItems" class="shareplay-queue-items">
+                    </div>
+                </div>
             </div>
         </div>
     </div>

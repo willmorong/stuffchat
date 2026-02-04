@@ -243,14 +243,17 @@ function bindUI() {
         }
     });
     $('#btnSharePlay').addEventListener('click', () => {
-        const el = $('#shareplayContainer');
-        const btn = $('#btnSharePlay');
-        if (el.style.display === 'none') {
-            el.style.display = 'flex';
-            btn.innerHTML = '<i class="bi bi-collection-play-fill"></i>';
-        } else {
-            el.style.display = 'none';
-            btn.innerHTML = '<i class="bi bi-collection-play"></i>';
+        const modal = $('#shareplayModal');
+        modal.classList.remove('hidden');
+    });
+
+    $('#btnCloseSharePlay').addEventListener('click', () => {
+        $('#shareplayModal').classList.add('hidden');
+    });
+
+    $('#shareplayModal').addEventListener('click', (e) => {
+        if (e.target === $('#shareplayModal') || e.target === $('#shareplayModal .modal-backdrop')) {
+            $('#shareplayModal').classList.add('hidden');
         }
     });
 

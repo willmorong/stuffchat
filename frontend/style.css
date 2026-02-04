@@ -1394,25 +1394,7 @@ body[data-theme="rain"] .msg.highlight,
     border-color: rgba(110, 231, 183, 0.30);
 }
 
-.shareplay-container {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-    width: 100%;
-    background: transparent;
-    border: none;
-    margin-top: 12px;
-}
 
-.shareplay-container>div {
-    flex: 1 1 250px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    min-width: 0;
-    max-height: 300px;
-    overflow: auto;
-}
 
 #nowPlayingTitle {
     margin: 0;
@@ -1527,6 +1509,32 @@ body[data-theme="rain"] .msg.highlight,
     width: 100%;
 }
 
+#shareplayModal .modal-card {
+    max-width: 400px;
+    height: 600px;
+    max-height: 90vh;
+}
+
+#shareplayModal .modal-content {
+    padding: 16px;
+    gap: 24px;
+    display: flex;
+    flex-direction: column;
+}
+
+.divider {
+    height: 1px;
+    background: var(--border);
+    width: 100%;
+}
+
+.shareplay-queue {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
 .shareplay-seek-row #nowPlayingSeek {
     flex: 1;
 }
@@ -1548,7 +1556,9 @@ body[data-theme="rain"] .msg.highlight,
 
 #nowPlaying {
     height: 100%;
-    align-self: center;
+    gap: 8px;
+    display: flex;
+    flex-direction: column;
 }
 
 #shareplayVolume {
@@ -1581,7 +1591,8 @@ body[data-theme="rain"] .msg.highlight,
 }
 
 #shareplayQueueItems {
-    overflow-y: scroll;
+    flex: 1;
+    overflow-y: auto;
 }
 
 .voice-participants-icons {
