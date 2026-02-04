@@ -977,7 +977,11 @@ export function updateVideoGrid() {
 function createVideoTile(id, stream, username) {
     const tile = el('div', { class: 'video-tile', 'data-stream-id': id });
     const video = el('video', { autoplay: true, playsinline: true, muted: true });
-    video.srcObject = stream;
+
+    // Only use video tracks in grid view - audio plays via gain nodes in fullscreen
+    const videoOnlyStream = new MediaStream(stream.getVideoTracks());
+    video.srcObject = videoOnlyStream;
+
     tile.appendChild(video);
 
     const label = el('div', { class: 'video-label' }, username);
@@ -997,8 +1001,15 @@ export function toggleVideoFullscreen(id, stream, username) {
 
     if (overlay.classList.contains('hidden')) {
         overlay.innerHTML = '';
+
+        // For local screenshare, only display video (no audio) to prevent feedback
+        let videoStream = stream;
+        if (id === 'local') {
+            videoStream = new MediaStream(stream.getVideoTracks());
+        }
+
         const video = el('video', { autoplay: true, playsinline: true, muted: true });
-        video.srcObject = stream;
+        video.srcObject = videoStream;
         overlay.appendChild(video);
         overlay.classList.remove('hidden');
 
