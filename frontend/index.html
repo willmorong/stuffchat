@@ -191,19 +191,22 @@
                             Change Profile Picture
                         </label>
                         <input id="setAvatarFile" type="file" accept="image/*" style="display:none" />
+                        <input id="profileUsername" class="input grow" placeholder="Screen name" />
+                        <input id="profileEmail" class="input grow" placeholder="Email" />
                     </div>
                     <div class="row">
-                        <input id="profileUsername" class="input grow" placeholder="Screen name" />
+                        <button id="btnSaveProfile" class="button">Save Profile Info</button>
+                        <button id="btnLogoutSettings" class="button danger">Logout</button>
                     </div>
+                </section>
+                <section class="panel">
+                    <h3>Password</h3>
                     <div class="row" style="gap:8px; flex-wrap:wrap">
                         <input id="curPwd" class="input" type="password" placeholder="Current password"
                             style="flex:1; min-width:220px" />
                         <input id="newPwd" class="input" type="password" placeholder="New password"
                             style="flex:1; min-width:220px" />
                         <button id="btnChangePassword" class="button" style="width:200px">Change Password</button>
-                    </div>
-                    <div class="row">
-                        <button id="btnSaveProfile" class="button">Save Profile Info</button>
                     </div>
                 </section>
                 <section class="panel">
@@ -286,12 +289,7 @@
                         </div>
                     </div>
                 </section>
-                <section class="panel">
-                    <h3>Account</h3>
-                    <div class="row">
-                        <button id="btnLogoutSettings" class="button danger grow">Logout</button>
-                    </div>
-                </section>
+
             </div>
         </div>
     </div>

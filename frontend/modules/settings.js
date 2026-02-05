@@ -68,6 +68,7 @@ export function renderEmojiList() {
 export function openSettings() {
     // Fill current values
     setIf('#profileUsername', 'value', store.user?.username || '');
+    setIf('#profileEmail', 'value', store.user?.email || '');
     setIf('#settingsBaseUrl', 'value', store.baseUrl || '');
 
     // Avatar preview in modal
@@ -156,8 +157,9 @@ export function bindSettingsEvents() {
     // Profile save
     $('#btnSaveProfile').addEventListener('click', async () => {
         const name = $('#profileUsername').value.trim();
+        const email = $('#profileEmail').value.trim();
         try {
-            await updateMe({ username: name || null });
+            await updateMe({ username: name || null, email: email || null });
             alert('Profile updated.');
         } catch (e) { alert('Update failed: ' + e.message); }
     });
