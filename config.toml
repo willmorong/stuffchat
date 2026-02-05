@@ -1,7 +1,16 @@
+# Set the network interface's address to bind to. 
+# If you write a domain it will bind to every IP that domain attaches to on your machine.
 listen = "100.114.19.67:22800"
 database_path = "./stuffchat.sqlite3"
+# Directory to store uploaded files. 
+#If you don't have a lot of space on your machine, you can mount an S3 bucket or Google Drive to a directory and use that.
 uploads_dir = "./uploads"
+# Endpoint URLs allowed for CORS. 
+# Here in the example, I have my server's local address (for testing) and the public address.
 allowed_origins = ["punkhazard.local", "https://chat.stuffcity.org"]
+# The maximum size of a file that can be uploaded (in bytes). Default is ~500MB
 max_upload_size = 524288000
+# How often to update presence status (in seconds)
 presence_timeout_secs = 60
+# Whether registration requires an invite code
 invite_only = true
