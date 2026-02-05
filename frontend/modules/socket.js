@@ -177,7 +177,7 @@ export function handleWsMessage(ev) {
         case 'shareplay_state': {
             if (ev.channel_id === store.callChannelId) {
                 sharePlay.sync(ev.state, ev.channel_id);
-                $('#shareplayContainer').style.display = 'flex';
+
                 $('#btnSharePlay').innerHTML = '<i class="bi bi-collection-play-fill"></i>';
             }
             break;
@@ -235,9 +235,8 @@ export function handleWsMessage(ev) {
         case 'shareplay_update': {
             if (ev.channel_id === store.callChannelId) {
                 sharePlay.sync(ev.state, ev.channel_id);
-                // Ensure UI is visible if it wasn't
                 if (ev.state.status === 'playing' || ev.state.queue.length > 0) {
-                    $('#shareplayContainer').style.display = 'flex';
+
                     $('#btnSharePlay').innerHTML = '<i class="bi bi-collection-play-fill"></i>';
                 }
             }
