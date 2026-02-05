@@ -38,6 +38,38 @@ async fn main() -> std::io::Result<()> {
     let chat_server = ChatServer::new().start();
     log::info!("Starting server at {}", cfg.listen);
 
+    // Background task: Cleanup refresh tokens
+    let db_clone = db.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600)); // Every hour
+        match auth::cleanup_refresh_tokens(&db_clone).await {
+            Ok(count) => {
+                if count > 0 {
+                    log::info!(
+                        "Startup: Cleaned up {} expired/revoked refresh tokens",
+                        count
+                    );
+                }
+            }
+            Err(e) => {
+                log::error!("Startup: Failed to cleanup refresh tokens: {}", e);
+            }
+        }
+        loop {
+            interval.tick().await;
+            match auth::cleanup_refresh_tokens(&db_clone).await {
+                Ok(count) => {
+                    if count > 0 {
+                        log::info!("Cleaned up {} expired/revoked refresh tokens", count);
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to cleanup refresh tokens: {}", e);
+                }
+            }
+        }
+    });
+
     // Clean up temp folder on startup
     let temp_dir = std::path::Path::new("temp");
     if temp_dir.exists() {
