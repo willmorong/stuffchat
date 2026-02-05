@@ -2,6 +2,8 @@
 
 Desktop client for Stuffchat, built with Electron.
 
+To use it with your own server, edit `main.js` and change `STUFFCHAT_URL` to your server's URL.
+
 ## Development
 
 Install dependencies:
@@ -32,6 +34,6 @@ Built packages will be in the `dist/` directory.
 
 ## Features
 
-- Wraps the Stuffchat web app at https://chat.stuffcity.org
+- Wraps the Stuffchat web app
 - External links open in your default browser
 - Cross-platform support (Linux, macOS, Windows)
