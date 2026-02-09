@@ -297,7 +297,83 @@ fn is_url(input: &str) -> bool {
     false
 }
 
+fn is_youtube_playlist(url: &str) -> bool {
+    let url_lower = url.to_lowercase();
+    (url_lower.contains("youtube.com") || url_lower.contains("youtu.be"))
+        && (url_lower.contains("list=") || url_lower.contains("/playlist?"))
+}
+
 pub fn start_download(
+    url: String,
+    id: String,
+    state_addr: actix::Addr<crate::ws::server::ChatServer>,
+    channel_id: String,
+) {
+    if is_youtube_playlist(&url) {
+        log::info!("Detected YouTube playlist: {}", url);
+        std::thread::spawn(move || {
+            let output = Command::new("yt-dlp")
+                .arg("--flat-playlist")
+                .arg("-J")
+                .arg(&url)
+                .output();
+
+            match output {
+                Ok(out) if out.status.success() => {
+                    let stdout = String::from_utf8_lossy(&out.stdout);
+                    if let Ok(info) = serde_json::from_str::<serde_json::Value>(&stdout) {
+                        let mut entries = Vec::new();
+                        if let Some(entries_arr) = info["entries"].as_array() {
+                            for entry in entries_arr {
+                                let entry_url = entry["url"].as_str().map(|s| {
+                                    if s.starts_with("http") {
+                                        s.to_string()
+                                    } else {
+                                        format!("https://www.youtube.com/watch?v={}", s)
+                                    }
+                                });
+                                let title = entry["title"]
+                                    .as_str()
+                                    .unwrap_or("Unknown Title")
+                                    .to_string();
+                                let duration = entry["duration"].as_f64().unwrap_or(0.0) as u64;
+
+                                if let Some(e_url) = entry_url {
+                                    entries.push((e_url, title, duration));
+                                }
+                            }
+                        }
+
+                        if !entries.is_empty() {
+                            state_addr.do_send(crate::ws::server::SharePlayPlaylistResult {
+                                channel_id,
+                                placeholder_id: id,
+                                entries,
+                            });
+                            return;
+                        }
+                    }
+                    log::error!("Failed to parse playlist JSON or zero entries found");
+                }
+                Ok(out) => {
+                    log::error!(
+                        "yt-dlp playlist resolve failed: {}",
+                        String::from_utf8_lossy(&out.stderr)
+                    );
+                }
+                Err(e) => {
+                    log::error!("Failed to execute yt-dlp for playlist: {}", e);
+                }
+            }
+            // Fallback: If playlist resolve fails or empty, try as single video
+            start_single_download(url, id, state_addr, channel_id);
+        });
+    } else {
+        start_single_download(url, id, state_addr, channel_id);
+    }
+}
+
+pub fn start_single_download(
     url: String,
     id: String,
     state_addr: actix::Addr<crate::ws::server::ChatServer>,

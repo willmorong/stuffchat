@@ -24,6 +24,46 @@ impl Actor for ChatServer {
     type Context = Context<Self>;
 }
 
+impl ChatServer {
+    fn trigger_pending_downloads(&mut self, channel_id: String, ctx: &mut Context<Self>) {
+        if let Some(state) = self.shareplay_states.get_mut(&channel_id) {
+            let active_count = state
+                .queue
+                .iter()
+                .filter(|i| i.download_status == "grabbing" || i.download_status == "downloading")
+                .count();
+
+            let slots = if active_count < 2 {
+                2 - active_count
+            } else {
+                0
+            };
+
+            // Collect items to download (mark as grabbing first to prevent re-triggering)
+            let mut to_download = Vec::new();
+            for item in state.queue.iter_mut() {
+                if to_download.len() >= slots {
+                    break;
+                }
+                if item.download_status == "pending" {
+                    item.download_status = "grabbing".to_string();
+                    to_download.push((item.url.clone(), item.id.clone()));
+                }
+            }
+
+            // Now spawn the downloads
+            for (url, id) in to_download {
+                log::info!(
+                    "Triggering pending download: channel_id={}, id={}",
+                    channel_id,
+                    id
+                );
+                crate::shareplay::start_single_download(url, id, ctx.address(), channel_id.clone());
+            }
+        }
+    }
+}
+
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct Join {
@@ -123,6 +163,14 @@ pub struct SharePlayMetadataResult {
     pub title: String,
     pub duration: u64,
     pub error: Option<String>,
+}
+
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct SharePlayPlaylistResult {
+    pub channel_id: String,
+    pub placeholder_id: String,
+    pub entries: Vec<(String, String, u64)>, // url, title, duration
 }
 
 #[derive(Message)]
@@ -488,9 +536,65 @@ impl Handler<SharePlayDownloadResult> for ChatServer {
             .to_string();
 
             ctx.notify(Broadcast {
-                channel_id: msg.channel_id,
+                channel_id: msg.channel_id.clone(),
                 payload,
             });
+        }
+
+        // Always trigger next pending downloads even on success/failure
+        self.trigger_pending_downloads(msg.channel_id, ctx);
+    }
+}
+
+impl Handler<SharePlayPlaylistResult> for ChatServer {
+    type Result = ();
+    fn handle(&mut self, msg: SharePlayPlaylistResult, ctx: &mut Context<Self>) {
+        log::info!(
+            "ChatServer received SharePlayPlaylistResult: channel_id={}, entries={}",
+            msg.channel_id,
+            msg.entries.len()
+        );
+        if let Some(state) = self.shareplay_states.get_mut(&msg.channel_id) {
+            // Remove placeholder
+            let placeholder_idx = state.queue.iter().position(|i| i.id == msg.placeholder_id);
+            if let Some(idx) = placeholder_idx {
+                state.queue.remove(idx);
+            }
+
+            // Batch add items as pending
+            for (url, title, duration) in msg.entries {
+                let id = uuid::Uuid::new_v4().to_string();
+                state.queue.push(crate::shareplay::QueueItem {
+                    id,
+                    url,
+                    title,
+                    file_path: None,
+                    download_error: None,
+                    duration_seconds: duration,
+                    download_status: "pending".to_string(),
+                });
+            }
+
+            // Sync current index if it was pointing to the placeholder or empty
+            if state.current_index.is_none() && !state.queue.is_empty() {
+                state.current_index = Some(0);
+            }
+
+            // Broadcast update
+            let payload = serde_json::json!({
+                "type": "shareplay_update",
+                "channel_id": msg.channel_id,
+                "state": state
+            })
+            .to_string();
+
+            ctx.notify(Broadcast {
+                channel_id: msg.channel_id.clone(),
+                payload,
+            });
+
+            // Trigger downloads
+            self.trigger_pending_downloads(msg.channel_id, ctx);
         }
     }
 }
@@ -520,10 +624,13 @@ impl Handler<SharePlayMetadataResult> for ChatServer {
             .to_string();
 
             ctx.notify(Broadcast {
-                channel_id: msg.channel_id,
+                channel_id: msg.channel_id.clone(),
                 payload,
             });
         }
+
+        // Always trigger next pending downloads
+        self.trigger_pending_downloads(msg.channel_id, ctx);
     }
 }
 
