@@ -88,7 +88,7 @@ export class SharePlay {
 
         this.ui.volume.oninput = () => {
             const val = parseInt(this.ui.volume.value);
-            this.gainNode.gain.value = val / 100;
+            this.gainNode.gain.value = val / 200;
         };
     }
 
