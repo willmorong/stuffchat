@@ -6,34 +6,49 @@ import { sharePlay } from './shareplay.js';
 let sharedAudioCtx = null;
 
 /**
- * Returns the shared audio context, creating it if it doesn't exist.
+ * Returns the shared audio context, creating it if needed.
+ * Recreates the context if the previous one was closed.
+ * Awaits resume() to guarantee the context is active before use.
  */
-function getAudioCtx() {
-    if (!sharedAudioCtx) {
+async function getAudioCtx() {
+    if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
         sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
     }
     if (sharedAudioCtx.state === 'suspended') {
-        sharedAudioCtx.resume();
+        try {
+            await sharedAudioCtx.resume();
+        } catch (e) {
+            console.warn('AudioContext resume failed, creating new context:', e);
+            sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
     }
     return sharedAudioCtx;
 }
 
 /**
  * Periodically calculates and updates the visual volume indicator for a stream.
+ * Use VolumeMonitor.create(stream, element) to construct.
  */
 class VolumeMonitor {
-    constructor(stream, element) {
-        this.stream = stream;
-        this.element = element;
-        this.audioCtx = getAudioCtx();
-        this.analyser = this.audioCtx.createAnalyser();
-        this.source = this.audioCtx.createMediaStreamSource(stream);
-        this.source.connect(this.analyser);
-        this.analyser.fftSize = 256;
-        this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
-        this.running = true;
+    constructor() {
+        this.running = false;
         this.lastBorderSize = -1;
-        this.intervalId = setInterval(() => this.update(), 16);
+        this.intervalId = null;
+    }
+
+    static async create(stream, element) {
+        const monitor = new VolumeMonitor();
+        monitor.stream = stream;
+        monitor.element = element;
+        monitor.audioCtx = await getAudioCtx();
+        monitor.analyser = monitor.audioCtx.createAnalyser();
+        monitor.source = monitor.audioCtx.createMediaStreamSource(stream);
+        monitor.source.connect(monitor.analyser);
+        monitor.analyser.fftSize = 256;
+        monitor.dataArray = new Uint8Array(monitor.analyser.frequencyBinCount);
+        monitor.running = true;
+        monitor.intervalId = setInterval(() => monitor.update(), 16);
+        return monitor;
     }
 
     update() {
@@ -215,14 +230,27 @@ export function updateCallUI() {
             const avatar = row.querySelector('.avatar');
             if (uid === store.user.id && store.localStream) {
                 if (!store.volumeMonitors.has(uid)) {
-                    store.volumeMonitors.set(uid, new VolumeMonitor(store.localStream, avatar));
+                    VolumeMonitor.create(store.localStream, avatar).then(monitor => {
+                        // Guard: only store if nobody else created one in the meantime
+                        if (!store.volumeMonitors.has(uid)) {
+                            store.volumeMonitors.set(uid, monitor);
+                        } else {
+                            monitor.stop();
+                        }
+                    });
                 }
             } else {
                 for (const [pcid, pc] of store.pcs) {
                     if (pcid.startsWith(uid + ':')) {
                         const audio = document.getElementById(`audio-${pcid}`);
                         if (audio && audio.srcObject && !store.volumeMonitors.has(uid)) {
-                            store.volumeMonitors.set(uid, new VolumeMonitor(audio.srcObject, avatar));
+                            VolumeMonitor.create(audio.srcObject, avatar).then(monitor => {
+                                if (!store.volumeMonitors.has(uid)) {
+                                    store.volumeMonitors.set(uid, monitor);
+                                } else {
+                                    monitor.stop();
+                                }
+                            });
                             break;
                         }
                     }
@@ -325,12 +353,8 @@ function mangleSdp(sdp) {
  * Modifies the SDP for video tracks to set a high start bitrate and minimum floor.
  */
 function mangleSdpVideo(sdp) {
-    // b=AS:8000 sets the application-specific maximum bandwidth to 8Mbps
     sdp = sdp.replace(/a=mid:video\r\n/g, 'a=mid:video\r\nb=AS:8000\r\n');
-
-    // x-google-flags are effective in Chromium-based browsers for controlling start/min bitrate
     sdp = sdp.replace(/(a=fmtp:\d+.+)/g, '$1;x-google-min-bitrate=3000;x-google-start-bitrate=6000');
-
     return sdp;
 }
 
@@ -360,7 +384,10 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
         try {
             state.makingOffer = true;
             await peerConnection.setLocalDescription();
-            sendSignal(targetUserId, targetSessionId, { sdp: peerConnection.localDescription });
+            let sdp = peerConnection.localDescription.sdp;
+            sdp = mangleSdp(sdp);
+            sdp = mangleSdpVideo(sdp);
+            sendSignal(targetUserId, targetSessionId, { sdp: { ...peerConnection.localDescription.toJSON(), sdp } });
         } catch (e) {
             console.error(`Negotiation error [${pcId}]:`, e);
         } finally {
@@ -373,12 +400,28 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
         if (peerConnection.connectionState === 'connected') {
             updateVideoGrid();
         }
-        if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'closed') {
+        if (peerConnection.connectionState === 'failed') {
+            console.warn(`[${pcId}] Connection failed, attempting ICE restart...`);
+            peerConnection.restartIce();
+            setTimeout(() => {
+                if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'disconnected') {
+                    console.error(`[${pcId}] ICE restart did not recover, cleaning up.`);
+                    cleanupPeerConnection(pcId);
+                }
+            }, 10000);
+        }
+        if (peerConnection.connectionState === 'closed') {
             cleanupPeerConnection(pcId);
         }
     };
 
-    peerConnection.ontrack = (event) => {
+    peerConnection.onicecandidateerror = (event) => {
+        if (event.errorCode !== 701) {
+            console.warn(`ICE candidate error [${pcId}]: code=${event.errorCode} text=${event.errorText} url=${event.url}`);
+        }
+    };
+
+    peerConnection.ontrack = async (event) => {
         const track = event.track;
         const stream = event.streams[0];
 
@@ -410,7 +453,7 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
             const isScreenShareAudio = stream.getVideoTracks().length > 0;
 
             if (isScreenShareAudio) {
-                const ctx = getAudioCtx();
+                const ctx = await getAudioCtx();
                 const source = ctx.createMediaStreamSource(stream);
                 const gainNode = ctx.createGain();
                 source.connect(gainNode);
@@ -432,7 +475,21 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
             audio.srcObject = stream;
             audio.muted = true;
 
-            const ctx = getAudioCtx();
+            // Explicitly start playback so the MediaStream is active for the
+            // Web Audio API source node.  Browsers may block autoplay even on
+            // muted elements when there is no recent user gesture.
+            audio.play().catch(e => {
+                console.warn(`Autoplay blocked for audio-${pcId}, waiting for user gesture:`, e);
+                const resumeOnGesture = () => {
+                    audio.play().catch(() => { });
+                    document.removeEventListener('click', resumeOnGesture);
+                    document.removeEventListener('keydown', resumeOnGesture);
+                };
+                document.addEventListener('click', resumeOnGesture);
+                document.addEventListener('keydown', resumeOnGesture);
+            });
+
+            const ctx = await getAudioCtx();
             const source = ctx.createMediaStreamSource(stream);
             const gainNode = ctx.createGain();
             source.connect(gainNode);
@@ -462,21 +519,6 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
             const sender = peerConnection.addTrack(track, store.localVideoStream);
             configureVideoSender(sender, peerConnection);
         });
-    }
-
-    if (initiator) {
-        const state = getNegotiationState(pcId);
-        try {
-            state.makingOffer = true;
-            await peerConnection.setLocalDescription();
-            let sdp = peerConnection.localDescription.sdp;
-            sdp = mangleSdpVideo(sdp);
-            sendSignal(targetUserId, targetSessionId, { sdp: { ...peerConnection.localDescription.toJSON(), sdp } });
-        } catch (e) {
-            console.error(`Initial offer error [${pcId}]:`, e);
-        } finally {
-            state.makingOffer = false;
-        }
     }
 
     updateVideoGrid();
@@ -543,8 +585,7 @@ export async function handleSignal(userId, sessionId, data) {
             }
 
             if (offerCollision) {
-                console.log(`[${pcId}] Rolling back local offer to accept remote offer (we are polite)`);
-                await peerConnection.setLocalDescription({ type: 'rollback' });
+                console.log(`[${pcId}] Accepting remote offer via implicit rollback (we are polite)`);
             }
 
             state.isSettingRemoteAnswerPending = description.type === 'answer';
@@ -567,6 +608,7 @@ export async function handleSignal(userId, sessionId, data) {
             if (description.type === 'offer') {
                 await peerConnection.setLocalDescription();
                 let sdp = peerConnection.localDescription.sdp;
+                sdp = mangleSdp(sdp);
                 sdp = mangleSdpVideo(sdp);
                 sendSignal(userId, sessionId, { sdp: { ...peerConnection.localDescription.toJSON(), sdp } });
             }
@@ -684,6 +726,11 @@ export async function startCall() {
     store.callChannelId = store.currentChannelId;
     store.inCall = true;
 
+    // Ensure AudioContext is warm and running before any peer connections
+    // are created.  getUserMedia above provides the user-activation that
+    // browsers require, so this resume will always succeed.
+    await getAudioCtx();
+
     updateCallUI();
     store.ws.send(JSON.stringify({ type: 'join_call', channel_id: store.callChannelId }));
 
@@ -746,12 +793,10 @@ async function configureVideoSender(sender, pc) {
         if (capabilities) {
             const codecs = capabilities.codecs.slice();
 
-            // Build codec preference order based on settings
-            // Higher priority codecs come first in the order array
             const order = [];
             if (store.preferAV1) order.push('video/AV1');
             if (store.preferVP9) order.push('video/VP9');
-            order.push('video/H264'); // Always include H264 as fallback
+            order.push('video/H264');
 
             codecs.sort((a, b) => {
                 const aIndex = order.findIndex(c => a.mimeType.includes(c.split('/')[1]));
@@ -771,7 +816,7 @@ async function configureVideoSender(sender, pc) {
         if (!params.encodings || params.encodings.length === 0) {
             params.encodings = [{}];
         }
-        params.encodings[0].maxBitrate = 8000000; // 8 Mbps
+        params.encodings[0].maxBitrate = 8000000;
         params.encodings[0].networkPriority = 'high';
         params.encodings[0].maxFramerate = 60;
         await sender.setParameters(params);
@@ -787,7 +832,6 @@ async function configureVideoSender(sender, pc) {
 export async function startScreenShare() {
     if (store.screenSharing) return;
 
-    // Set up Electron source selection listener if running in Electron
     if (window.electronAPI?.isElectron) {
         setupElectronSourcePicker();
     }
@@ -860,17 +904,14 @@ function setupElectronSourcePicker() {
 
         modal.classList.remove('hidden');
 
-        // Set up close button
         const closeBtn = $('#btnCloseSourcePicker');
         if (closeBtn) {
             closeBtn.onclick = () => {
                 modal.classList.add('hidden');
-                // Signal cancellation
                 window.electronAPI.selectSource(null);
             };
         }
 
-        // Close on backdrop click
         const backdrop = modal.querySelector('.modal-backdrop');
         if (backdrop) {
             backdrop.onclick = () => {
@@ -881,21 +922,19 @@ function setupElectronSourcePicker() {
     });
 }
 
-
 /**
  * Stops screen sharing and removes the associated tracks from all peer connections.
  */
 export function stopScreenShare() {
     if (!store.screenSharing) return;
 
-    if (store.localVideoStream) {
-        store.localVideoStream.getTracks().forEach(t => t.stop());
-        store.localVideoStream = null;
-    }
+    // Capture tracks BEFORE stopping/nullifying the stream so they can be
+    // matched against peer connection senders for removal.
+    const tracks = store.localVideoStream
+        ? store.localVideoStream.getTracks()
+        : [];
 
-    store.screenSharing = false;
-
-    const tracks = store.localVideoStream ? store.localVideoStream.getTracks() : [];
+    // Remove tracks from all peer connections first, while references are live.
     store.pcs.forEach((pc) => {
         const senders = pc.getSenders();
         senders.forEach(sender => {
@@ -904,6 +943,11 @@ export function stopScreenShare() {
             }
         });
     });
+
+    // Now stop the tracks and clean up.
+    tracks.forEach(t => t.stop());
+    store.localVideoStream = null;
+    store.screenSharing = false;
 
     updateScreenShareButton();
     updateVideoGrid();
@@ -978,7 +1022,6 @@ function createVideoTile(id, stream, username) {
     const tile = el('div', { class: 'video-tile', 'data-stream-id': id });
     const video = el('video', { autoplay: true, playsinline: true, muted: true });
 
-    // Only use video tracks in grid view - audio plays via gain nodes in fullscreen
     const videoOnlyStream = new MediaStream(stream.getVideoTracks());
     video.srcObject = videoOnlyStream;
 
@@ -1002,13 +1045,11 @@ export function toggleVideoFullscreen(id, stream, username) {
     if (overlay.classList.contains('hidden')) {
         overlay.innerHTML = '';
 
-        // Always use video-only stream for display - audio routes through Web Audio gain nodes
         const videoOnlyStream = new MediaStream(stream.getVideoTracks());
         const video = el('video', { autoplay: true, playsinline: true, muted: true });
         video.srcObject = videoOnlyStream;
         overlay.appendChild(video);
 
-        // Add volume control for remote screenshares (not local)
         const gainNode = store.screenShareGainNodes.get(id);
         if (id !== 'local' && gainNode) {
             const [userId] = id.split(':');
@@ -1031,10 +1072,8 @@ export function toggleVideoFullscreen(id, stream, username) {
             volumeControl.appendChild(volumeLabel);
             overlay.appendChild(volumeControl);
 
-            // Prevent click on volume control from closing fullscreen
             volumeControl.onclick = (e) => e.stopPropagation();
 
-            // Update volume on slider change
             volumeSlider.oninput = () => {
                 const val = parseFloat(volumeSlider.value);
                 volumeLabel.textContent = `${Math.round(val * 100)}%`;
@@ -1043,7 +1082,6 @@ export function toggleVideoFullscreen(id, stream, username) {
                 localStorage.setItem('stuffchat.screenshare_volumes', JSON.stringify(store.screenShareVolumes));
             };
 
-            // Show volume control when hovering in the bottom-right quadrant
             overlay.onmousemove = (e) => {
                 const rect = overlay.getBoundingClientRect();
                 const x = e.clientX - rect.left;
@@ -1062,7 +1100,6 @@ export function toggleVideoFullscreen(id, stream, username) {
                 volumeControl.classList.remove('visible');
             };
 
-            // Set initial volume
             gainNode.gain.value = initialVol;
         }
 
