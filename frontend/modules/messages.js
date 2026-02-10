@@ -190,9 +190,13 @@ function renderAttachment(message) {
         .then((node) => {
             clearBox();
             if (node && node.tagName === 'IMG') {
-                // Wrap images in link too? 
-                // Original: box.appendChild(el('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, node));
-                box.appendChild(el('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, node));
+                const wrapper = el('div', { class: 'attachment-img-wrapper' }, node);
+                wrapper.onclick = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openImagePreview(url, filename);
+                };
+                box.appendChild(wrapper);
             } else {
                 box.appendChild(node);
             }
@@ -203,6 +207,51 @@ function renderAttachment(message) {
         });
 
     return box;
+}
+
+function openImagePreview(url, filename) {
+    const overlay = $('#imagePreview');
+    if (!overlay) return;
+
+    overlay.innerHTML = '';
+    const img = el('img', { src: url, alt: filename });
+    overlay.appendChild(img);
+
+    const saveLink = el('a', {
+        href: '#',
+        class: 'image-preview-save',
+        onclick: (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            fetch(url)
+                .then(res => res.blob())
+                .then(blob => {
+                    const blobUrl = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = blobUrl;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(blobUrl);
+                })
+                .catch(() => {
+                    // Fallback: open in new tab if fetch fails
+                    window.open(url, '_blank');
+                });
+        }
+    }, [
+        el('i', { class: 'bi bi-download' }),
+        ' Save image'
+    ]);
+    overlay.appendChild(saveLink);
+
+    overlay.classList.remove('hidden');
+
+    overlay.onclick = () => {
+        overlay.classList.add('hidden');
+        overlay.innerHTML = '';
+    };
 }
 
 export function renderMessageItem(m) {

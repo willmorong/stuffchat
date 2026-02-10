@@ -1216,6 +1216,69 @@ body[data-theme="wegmans"] .emoji-picker {
     object-fit: contain;
 }
 
+/* Image Preview Overlay */
+.image-preview {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.image-preview.hidden {
+    display: none;
+}
+
+.image-preview img {
+    max-width: 90vw;
+    max-height: 85vh;
+    object-fit: contain;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.image-preview-save {
+    position: absolute;
+    bottom: 24px;
+    right: 24px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: var(--text);
+    font-size: 13px;
+    text-decoration: none;
+    transition: background 0.2s, transform 0.2s;
+}
+
+.image-preview-save:hover {
+    background: rgba(255, 255, 255, 0.1);
+    transform: translateY(-2px);
+    text-decoration: none;
+}
+
+.image-preview-save i {
+    font-size: 16px;
+}
+
+.attachment-img-wrapper {
+    cursor: pointer;
+    display: inline-block;
+}
+
+.attachment-img-wrapper:hover img {
+    opacity: 0.9;
+}
+
 /* Fullscreen Volume Control */
 .fullscreen-volume-control {
     position: absolute;
@@ -1423,7 +1486,7 @@ body[data-theme="rain"] .msg.highlight,
     object-fit: cover;
     display: block;
     margin: 0 auto 12px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
 }
 
 .shareplay-cover.hidden {
