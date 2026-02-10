@@ -6,6 +6,17 @@ import { sharePlay } from './shareplay.js';
 let sharedAudioCtx = null;
 
 /**
+ * Converts a linear slider value (0–2) to a perceptual gain value using an x³
+ * curve.  Human hearing is logarithmic, so a linear slider→gain mapping makes
+ * the 0–100% range feel huge and 100–200% barely noticeable.  The cubic curve
+ * gives fine control at low volumes and a clearly audible boost above 100%.
+ */
+function sliderToGain(sliderVal) {
+    if (sliderVal <= 0) return 0;
+    return sliderVal * sliderVal * sliderVal;
+}
+
+/**
  * Returns the shared audio context, creating it if needed.
  * Recreates the context if the previous one was closed.
  * Awaits resume() to guarantee the context is active before use.
@@ -213,7 +224,7 @@ export function updateCallUI() {
                                 if (pcid.startsWith(uid + ':')) {
                                     const gainNode = store.gainNodes.get(pcid);
                                     if (gainNode) {
-                                        gainNode.gain.value = val;
+                                        gainNode.gain.value = sliderToGain(val);
                                     }
                                 }
                             }
@@ -503,7 +514,7 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
             } else {
                 const initialVol = store.userVolumes[targetUserId];
                 if (initialVol !== undefined) {
-                    gainNode.gain.value = initialVol;
+                    gainNode.gain.value = sliderToGain(initialVol);
                 }
             }
             updateCallUI();
@@ -657,7 +668,7 @@ export function toggleDeafen() {
             gainNode.gain.value = 0;
         } else {
             const [uid] = pcId.split(':');
-            gainNode.gain.value = store.userVolumes[uid] !== undefined ? store.userVolumes[uid] : 1.0;
+            gainNode.gain.value = sliderToGain(store.userVolumes[uid] !== undefined ? store.userVolumes[uid] : 1.0);
         }
     });
 
@@ -1077,7 +1088,7 @@ export function toggleVideoFullscreen(id, stream, username) {
             volumeSlider.oninput = () => {
                 const val = parseFloat(volumeSlider.value);
                 volumeLabel.textContent = `${Math.round(val * 100)}%`;
-                gainNode.gain.value = val;
+                gainNode.gain.value = sliderToGain(val);
                 store.screenShareVolumes[userId] = val;
                 localStorage.setItem('stuffchat.screenshare_volumes', JSON.stringify(store.screenShareVolumes));
             };
@@ -1100,7 +1111,7 @@ export function toggleVideoFullscreen(id, stream, username) {
                 volumeControl.classList.remove('visible');
             };
 
-            gainNode.gain.value = initialVol;
+            gainNode.gain.value = sliderToGain(initialVol);
         }
 
         overlay.classList.remove('hidden');
