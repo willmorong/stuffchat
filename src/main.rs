@@ -210,6 +210,10 @@ async fn main() -> std::io::Result<()> {
                     .route(
                         "/shareplay/song/{song_id}",
                         web::get().to(routes::shareplay::get_song_by_id),
+                    )
+                    .route(
+                        "/shareplay/thumbnail/{item_id}",
+                        web::get().to(routes::shareplay::get_thumbnail_by_id),
                     ),
             )
             .route("/ws", web::get().to(ws::session::ws_route))

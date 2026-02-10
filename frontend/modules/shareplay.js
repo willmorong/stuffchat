@@ -36,6 +36,7 @@ export class SharePlay {
             btnNext: $('#btnSharePlayNext'),
             btnRepeat: $('#btnSharePlayRepeat'),
             volume: $('#shareplayVolume'),
+            cover: $('#nowPlayingCover'),
         };
 
         this.animationFrameId = null;
@@ -176,13 +177,24 @@ export class SharePlay {
             // Update Seek Bar (visual only)
             requestAnimationFrame(() => this.updateSeekBar());
 
+            // Update Cover
+            if (currentItem.thumbnail_path) {
+                this.ui.cover.src = store.baseUrl + `/api/shareplay/thumbnail/${currentItem.id}?t=${Date.now()}`;
+                this.ui.cover.classList.remove('hidden');
+            } else {
+                this.ui.cover.classList.add('hidden');
+                this.ui.cover.src = '';
+            }
+
         } else if (currentItem && !currentItem.file_path) {
             // Still downloading
             this.ui.title.textContent = `Grabbing: ${currentItem.url}...`;
+            this.ui.cover.classList.add('hidden');
             this.stop();
         } else {
             // Nothing playing
             this.ui.title.textContent = "Nothing is playing.";
+            this.ui.cover.classList.add('hidden');
             this.stop();
         }
     }
@@ -324,6 +336,19 @@ export class SharePlay {
             const el = document.createElement('div');
             el.className = 'shareplay-queue-item';
             if (idx === state.current_index) el.classList.add('playing');
+
+            // Thumbnail
+            if (item.thumbnail_path) {
+                const img = document.createElement('img');
+                img.src = store.baseUrl + `/api/shareplay/thumbnail/${item.id}`;
+                img.className = 'shareplay-queue-thumb';
+                el.appendChild(img);
+            } else {
+                const placeholder = document.createElement('div');
+                placeholder.className = 'shareplay-queue-thumb-placeholder';
+                placeholder.innerHTML = '<i class="bi bi-music-note-beamed"></i>';
+                el.appendChild(placeholder);
+            }
 
             const title = document.createElement('div');
             title.className = 'title';

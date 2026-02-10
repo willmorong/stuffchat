@@ -150,6 +150,7 @@ pub struct SharePlayDownloadResult {
     pub success: bool,
     pub title: String,
     pub file_path: Option<String>,
+    pub thumbnail_path: Option<String>,
     pub duration: u64,
     pub error: Option<String>,
 }
@@ -162,6 +163,7 @@ pub struct SharePlayMetadataResult {
     pub success: bool,
     pub title: String,
     pub duration: u64,
+    pub thumbnail_path: Option<String>,
     pub error: Option<String>,
 }
 
@@ -183,6 +185,12 @@ pub struct GetSharePlaySongId {
 #[rtype(result = "Result<Option<String>, ()>")]
 pub struct GetSharePlaySongPath {
     pub song_id: String,
+}
+
+#[derive(Message)]
+#[rtype(result = "Result<Option<String>, ()>")]
+pub struct GetSharePlayThumbnailPath {
+    pub item_id: String,
 }
 
 impl Handler<Join> for ChatServer {
@@ -521,6 +529,7 @@ impl Handler<SharePlayDownloadResult> for ChatServer {
                     &msg.id,
                     msg.title,
                     msg.file_path.unwrap_or_default(),
+                    msg.thumbnail_path,
                     msg.duration,
                 );
             } else {
@@ -569,6 +578,7 @@ impl Handler<SharePlayPlaylistResult> for ChatServer {
                     url,
                     title,
                     file_path: None,
+                    thumbnail_path: None,
                     download_error: None,
                     duration_seconds: duration,
                     download_status: "pending".to_string(),
@@ -610,7 +620,7 @@ impl Handler<SharePlayMetadataResult> for ChatServer {
         );
         if let Some(state) = self.shareplay_states.get_mut(&msg.channel_id) {
             if msg.success {
-                state.update_item_metadata(&msg.id, msg.title, msg.duration);
+                state.update_item_metadata(&msg.id, msg.title, msg.duration, msg.thumbnail_path);
             } else {
                 state.update_item_error(&msg.id, msg.error.unwrap_or("Unknown error".to_string()));
             }
@@ -657,6 +667,20 @@ impl Handler<GetSharePlaySongPath> for ChatServer {
         for state in self.shareplay_states.values() {
             if let Some(item) = state.queue.iter().find(|i| i.id == msg.song_id) {
                 return Ok(item.file_path.clone());
+            }
+        }
+        Ok(None)
+    }
+}
+
+impl Handler<GetSharePlayThumbnailPath> for ChatServer {
+    type Result = Result<Option<String>, ()>;
+
+    fn handle(&mut self, msg: GetSharePlayThumbnailPath, _: &mut Context<Self>) -> Self::Result {
+        // Search across all channels for this item ID
+        for state in self.shareplay_states.values() {
+            if let Some(item) = state.queue.iter().find(|i| i.id == msg.item_id) {
+                return Ok(item.thumbnail_path.clone());
             }
         }
         Ok(None)

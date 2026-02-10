@@ -16,6 +16,7 @@ pub struct QueueItem {
     pub url: String,
     pub title: String,
     pub file_path: Option<String>,      // None while downloading
+    pub thumbnail_path: Option<String>, // Resized thumbnail
     pub download_error: Option<String>, // Some(err) if failed
     pub duration_seconds: u64,
     pub download_status: String, // "grabbing", "downloading", "ready", "error"
@@ -53,6 +54,7 @@ impl SharePlayState {
             url,
             title: "Grabbing...".to_string(),
             file_path: None,
+            thumbnail_path: None,
             download_error: None,
             duration_seconds: 0,
             download_status: "grabbing".to_string(),
@@ -71,11 +73,13 @@ impl SharePlayState {
         id: &str,
         title: String,
         file_path: String,
+        thumbnail_path: Option<String>,
         duration: u64,
     ) {
         if let Some(item) = self.queue.iter_mut().find(|i| i.id == id) {
             item.title = title;
             item.file_path = Some(file_path);
+            item.thumbnail_path = thumbnail_path;
             item.duration_seconds = duration;
             item.download_status = "ready".to_string();
         }
@@ -90,10 +94,17 @@ impl SharePlayState {
     }
 
     /// Update item with metadata from simulation step (grabbing -> downloading)
-    pub fn update_item_metadata(&mut self, id: &str, title: String, duration: u64) {
+    pub fn update_item_metadata(
+        &mut self,
+        id: &str,
+        title: String,
+        duration: u64,
+        thumbnail_path: Option<String>,
+    ) {
         if let Some(item) = self.queue.iter_mut().find(|i| i.id == id) {
             item.title = title;
             item.duration_seconds = duration;
+            item.thumbnail_path = thumbnail_path;
             item.download_status = "downloading".to_string();
         }
     }
@@ -217,6 +228,9 @@ impl SharePlayState {
         let item = &self.queue[index];
         if let Some(file_path) = &item.file_path {
             let _ = std::fs::remove_file(file_path);
+        }
+        if let Some(thumb) = &item.thumbnail_path {
+            let _ = std::fs::remove_file(thumb);
         }
 
         // Also try to delete by ID pattern
@@ -402,7 +416,7 @@ pub fn start_single_download(
             .arg(&effective_url)
             .output();
 
-        let (title, duration) = match sim_output {
+        let step1_res = match sim_output {
             Ok(out) if out.status.success() => {
                 let stdout = String::from_utf8_lossy(&out.stdout);
                 let json_line = stdout.lines().last().unwrap_or("{}");
@@ -426,10 +440,15 @@ pub fn start_single_download(
                         success: true,
                         title: title.clone(),
                         duration,
+                        thumbnail_path: None, // Will update when processed
                         error: None,
                     });
 
-                    (title, duration)
+                    Some((
+                        title,
+                        duration,
+                        info["thumbnail"].as_str().map(|s| s.to_string()),
+                    ))
                 } else {
                     log::error!("Failed to parse metadata JSON: {}", json_line);
                     state_addr.do_send(crate::ws::server::SharePlayMetadataResult {
@@ -438,6 +457,7 @@ pub fn start_single_download(
                         success: false,
                         title: "".to_string(),
                         duration: 0,
+                        thumbnail_path: None,
                         error: Some("Failed to parse metadata".to_string()),
                     });
                     return;
@@ -452,6 +472,7 @@ pub fn start_single_download(
                     success: false,
                     title: "".to_string(),
                     duration: 0,
+                    thumbnail_path: None,
                     error: Some(format!("Failed to get metadata: {}", stderr)),
                 });
                 return;
@@ -464,11 +485,80 @@ pub fn start_single_download(
                     success: false,
                     title: "".to_string(),
                     duration: 0,
+                    thumbnail_path: None,
                     error: Some(format!("yt-dlp execution failed: {}", e)),
                 });
                 return;
             }
         };
+
+        let (title, duration, thumbnail) = if let Some(vals) = step1_res {
+            vals
+        } else {
+            return;
+        };
+
+        // Download and process thumbnail in background
+        let thumb_path = if let Some(_thumb_url) = thumbnail {
+            log::info!("Processing thumbnail for id={}", id);
+            let temp_dir = std::path::PathBuf::from("temp");
+            let raw_thumb = temp_dir.join(format!("{}_raw_thumb", id));
+            let final_thumb = temp_dir.join(format!("{}_thumb.jpg", id));
+
+            // Use yt-dlp to download it
+            let thumb_dl = Command::new("yt-dlp")
+                .arg("--skip-download")
+                .arg("--write-thumbnail")
+                .arg("--convert-thumbnails")
+                .arg("jpg")
+                .arg("-o")
+                .arg(raw_thumb.to_str().unwrap())
+                .arg(&effective_url)
+                .output();
+
+            match thumb_dl {
+                Ok(out) if out.status.success() => {
+                    // yt-dlp might have saved it as raw_thumb.jpg or similar
+                    // Find the thumbnail file directly (can't use find_downloaded_file
+                    // since it excludes files with "_thumb" in the name)
+                    let actual_raw = find_thumbnail_file(&temp_dir, &format!("{}_raw_thumb", id));
+                    if let Some(raw_path) = actual_raw {
+                        // Use image crate to resize/crop
+                        if let Ok(img) = image::open(&raw_path) {
+                            // Center crop and resize to 256x256
+                            let processed =
+                                img.resize_to_fill(256, 256, image::imageops::FilterType::Lanczos3);
+                            if processed.save(&final_thumb).is_ok() {
+                                let _ = std::fs::remove_file(raw_path);
+                                Some(final_thumb.to_string_lossy().to_string())
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+        // Notify with thumbnail path if we got one
+        if thumb_path.is_some() {
+            state_addr.do_send(crate::ws::server::SharePlayMetadataResult {
+                channel_id: channel_id.clone(),
+                id: id.clone(),
+                success: true,
+                title: title.clone(),
+                duration,
+                thumbnail_path: thumb_path.clone(),
+                error: None,
+            });
+        }
 
         // Step 2: Actual download
         log::info!("Step 2: Downloading audio for url={}", effective_url);
@@ -507,6 +597,7 @@ pub fn start_single_download(
                         success: true,
                         title,
                         file_path: Some(path),
+                        thumbnail_path: thumb_path,
                         duration,
                         error: None,
                     });
@@ -518,6 +609,7 @@ pub fn start_single_download(
                         success: false,
                         title: "".to_string(),
                         file_path: None,
+                        thumbnail_path: None,
                         duration: 0,
                         error: Some("Downloaded file not found".to_string()),
                     });
@@ -532,6 +624,7 @@ pub fn start_single_download(
                     success: false,
                     title: "".to_string(),
                     file_path: None,
+                    thumbnail_path: None,
                     duration: 0,
                     error: Some(format!("Download failed: {}", stderr)),
                 });
@@ -544,6 +637,7 @@ pub fn start_single_download(
                     success: false,
                     title: "".to_string(),
                     file_path: None,
+                    thumbnail_path: None,
                     duration: 0,
                     error: Some(format!("yt-dlp execution failed: {}", e)),
                 });
@@ -552,14 +646,34 @@ pub fn start_single_download(
     });
 }
 
+/// Find a thumbnail file by prefix in the temp directory.
+fn find_thumbnail_file(temp_dir: &std::path::Path, prefix: &str) -> Option<String> {
+    if let Ok(entries) = std::fs::read_dir(temp_dir) {
+        for entry in entries.flatten() {
+            let file_name = entry.file_name();
+            let file_name_str = file_name.to_string_lossy();
+            if file_name_str.starts_with(prefix) {
+                if let Some(path_str) = entry.path().to_str() {
+                    return Some(path_str.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Find the downloaded file by ID in the temp directory.
 /// yt-dlp may change the extension, so we search for files starting with the ID.
+/// Excludes thumbnail files (containing "_thumb" or "_raw_thumb").
 fn find_downloaded_file(temp_dir: &std::path::Path, id: &str) -> Option<String> {
     if let Ok(entries) = std::fs::read_dir(temp_dir) {
         for entry in entries.flatten() {
             let file_name = entry.file_name();
             let file_name_str = file_name.to_string_lossy();
-            if file_name_str.starts_with(id) {
+            if file_name_str.starts_with(id)
+                && !file_name_str.contains("_thumb")
+                && !file_name_str.contains("_raw_thumb")
+            {
                 if let Some(path_str) = entry.path().to_str() {
                     return Some(path_str.to_string());
                 }
@@ -579,6 +693,9 @@ pub fn cleanup_channel_files(state: &SharePlayState) {
             } else {
                 log::info!("Deleted SharePlay file: {}", file_path);
             }
+        }
+        if let Some(thumb) = &item.thumbnail_path {
+            let _ = std::fs::remove_file(thumb);
         }
         // Also try to delete by ID pattern (for partially downloaded files or if file_path was wrong)
         if temp_dir.exists() {

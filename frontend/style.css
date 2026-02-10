@@ -1415,6 +1415,21 @@ body[data-theme="rain"] .msg.highlight,
     overflow: hidden;
 }
 
+.shareplay-cover {
+    width: 100%;
+    max-width: 256px;
+    aspect-ratio: 1;
+    border-radius: var(--small-radius);
+    object-fit: cover;
+    display: block;
+    margin: 0 auto 12px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+}
+
+.shareplay-cover.hidden {
+    display: none;
+}
+
 .shareplay-controls {
     display: flex;
     justify-content: center;
@@ -1459,6 +1474,28 @@ body[data-theme="rain"] .msg.highlight,
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.shareplay-queue-thumb {
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: var(--bg1);
+}
+
+.shareplay-queue-thumb-placeholder {
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    background: var(--bg1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-dim);
+    font-size: 14px;
 }
 
 .shareplay-queue-item .duration {
