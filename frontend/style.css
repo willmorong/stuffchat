@@ -152,6 +152,10 @@ body {
     border: 1px solid var(--border);
 }
 
+#sidebar .panel {
+    flex: 1;
+}
+
 .panel h3 {
     font-size: 14px;
     letter-spacing: .08em;
@@ -611,10 +615,7 @@ body {
     height: 40px;
     padding: 11px;
     border-radius: var(--small-radius);
-    border-top: none;
-    border-left: none;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
+    border: 1px solid var(--border);
     background: rgba(255, 255, 255, 0.06);
     color: var(--text);
     flex: 1;
