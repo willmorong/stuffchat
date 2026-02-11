@@ -402,9 +402,16 @@ export class SharePlay {
             : '<i class="bi bi-play-fill"></i>';
 
         this.ui.btnRepeat.className = 'iconbtn' + (state.repeat_mode !== 'Off' ? ' active' : '');
-        // Maybe different icon for One/All
-        if (state.repeat_mode === 'One') this.ui.btnRepeat.innerHTML = '<i class="bi bi-repeat-1"></i>';
-        else this.ui.btnRepeat.innerHTML = '<i class="bi bi-repeat"></i>';
+        if (state.repeat_mode === 'One') {
+            this.ui.btnRepeat.innerHTML = '<i class="bi bi-repeat-1"></i>';
+            this.ui.btnRepeat.title = 'Repeat: One';
+        } else if (state.repeat_mode === 'All') {
+            this.ui.btnRepeat.innerHTML = '<i class="bi bi-repeat"></i>';
+            this.ui.btnRepeat.title = 'Repeat: All';
+        } else {
+            this.ui.btnRepeat.innerHTML = '<i class="bi bi-repeat"></i>';
+            this.ui.btnRepeat.title = 'Repeat: Off';
+        }
 
         // Disable skip buttons at queue boundaries when repeat is off
         const currentIdx = state.current_index ?? 0;
