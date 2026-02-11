@@ -12,7 +12,7 @@ mod ws;
 use crate::config::Config;
 use crate::db::Db;
 use crate::routes::{
-    auth as auth_routes, channels as channels_routes, emojis as emojis_routes,
+    admin as admin_routes, auth as auth_routes, channels as channels_routes, emojis as emojis_routes,
     files as files_routes, invites as invites_routes, messages as messages_routes,
     reactions as reactions_routes, users as users_routes,
 };
@@ -23,7 +23,67 @@ use actix_web::middleware::Logger;
 use actix_web::web::Data;
 use actix_web::{App, HttpServer, web};
 use env_logger::Env;
+use sqlx::Row;
 use ws::server::ChatServer;
+
+fn parse_admin_arg() -> Option<String> {
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == "--admin" {
+            return args.next();
+        }
+    }
+    None
+}
+
+async fn bootstrap_admin(db: &Db, ident: &str) -> Result<(), errors::ApiError> {
+    let role_row = sqlx::query("SELECT id FROM roles WHERE name = 'admin'")
+        .fetch_optional(&db.0)
+        .await?;
+
+    let role_id: String = if let Some(row) = role_row {
+        row.get("id")
+    } else {
+        let id = uuid::Uuid::new_v4().to_string();
+        let created_at = chrono::Utc::now();
+        sqlx::query("INSERT INTO roles(id, name, permissions, created_at) VALUES (?, 'admin', 0, ?)")
+            .bind(&id)
+            .bind(created_at)
+            .execute(&db.0)
+            .await?;
+        log::info!("Admin bootstrap: created admin role id={}", id);
+        id
+    };
+
+    let user_row = sqlx::query("SELECT id, username, email FROM users WHERE id = ? OR username = ? OR email = ? LIMIT 1")
+        .bind(ident)
+        .bind(ident)
+        .bind(ident)
+        .fetch_optional(&db.0)
+        .await?;
+
+    let Some(user_row) = user_row else {
+        log::warn!("Admin bootstrap: user not found for ident={}", ident);
+        return Ok(());
+    };
+
+    let user_id: String = user_row.get("id");
+    let username: String = user_row.get("username");
+
+    sqlx::query("INSERT OR IGNORE INTO user_roles(user_id, role_id) VALUES (?, ?)")
+        .bind(&user_id)
+        .bind(&role_id)
+        .execute(&db.0)
+        .await?;
+
+    log::info!(
+        "Admin bootstrap: granted admin role to user_id={} username={} ident={}",
+        user_id,
+        username,
+        ident
+    );
+    Ok(())
+}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -34,6 +94,12 @@ async fn main() -> std::io::Result<()> {
     let db = Db::connect_and_migrate(&cfg.database_path)
         .await
         .expect("database init failed");
+
+    if let Some(admin_ident) = parse_admin_arg() {
+        if let Err(e) = bootstrap_admin(&db, &admin_ident).await {
+            log::error!("Admin bootstrap failed: {}", e);
+        }
+    }
 
     let chat_server = ChatServer::new().start();
     log::info!("Starting server at {}", cfg.listen);
@@ -128,6 +194,26 @@ async fn main() -> std::io::Result<()> {
                             .route("/me/avatar", web::put().to(users_routes::upload_avatar))
                             .route("/{id}", web::get().to(users_routes::get_user))
                             .route("/{id}/avatar", web::get().to(users_routes::get_user_avatar)),
+                    )
+                    .service(
+                        web::scope("/admin")
+                            .route("/users", web::get().to(admin_routes::list_users))
+                            .route("/users/{id}", web::patch().to(admin_routes::update_user))
+                            .route(
+                                "/users/{id}/password",
+                                web::put().to(admin_routes::set_user_password),
+                            )
+                            .route(
+                                "/users/{id}/avatar",
+                                web::put().to(admin_routes::upload_user_avatar),
+                            )
+                            .route(
+                                "/users/{id}/roles",
+                                web::put().to(admin_routes::update_user_roles),
+                            )
+                            .route("/roles", web::get().to(admin_routes::list_roles))
+                            .route("/roles", web::post().to(admin_routes::create_role))
+                            .route("/roles/{id}", web::delete().to(admin_routes::delete_role)),
                     )
                     .service(
                         web::scope("/channels")

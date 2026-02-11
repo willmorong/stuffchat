@@ -90,6 +90,9 @@
                     <button id="btnOpenSettings" class="iconbtn" title="Open settings">
                         <i class="bi bi-gear-fill"></i>
                     </button>
+                    <button id="btnOpenAdmin" class="iconbtn" title="Admin panel" style="display:none">
+                        <i class="bi bi-shield-lock-fill"></i>
+                    </button>
                 </div>
             </div>
 
@@ -294,6 +297,74 @@
                     </div>
                 </section>
 
+            </div>
+        </div>
+    </div>
+    <div id="adminModal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-card glass admin-modal">
+            <div class="modal-header">
+                <div class="brand small"><i class="bi bi-shield-lock-fill"></i> Admin Panel</div>
+                <button id="btnCloseAdmin" class="iconbtn" title="Close"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <div class="modal-content">
+                <section class="panel">
+                    <h3>User Management</h3>
+                    <div class="row" style="align-items:center; flex-wrap:wrap">
+                        <select id="adminUserSelect" class="select grow"></select>
+                        <button id="btnAdminRefresh" class="button alt" style="width:160px">Refresh</button>
+                    </div>
+                    <div class="divider" style="margin: 10px 0px; box-sizing: border-box;"></div>
+                    <div class="admin-user-grid">
+                        <div class="avatar" id="adminUserAvatarPreview"></div>
+                        <div class="admin-user-fields">
+                            <div class="row">
+                                <input id="adminUsername" class="input grow" placeholder="Username" />
+                                <input id="adminEmail" class="input grow" placeholder="Email" />
+                            </div>
+                            <div class="row" style="align-items:center; flex-wrap:wrap">
+                                <input id="adminNewPassword" class="input grow" type="password"
+                                    placeholder="New password" />
+                                <button id="btnAdminSetPassword" class="button" style="width:180px">Set Password</button>
+                            </div>
+                            <div class="row">
+                                <button id="btnAdminSaveUser" class="button">Save User Info</button>
+                            </div>
+                            <div class="row">
+                                <label class="button" for="adminAvatarFile">
+                                    Choose Avatar
+                                </label>
+                                <input id="adminAvatarFile" type="file" accept="image/*" style="display:none" />
+                                <button id="btnAdminUploadAvatar" class="button">Set Avatar</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="gap: 8px;display: flex;flex-direction: column;" class="">
+                        <div class="hint" style="min-width:120px">Roles</div>
+                        <select id="adminUserRoles" class="select grow" multiple="" size="6"><option value="96a3bab1-b126-4e7a-b0da-6a8e62d1a198">admin</option></select>
+                        <button id="btnAdminSaveRoles" class="button alt" style="width:180px">Update Roles</button>
+                    </div>
+                </section>
+                <section class="panel">
+                    <h3>Role Management</h3>
+                    <div class="row" style="align-items:center; flex-wrap:wrap">
+                        <input id="adminRoleName" class="input grow" placeholder="Role name" />
+                        <button id="btnAdminCreateRole" class="button" style="width:160px">Create Role</button>
+                    </div>
+                    <div class="table-container" style="overflow-x:auto">
+                        <table style="width:100%; border-collapse: collapse; margin-top: 8px;">
+                            <thead>
+                                <tr style="border-bottom: 1px solid var(--border); text-align: left;">
+                                    <th style="padding: 8px;">ID</th>
+                                    <th style="padding: 8px;">Name</th>
+                                    <th style="padding: 8px; text-align:right;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminRoleList"></tbody>
+                        </table>
+                    </div>
+                </section>
+                <div id="adminStatus" class="hint"></div>
             </div>
         </div>
     </div>

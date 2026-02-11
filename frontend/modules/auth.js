@@ -3,6 +3,7 @@ import { apiFetch, saveTokens, checkServer } from './api.js';
 import { $, setIf, textIf } from './utils.js';
 import { connectWs } from './socket.js';
 import { loadMe } from './users.js';
+import { refreshAdminVisibility } from './admin.js';
 import { loadChannels } from './channels.js';
 import { enableComposer } from './messages.js';
 import { heartbeat, presencePollLoop, startHeartbeatLoop } from './presence.js';
@@ -90,6 +91,7 @@ export async function bootstrapAfterAuth() {
     $('#authView').style.display = 'none';
     $('#appView').style.display = 'flex';
     await loadMe();
+    refreshAdminVisibility();
     await loadChannels();
     connectWs();
     enableComposer(false);

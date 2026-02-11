@@ -24,12 +24,22 @@ Authentication is token-based (JWT).
 All endpoints below require `Authorization: Bearer <access_token>` header.
 ### Users
 - `GET /api/users`: List all users (public info).
-- `GET /api/users/me`: Get current user profile.
+- `GET /api/users/me`: Get current user profile (includes roles).
 - `PATCH /api/users/me`: Update profile. Body: `{ "username": "...", "email": "..." }`
 - `PUT /api/users/me/password`: Change password. Body: `{ "current_password": "...", "new_password": "..." }`
 - `PUT /api/users/me/avatar`: Upload avatar (multipart form data).
 - `GET /api/users/{id}`: Get user by ID.
 - `GET /api/users/{id}/avatar`: Get user avatar (redirects to file).
+
+## Admin
+- `GET /api/admin/users`: List all users with roles (admin only).
+- `PATCH /api/admin/users/{id}`: Update user username/email. Body: `{ "username": "...", "email": "..." }`
+- `PUT /api/admin/users/{id}/password`: Set user password. Body: `{ "new_password": "..." }`
+- `PUT /api/admin/users/{id}/avatar`: Upload avatar for user (multipart form data).
+- `PUT /api/admin/users/{id}/roles`: Replace user roles. Body: `{ "role_ids": ["..."] }`
+- `GET /api/admin/roles`: List roles.
+- `POST /api/admin/roles`: Create role. Body: `{ "name": "...", "permissions": 0 }`
+- `DELETE /api/admin/roles/{id}`: Delete role.
 ### Channels
 - `GET /api/channels`: List channels user is a member of.
 - `POST /api/channels`: Create channel. Body: `{ "name": "...", "is_voice": bool, "is_private": bool, "members": [...] (opt, for private) }`

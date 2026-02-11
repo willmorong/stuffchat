@@ -837,6 +837,31 @@ a:hover {
     padding: 4px 0;
 }
 
+.admin-modal {
+    max-width: 1100px;
+}
+
+.admin-user-grid {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+}
+
+.admin-user-grid .avatar {
+    width: 96px;
+    height: 96px;
+    align-self: center;
+}
+
+.admin-user-fields {
+    flex: 1;
+    min-width: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
 /* Create Channel modal tweaks */
 #channelMembersSection select {
     min-height: 220px;

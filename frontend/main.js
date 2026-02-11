@@ -20,6 +20,7 @@ import {
 import {
     bindSettingsEvents, applyTheme
 } from './modules/settings.js';
+import { bindAdminEvents } from './modules/admin.js';
 import {
     openInviteModal, closeInviteModal, createInvite
 } from './modules/invites.js';
@@ -219,6 +220,7 @@ function bindUI() {
 
     // Settings
     bindSettingsEvents();
+    bindAdminEvents();
 
     // Members Modal
     setupMembersModalListeners();
