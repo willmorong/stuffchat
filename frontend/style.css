@@ -479,6 +479,106 @@ body {
     display: flex;
 }
 
+/* Reactions */
+.reactions-row {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.reaction-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text);
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    line-height: 1.4;
+}
+
+.reaction-badge:hover {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.reaction-badge.active {
+    background: rgba(122, 162, 255, 0.18);
+    border-color: rgba(122, 162, 255, 0.45);
+}
+
+.reaction-count {
+    font-size: 12px;
+    color: var(--text-dim);
+}
+
+.reaction-badge.active .reaction-count {
+    color: var(--accent);
+}
+
+.reaction-emoji-img {
+    width: 18px;
+    height: 18px;
+    object-fit: contain;
+    vertical-align: middle;
+}
+
+/* Reaction Picker popup */
+.reaction-picker {
+    position: fixed;
+    z-index: 200;
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 2px;
+    padding: 8px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--bg2, #1b263b);
+    backdrop-filter: blur(16px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    max-width: 300px;
+}
+
+.reaction-picker .emoji-btn {
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 20px;
+    transition: background 0.1s;
+}
+
+.reaction-picker .emoji-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.reaction-picker .emoji-btn.custom img {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+}
+
+.reaction-picker-sep {
+    grid-column: 1 / -1;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-dim);
+    padding: 4px 2px 2px;
+    border-top: 1px solid var(--border);
+    margin-top: 2px;
+}
+
 .attachment img {
     max-width: min(420px, 60vw);
     max-height: 260px;

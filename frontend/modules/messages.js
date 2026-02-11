@@ -3,6 +3,14 @@ import { apiFetch } from './api.js';
 import { connectWs } from './socket.js';
 import { $, el, absFileUrl, buildFileUrl, setIf, truncateId, presenceClass, localizeDate, replaceEmojisAndLinkify, isEmojiOnly, formatFileSize } from './utils.js';
 import { prefetchUsers } from './users.js';
+import { buildEmojiUrl } from './emojis.js';
+
+// Common unicode emojis for the reaction picker
+const REACTION_EMOJIS = [
+    '👍', '👎', '😂', '❤️', '🔥', '😮', '😢', '😡',
+    '🎉', '👀', '🙏', '💯', '✅', '❌', '⭐', '🤔',
+    '😭', '🥳', '💀', '🫡', '👏', '💪', '🤣', '😍',
+];
 
 export function enableComposer(enabled) {
     const input = $('#msgInput');
@@ -284,8 +292,13 @@ export function renderMessageItem(m) {
     const content = el('div', { class: jumbo ? 'content jumbo' : 'content' }, replaceEmojisAndLinkify(m.content));
     const hasAttach = !!(m.file_url || m.file_id);
     const attach = hasAttach ? renderAttachment(m) : null;
+    const reactionsRow = renderReactions(m);
 
     const tools = el('div', { class: 'tools' }, []);
+    // Reaction button for ALL messages
+    tools.append(
+        el('button', { class: 'iconbtn', title: 'React', onclick: (e) => { e.stopPropagation(); showReactionPicker(m.id, e.currentTarget); } }, el('i', { class: 'bi bi-emoji-smile' }))
+    );
     if (own) {
         tools.append(
             el('button', { class: 'iconbtn', title: 'Edit', onclick: () => editMessage(m) }, el('i', { class: 'bi bi-pencil' })),
@@ -293,9 +306,131 @@ export function renderMessageItem(m) {
         );
     }
 
-    return el('div', { class: 'msg' + (own ? ' highlight' : ''), 'data-user-id': m.user_id }, [
-        avatar, el('div', { class: 'msg-right' }, [meta, content, attach]), tools
+    return el('div', { class: 'msg' + (own ? ' highlight' : ''), 'data-msg-id': m.id, 'data-user-id': m.user_id }, [
+        avatar, el('div', { class: 'msg-right' }, [meta, content, attach, reactionsRow]), tools
     ]);
+}
+
+function renderReactions(m) {
+    const reactions = m.reactions || [];
+    if (reactions.length === 0) return null;
+    const row = el('div', { class: 'reactions-row' });
+    for (const r of reactions) {
+        const isActive = r.users && r.users.includes(store.user?.id);
+        const isCustom = r.emoji.startsWith(':') && r.emoji.endsWith(':');
+        let emojiDisplay;
+        if (isCustom) {
+            const name = r.emoji.slice(1, -1);
+            emojiDisplay = el('img', { src: buildEmojiUrl(name), alt: name, class: 'reaction-emoji-img' });
+        } else {
+            emojiDisplay = r.emoji;
+        }
+        const badge = el('button', {
+            class: 'reaction-badge' + (isActive ? ' active' : ''),
+            title: r.users ? r.users.map(uid => {
+                if (uid === store.user?.id) return store.user?.username || 'You';
+                const u = store.users.get(uid);
+                return u?.username || truncateId(uid);
+            }).join(', ') : '',
+            onclick: () => toggleReaction(m.id, r.emoji)
+        }, [
+            emojiDisplay,
+            el('span', { class: 'reaction-count' }, String(r.count))
+        ]);
+        row.appendChild(badge);
+    }
+    return row;
+}
+
+async function toggleReaction(messageId, emoji) {
+    try {
+        await apiFetch(`/api/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`, { method: 'PUT' });
+    } catch (e) {
+        console.error('Reaction toggle failed:', e);
+    }
+}
+
+function showReactionPicker(messageId, anchorEl) {
+    // Remove existing picker if any
+    const existing = document.querySelector('.reaction-picker');
+    if (existing) existing.remove();
+
+    const picker = el('div', { class: 'reaction-picker' });
+
+    // Unicode emojis
+    for (const emoji of REACTION_EMOJIS) {
+        picker.appendChild(el('button', {
+            class: 'emoji-btn',
+            onclick: (e) => {
+                e.stopPropagation();
+                toggleReaction(messageId, emoji);
+                picker.remove();
+            }
+        }, emoji));
+    }
+
+    // Custom emojis
+    if (store.customEmojis.size > 0) {
+        const sep = el('div', { class: 'reaction-picker-sep' }, 'Custom');
+        picker.appendChild(sep);
+        store.customEmojis.forEach((emoji, name) => {
+            picker.appendChild(el('button', {
+                class: 'emoji-btn custom',
+                title: `:${name}:`,
+                onclick: (e) => {
+                    e.stopPropagation();
+                    toggleReaction(messageId, `:${name}:`);
+                    picker.remove();
+                }
+            }, [el('img', { src: buildEmojiUrl(name), alt: name })]));
+        });
+    }
+
+    // Position near the anchor button
+    document.body.appendChild(picker);
+    const rect = anchorEl.getBoundingClientRect();
+    let top = rect.bottom + 4;
+    let left = rect.left;
+    // Keep picker within viewport
+    const pw = picker.offsetWidth;
+    const ph = picker.offsetHeight;
+    if (left + pw > window.innerWidth) left = window.innerWidth - pw - 8;
+    if (left < 4) left = 4;
+    if (top + ph > window.innerHeight) top = rect.top - ph - 4;
+    picker.style.top = top + 'px';
+    picker.style.left = left + 'px';
+
+    // Close on click outside or Escape
+    const close = (e) => {
+        if (!picker.contains(e.target)) { picker.remove(); document.removeEventListener('click', close); }
+    };
+    const closeKey = (e) => {
+        if (e.key === 'Escape') { picker.remove(); document.removeEventListener('keydown', closeKey); }
+    };
+    setTimeout(() => {
+        document.addEventListener('click', close);
+        document.addEventListener('keydown', closeKey);
+    }, 0);
+}
+
+/** Update reactions for a specific message in the DOM without full re-render */
+export function updateMessageReactions(messageId, reactions) {
+    const msgEl = document.querySelector(`.msg[data-msg-id="${messageId}"]`);
+    if (!msgEl) return;
+    // Update the store
+    for (const [, arr] of store.messages) {
+        const m = arr.find(x => x.id === messageId);
+        if (m) {
+            m.reactions = reactions;
+            // Re-render reactions row
+            const msgRight = msgEl.querySelector('.msg-right');
+            const oldRow = msgRight.querySelector('.reactions-row');
+            if (oldRow) oldRow.remove();
+            const newRow = renderReactions(m);
+            if (newRow) msgRight.appendChild(newRow);
+            break;
+        }
+    }
 }
 
 /** Update presence badges in the DOM without re-rendering messages */

@@ -7,5 +7,6 @@ pub mod health;
 pub mod invites;
 pub mod messages;
 pub mod presence;
+pub mod reactions;
 pub mod shareplay;
 pub mod users;

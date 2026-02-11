@@ -58,9 +58,60 @@ pub async fn list_messages(
             .bind(&channel_id).bind(limit).fetch_all(&db.0).await?
     };
 
+    let msg_ids: Vec<String> = rows.iter().map(|r| r.get::<String, _>("id")).collect();
+
+    // Batch-fetch reactions for all messages in one query
+    let reactions_map = if !msg_ids.is_empty() {
+        let placeholders: String = msg_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let query_str = format!(
+            "SELECT message_id, emoji, user_id FROM message_reactions WHERE message_id IN ({}) ORDER BY created_at ASC",
+            placeholders
+        );
+        let mut q = sqlx::query(&query_str);
+        for mid in &msg_ids {
+            q = q.bind(mid);
+        }
+        let reaction_rows = q.fetch_all(&db.0).await?;
+
+        // Group: message_id -> emoji -> [user_ids]
+        let mut rmap: std::collections::HashMap<String, Vec<(String, Vec<String>)>> =
+            std::collections::HashMap::new();
+        // Use an intermediate map to preserve emoji order per message
+        let mut intermediate: std::collections::HashMap<
+            String,
+            (Vec<String>, std::collections::HashMap<String, Vec<String>>),
+        > = std::collections::HashMap::new();
+        for r in reaction_rows {
+            let mid: String = r.get("message_id");
+            let emoji: String = r.get("emoji");
+            let uid: String = r.get("user_id");
+            let entry = intermediate
+                .entry(mid)
+                .or_insert_with(|| (Vec::new(), std::collections::HashMap::new()));
+            if !entry.1.contains_key(&emoji) {
+                entry.0.push(emoji.clone());
+            }
+            entry.1.entry(emoji).or_default().push(uid);
+        }
+        for (mid, (order, mut emap)) in intermediate {
+            let grouped: Vec<(String, Vec<String>)> = order
+                .into_iter()
+                .map(|e| {
+                    let users = emap.remove(&e).unwrap_or_default();
+                    (e, users)
+                })
+                .collect();
+            rmap.insert(mid, grouped);
+        }
+        rmap
+    } else {
+        std::collections::HashMap::new()
+    };
+
     let msgs: Vec<_> = rows
         .into_iter()
         .map(|r| {
+            let id: String = r.get("id");
             let file_id: Option<String> = r.get("file_id");
             let original_name: Option<String> = r.get("original_name");
             let size_bytes: Option<i64> = r.get("size_bytes");
@@ -69,8 +120,24 @@ pub async fn list_messages(
                 _ => None,
             };
 
+            let reactions: Vec<serde_json::Value> = reactions_map
+                .get(&id)
+                .map(|grouped| {
+                    grouped
+                        .iter()
+                        .map(|(emoji, users)| {
+                            serde_json::json!({
+                                "emoji": emoji,
+                                "users": users,
+                                "count": users.len(),
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
             serde_json::json!({
-                "id": r.get::<String,_>("id"),
+                "id": id,
                 "channel_id": channel_id,
                 "user_id": r.get::<String,_>("user_id"),
                 "content": r.get::<Option<String>,_>("content"),
@@ -79,6 +146,7 @@ pub async fn list_messages(
                 "file_size": size_bytes,
                 "created_at": r.get::<chrono::DateTime<chrono::Utc>,_>("created_at"),
                 "edited_at": r.get::<Option<chrono::DateTime<chrono::Utc>>,_>("edited_at"),
+                "reactions": reactions,
             })
         })
         .collect();

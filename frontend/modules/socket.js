@@ -1,7 +1,7 @@
 import { store } from './store.js';
 import { toWsUrl, $, truncateId, playNotificationSound } from './utils.js';
 import { fetchUser } from './users.js';
-import { renderMessages, renderMessageItem, isScrolledToBottom, scrollToBottom } from './messages.js';
+import { renderMessages, renderMessageItem, isScrolledToBottom, scrollToBottom, updateMessageReactions } from './messages.js';
 import { updateCallUI, createPeerConnection, handleSignal } from './voice.js';
 import { renderChannelList, markChannelRead } from './channels.js';
 import { sharePlay } from './shareplay.js';
@@ -117,6 +117,15 @@ export function handleWsMessage(ev) {
             const idx = arr.findIndex(x => x.id === ev.id);
             if (idx >= 0) { arr.splice(idx, 1); }
             if (ev.channel_id === store.currentChannelId) renderMessages(ev.channel_id);
+            break;
+        }
+        case 'reaction_updated': {
+            const arr = store.messages.get(ev.channel_id) || [];
+            const m = arr.find(x => x.id === ev.message_id);
+            if (m) m.reactions = ev.reactions;
+            if (ev.channel_id === store.currentChannelId) {
+                updateMessageReactions(ev.message_id, ev.reactions);
+            }
             break;
         }
         case 'chat_message': {
