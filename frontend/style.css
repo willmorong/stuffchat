@@ -634,17 +634,19 @@ body {
     height: 40px;
     border-radius: var(--small-radius);
     border: 1px solid var(--border);
-    background: rgba(255, 255, 255, 0.06);
+    background: var(--glass);
     color: var(--text);
-    font-size: medium;
+    font-size: larger;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: transform 0.05s ease;
 }
 
 .iconbtn:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--glass-strong);
+    transform: scale(1.05);
 }
 
 .iconbtn.active {
@@ -904,7 +906,7 @@ body[data-theme="light"] .messages,
 body[data-theme="light"] .topbar,
 body[data-theme="light"] .inputbar,
 body[data-theme="light"] #sidebar {
-    background: rgba(255, 255, 255, 0.4);
+    background: var(--glass);
 }
 
 body[data-theme="light"] .channel.active {
@@ -1031,6 +1033,41 @@ body[data-theme="billzinga"] .msg.highlight,
     border-color: rgba(255, 255, 255, 0.35);
 }
 
+/* Deep Ocean (deep blue background, white accents) */
+body[data-theme="deep-ocean"] {
+    --bg1: #001f3f;
+    --bg2: #001220;
+    --glass: rgba(255, 255, 255, 0.06);
+    --glass-strong: rgba(255, 255, 255, 0.10);
+    --border: rgba(255, 255, 255, 0.35);
+    --text: #ffffff;
+    --text-dim: #a4c7e0;
+    --accent: #ffffff;
+    --accent-2: #ffffff;
+    --danger: #ff6b6b;
+}
+
+body[data-theme="deep-ocean"] {
+    background:
+        radial-gradient(1200px 800px at 10% 10%, #003366 0%, transparent 60%),
+        radial-gradient(1200px 800px at 90% 0%, #002244 0%, transparent 55%),
+        radial-gradient(1000px 600px at 70% 90%, #001133 0%, transparent 95%),
+        linear-gradient(160deg, var(--bg1), var(--bg2));
+    color: var(--text);
+}
+
+body[data-theme="deep-ocean"] .channel.active {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.10));
+    border-color: rgba(255, 255, 255, 0.35);
+    color: var(--text);
+}
+
+body[data-theme="deep-ocean"] .msg.highlight,
+body[data-theme="deep-ocean"] .highlight {
+    background: rgba(255, 255, 255, 0.10);
+    border-color: rgba(255, 255, 255, 0.35);
+}
+
 /* China (red background, yellow/gold text and borders) */
 body[data-theme="china"] {
     --bg1: #8b0000;
@@ -1072,8 +1109,8 @@ body[data-theme="china"] .highlight {
 body[data-theme="wegmans"] {
     --bg1: #e9f0ff;
     --bg2: #ffffff;
-    --glass: rgba(0, 0, 0, 0.05);
-    --glass-strong: rgba(0, 0, 0, 0.08);
+    --glass: rgba(255, 255, 255, 0.6);
+    --glass-strong: rgba(255, 255, 255, 0.8);
     --border: rgba(0, 0, 0, 0.2);
     --text: #0b1220;
     --text-dim: #404040;
@@ -1091,7 +1128,6 @@ body[data-theme="wegmans"] .topbar,
 body[data-theme="wegmans"] .inputbar,
 body[data-theme="wegmans"] #sidebar,
 body[data-theme="wegmans"] .call-interface {
-    background: rgba(255, 255, 255, 0.6);
     backdrop-filter: blur(10px);
 }
 
@@ -1503,7 +1539,7 @@ body[data-theme="clouds"] .messages,
 body[data-theme="clouds"] .topbar,
 body[data-theme="clouds"] .inputbar,
 body[data-theme="clouds"] #sidebar {
-    background: rgba(255, 255, 255, 0.5);
+    background: var(--glass);
 }
 
 body[data-theme="clouds"] .channel.active {
