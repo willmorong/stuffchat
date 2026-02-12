@@ -21,7 +21,7 @@ export function enableComposer(enabled) {
 
 export function isScrolledToBottom() {
     const wrap = $('#messages');
-    return wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight < 10;
+    return wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight < 100;
 }
 
 export function scrollToBottom() {
@@ -125,7 +125,11 @@ function renderAttachment(message) {
         new Promise((resolve, reject) => {
             const img = new Image();
             img.alt = filename;
-            img.onload = () => resolve(img);
+            img.onload = () => {
+                const ph = box.querySelector('.attachment-placeholder');
+                if (ph) ph.remove();
+                resolve(img);
+            };
             img.onerror = reject;
             img.src = url;
             setTimeout(reject, 10000);
@@ -182,7 +186,11 @@ function renderAttachment(message) {
     // This avoids the HEAD request latency for valid images/videos.
 
     let promise;
-    if (isImage) promise = tryImage();
+    if (isImage) {
+        promise = tryImage();
+        const placeholder = el('div', { class: 'attachment-placeholder' });
+        box.appendChild(placeholder);
+    }
     else if (isVideo) promise = tryVideo();
     else if (isAudio) promise = tryAudio();
     else {

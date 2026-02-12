@@ -583,6 +583,15 @@ body {
     margin-top: 2px;
 }
 
+.attachment-placeholder {
+    width: min(420px, 60vw);
+    height: 260px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.04);
+    margin-top: 6px;
+}
+
 .attachment img {
     max-width: min(420px, 60vw);
     max-height: 260px;
