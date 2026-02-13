@@ -251,6 +251,17 @@ export function handleWsMessage(ev) {
             }
             break;
         }
+        case 'user_updated': {
+            // Force fetch updated user data (this re-renders messages if in current channel)
+            fetchUser(ev.user_id, true);
+            // If it's the current user, refresh sidebar "me" section
+            if (ev.user_id === store.user?.id) {
+                import('./users.js').then(m => m.loadMe());
+            }
+            // Refresh members modal if it happens to be open
+            import('./presence.js').then(m => m.refreshMembersModalIfOpen());
+            break;
+        }
         default: break;
     }
 }

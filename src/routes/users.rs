@@ -1,11 +1,21 @@
-use actix_web::{web, HttpResponse};
+use crate::{
+    auth,
+    auth::AuthUser,
+    config::Config,
+    db::Db,
+    errors::ApiError,
+    ws::server::{BroadcastAll, ChatServer},
+};
+use actix_multipart::Multipart;
+use actix_web::{HttpResponse, web};
+use futures_util::TryStreamExt as _;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
-use crate::{db::Db, errors::ApiError, auth::AuthUser, config::Config, auth};
-use actix_multipart::Multipart;
-use futures_util::TryStreamExt as _;
 
-pub async fn me(db: web::Data<Db>, user: super::super::auth::AuthUser) -> Result<HttpResponse, ApiError> {
+pub async fn me(
+    db: web::Data<Db>,
+    user: super::super::auth::AuthUser,
+) -> Result<HttpResponse, ApiError> {
     let row = sqlx::query("SELECT id, username, email, avatar_file_id, created_at, updated_at FROM users WHERE id = ?")
         .bind(&user.user_id)
         .fetch_optional(&db.0).await?;
@@ -13,12 +23,15 @@ pub async fn me(db: web::Data<Db>, user: super::super::auth::AuthUser) -> Result
     let role_rows = sqlx::query("SELECT r.id, r.name FROM roles r INNER JOIN user_roles ur ON ur.role_id = r.id WHERE ur.user_id = ? ORDER BY r.name ASC")
         .bind(&user.user_id)
         .fetch_all(&db.0).await?;
-    let roles: Vec<serde_json::Value> = role_rows.into_iter().map(|r| {
-        serde_json::json!({
-            "id": r.get::<String,_>("id"),
-            "name": r.get::<String,_>("name"),
+    let roles: Vec<serde_json::Value> = role_rows
+        .into_iter()
+        .map(|r| {
+            serde_json::json!({
+                "id": r.get::<String,_>("id"),
+                "name": r.get::<String,_>("name"),
+            })
         })
-    }).collect();
+        .collect();
     let user = serde_json::json!({
         "id": row.get::<String,_>("id"),
         "username": row.get::<String,_>("username"),
@@ -32,9 +45,17 @@ pub async fn me(db: web::Data<Db>, user: super::super::auth::AuthUser) -> Result
 }
 
 #[derive(Deserialize)]
-pub struct UpdateMeReq { pub username: Option<String>, pub email: Option<String> }
+pub struct UpdateMeReq {
+    pub username: Option<String>,
+    pub email: Option<String>,
+}
 
-pub async fn update_me(db: web::Data<Db>, user: AuthUser, body: web::Json<UpdateMeReq>) -> Result<HttpResponse, ApiError> {
+pub async fn update_me(
+    db: web::Data<Db>,
+    chat: web::Data<actix::Addr<ChatServer>>,
+    user: AuthUser,
+    body: web::Json<UpdateMeReq>,
+) -> Result<HttpResponse, ApiError> {
     if body.username.as_deref().map_or(false, |u| u.len() < 3) {
         return Err(ApiError::BadRequest("username too short".into()));
     }
@@ -44,17 +65,37 @@ pub async fn update_me(db: web::Data<Db>, user: AuthUser, body: web::Json<Update
         .bind(chrono::Utc::now())
         .bind(&user.user_id)
         .execute(&db.0).await?;
+
+    // Broadcast profile update
+    chat.do_send(BroadcastAll {
+        payload: serde_json::json!({
+            "type": "user_updated",
+            "user_id": user.user_id,
+        })
+        .to_string(),
+    });
+
     me(db, user).await
 }
 
 #[derive(Deserialize)]
-pub struct ChangePasswordReq { pub current_password: String, pub new_password: String }
+pub struct ChangePasswordReq {
+    pub current_password: String,
+    pub new_password: String,
+}
 
-pub async fn change_password(db: web::Data<Db>, user: AuthUser, body: web::Json<ChangePasswordReq>) -> Result<HttpResponse, ApiError> {
-    if body.new_password.len() < 8 { return Err(ApiError::BadRequest("new password too short".into())); }
+pub async fn change_password(
+    db: web::Data<Db>,
+    user: AuthUser,
+    body: web::Json<ChangePasswordReq>,
+) -> Result<HttpResponse, ApiError> {
+    if body.new_password.len() < 8 {
+        return Err(ApiError::BadRequest("new password too short".into()));
+    }
     let row = sqlx::query("SELECT password_hash FROM users WHERE id = ?")
         .bind(&user.user_id)
-        .fetch_one(&db.0).await?;
+        .fetch_one(&db.0)
+        .await?;
     let hash: String = row.get("password_hash");
     if !auth::verify_password(&hash, &body.current_password) {
         return Err(ApiError::Forbidden);
@@ -64,15 +105,26 @@ pub async fn change_password(db: web::Data<Db>, user: AuthUser, body: web::Json<
         .bind(new_hash)
         .bind(chrono::Utc::now())
         .bind(&user.user_id)
-        .execute(&db.0).await?;
+        .execute(&db.0)
+        .await?;
     Ok(HttpResponse::Ok().finish())
 }
 
-pub async fn upload_avatar(cfg: web::Data<Config>, db: web::Data<Db>, user: AuthUser, mut payload: Multipart) -> Result<HttpResponse, ApiError> {
-    use crate::routes::files::{save_multipart_file, SavedFile};
+pub async fn upload_avatar(
+    cfg: web::Data<Config>,
+    db: web::Data<Db>,
+    chat: web::Data<actix::Addr<ChatServer>>,
+    user: AuthUser,
+    mut payload: Multipart,
+) -> Result<HttpResponse, ApiError> {
+    use crate::routes::files::{SavedFile, save_multipart_file};
     let mut saved: Option<SavedFile> = None;
 
-    while let Some(item) = payload.try_next().await.map_err(|_| ApiError::BadRequest("invalid multipart".into()))? {
+    while let Some(item) = payload
+        .try_next()
+        .await
+        .map_err(|_| ApiError::BadRequest("invalid multipart".into()))?
+    {
         let field = item;
         let s = save_multipart_file(&cfg, &db, &user.user_id, field).await?;
         saved = Some(s);
@@ -83,7 +135,18 @@ pub async fn upload_avatar(cfg: web::Data<Config>, db: web::Data<Db>, user: Auth
         .bind(&saved.file_id)
         .bind(chrono::Utc::now())
         .bind(&user.user_id)
-        .execute(&db.0).await?;
+        .execute(&db.0)
+        .await?;
+
+    // Broadcast profile update
+    chat.do_send(BroadcastAll {
+        payload: serde_json::json!({
+            "type": "user_updated",
+            "user_id": user.user_id,
+        })
+        .to_string(),
+    });
+
     Ok(HttpResponse::Ok().json(serde_json::json!({"avatar_file_id": saved.file_id})))
 }
 
@@ -97,21 +160,30 @@ pub struct UserPublic {
 // List all users (basic public info). Requires authentication.
 pub async fn list_users(db: web::Data<Db>, _user: AuthUser) -> Result<HttpResponse, ApiError> {
     let rows = sqlx::query("SELECT id, username, avatar_file_id FROM users ORDER BY username ASC")
-        .fetch_all(&db.0).await?;
-    let users: Vec<UserPublic> = rows.into_iter().map(|r| UserPublic {
-        id: r.get("id"),
-        username: r.get("username"),
-        avatar_file_id: r.get("avatar_file_id"),
-    }).collect();
+        .fetch_all(&db.0)
+        .await?;
+    let users: Vec<UserPublic> = rows
+        .into_iter()
+        .map(|r| UserPublic {
+            id: r.get("id"),
+            username: r.get("username"),
+            avatar_file_id: r.get("avatar_file_id"),
+        })
+        .collect();
     Ok(HttpResponse::Ok().json(users))
 }
 
 // Any authenticated user can get public info about another user.
-pub async fn get_user(db: web::Data<Db>, _user: AuthUser, path: web::Path<String>) -> Result<HttpResponse, ApiError> {
+pub async fn get_user(
+    db: web::Data<Db>,
+    _user: AuthUser,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ApiError> {
     let user_id = path.into_inner();
     let row = sqlx::query("SELECT id, username, avatar_file_id FROM users WHERE id = ?")
         .bind(&user_id)
-        .fetch_optional(&db.0).await?;
+        .fetch_optional(&db.0)
+        .await?;
     let row = row.ok_or(ApiError::NotFound)?;
     let user = UserPublic {
         id: row.get("id"),
@@ -123,7 +195,11 @@ pub async fn get_user(db: web::Data<Db>, _user: AuthUser, path: web::Path<String
 
 // Any authenticated user can get another user's avatar.
 // This redirects to the actual file serving endpoint.
-pub async fn get_user_avatar(db: web::Data<Db>, _user: AuthUser, path: web::Path<String>) -> Result<HttpResponse, ApiError> {
+pub async fn get_user_avatar(
+    db: web::Data<Db>,
+    _user: AuthUser,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ApiError> {
     let user_id = path.into_inner();
     // This query joins users and files to get the file_id and original_name for the redirect URL.
     let row = sqlx::query(

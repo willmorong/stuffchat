@@ -2,6 +2,7 @@ import { store } from './store.js';
 import { apiFetch } from './api.js';
 import { $, buildFileUrl } from './utils.js';
 import { renderMessages } from './messages.js';
+import { updateCallUI } from './voice.js';
 
 export async function loadMe() {
     const me = await apiFetch('/api/users/me');
@@ -28,14 +29,16 @@ export async function changeMyPassword(current_password, new_password) {
     await apiFetch('/api/users/me/password', { method: 'PUT', body: JSON.stringify({ current_password, new_password }) });
 }
 
-export async function fetchUser(userId) {
+export async function fetchUser(userId, force = false) {
     if (!userId) return null;
-    if (store.users.has(userId)) return store.users.get(userId);
+    if (!force && store.users.has(userId)) return store.users.get(userId);
     try {
         const u = await apiFetch(`/api/users/${encodeURIComponent(userId)}`);
         store.users.set(userId, u);
         // Re-render current channel to show username/avatar once loaded
         if (store.currentChannelId) renderMessages(store.currentChannelId);
+        // Refresh voice UI if in a call
+        updateCallUI();
         return u;
     } catch (e) {
         // Cache a placeholder to avoid repeated fetches on errors

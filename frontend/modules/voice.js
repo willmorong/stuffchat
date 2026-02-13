@@ -236,6 +236,26 @@ export function updateCallUI() {
                 }
 
                 participantsDiv.appendChild(row);
+            } else {
+                // Update existing row info if user data changed
+                const u = store.users.get(uid);
+                const avatar = row.querySelector('.avatar');
+                const usernameEl = row.querySelector('.username');
+
+                if (u && avatar) {
+                    const img = avatar.querySelector('img');
+                    if (u.avatar_file_id) {
+                        const newUrl = buildFileUrl(u.avatar_file_id, 'avatar');
+                        if (!img || img.src !== newUrl) {
+                            avatar.innerHTML = `<img src="${newUrl}" alt="${u.username}">`;
+                        }
+                    } else if (img) {
+                        avatar.innerHTML = '';
+                    }
+                }
+                if (u && usernameEl && usernameEl.textContent !== u.username) {
+                    usernameEl.textContent = u.username;
+                }
             }
 
             const avatar = row.querySelector('.avatar');

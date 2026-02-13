@@ -127,6 +127,12 @@ pub struct DirectSignal {
 
 #[derive(Message)]
 #[rtype(result = "()")]
+pub struct BroadcastAll {
+    pub payload: String,
+}
+
+#[derive(Message)]
+#[rtype(result = "()")]
 pub struct NotifyUsers {
     pub user_ids: Vec<String>,
     pub payload: String,
@@ -437,6 +443,19 @@ impl Handler<NotifyUsers> for ChatServer {
                         payload: msg.payload.clone(),
                     });
                 }
+            }
+        }
+    }
+}
+
+impl Handler<BroadcastAll> for ChatServer {
+    type Result = ();
+    fn handle(&mut self, msg: BroadcastAll, _: &mut Context<Self>) {
+        for sessions in self.user_sessions.values() {
+            for addr in sessions.values() {
+                addr.do_send(super::session::ServerMsg {
+                    payload: msg.payload.clone(),
+                });
             }
         }
     }

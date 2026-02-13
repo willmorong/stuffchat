@@ -1,5 +1,5 @@
 use actix_multipart::Multipart;
-use actix_web::{web, HttpResponse};
+use actix_web::{HttpResponse, web};
 use futures_util::TryStreamExt as _;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
@@ -10,6 +10,7 @@ use crate::{
     db::Db,
     errors::ApiError,
     permissions::require_admin,
+    ws::server::{BroadcastAll, ChatServer},
 };
 
 #[derive(Serialize)]
@@ -53,7 +54,8 @@ pub async fn list_users(db: web::Data<Db>, user: AuthUser) -> Result<HttpRespons
     .fetch_all(&db.0)
     .await?;
 
-    let mut by_user: std::collections::BTreeMap<String, AdminUser> = std::collections::BTreeMap::new();
+    let mut by_user: std::collections::BTreeMap<String, AdminUser> =
+        std::collections::BTreeMap::new();
     for row in rows {
         let user_id: String = row.get("id");
         let entry = by_user.entry(user_id.clone()).or_insert_with(|| AdminUser {
@@ -83,6 +85,7 @@ pub struct UpdateUserReq {
 
 pub async fn update_user(
     db: web::Data<Db>,
+    chat: web::Data<actix::Addr<ChatServer>>,
     user: AuthUser,
     path: web::Path<String>,
     body: web::Json<UpdateUserReq>,
@@ -100,6 +103,15 @@ pub async fn update_user(
         .bind(&target_id)
         .execute(&db.0)
         .await?;
+
+    // Broadcast profile update
+    chat.do_send(BroadcastAll {
+        payload: serde_json::json!({
+            "type": "user_updated",
+            "user_id": target_id,
+        })
+        .to_string(),
+    });
 
     log::info!(
         "AdminAction: update_user admin_id={} target_id={} username={:?} email={:?}",
@@ -146,11 +158,12 @@ pub async fn set_user_password(
 pub async fn upload_user_avatar(
     cfg: web::Data<Config>,
     db: web::Data<Db>,
+    chat: web::Data<actix::Addr<ChatServer>>,
     user: AuthUser,
     path: web::Path<String>,
     mut payload: Multipart,
 ) -> Result<HttpResponse, ApiError> {
-    use crate::routes::files::{save_multipart_file, SavedFile};
+    use crate::routes::files::{SavedFile, save_multipart_file};
     require_admin(&db, &user.user_id).await?;
     let target_id = path.into_inner();
 
@@ -173,6 +186,15 @@ pub async fn upload_user_avatar(
         .bind(&target_id)
         .execute(&db.0)
         .await?;
+
+    // Broadcast profile update
+    chat.do_send(BroadcastAll {
+        payload: serde_json::json!({
+            "type": "user_updated",
+            "user_id": target_id,
+        })
+        .to_string(),
+    });
 
     log::info!(
         "AdminAction: upload_user_avatar admin_id={} target_id={} avatar_file_id={}",
@@ -222,13 +244,14 @@ pub async fn create_role(
     let created_at = chrono::Utc::now();
     let permissions = body.permissions.unwrap_or(0);
 
-    let res = sqlx::query("INSERT INTO roles(id, name, permissions, created_at) VALUES (?, ?, ?, ?)")
-        .bind(&id)
-        .bind(name)
-        .bind(permissions)
-        .bind(created_at)
-        .execute(&db.0)
-        .await;
+    let res =
+        sqlx::query("INSERT INTO roles(id, name, permissions, created_at) VALUES (?, ?, ?, ?)")
+            .bind(&id)
+            .bind(name)
+            .bind(permissions)
+            .bind(created_at)
+            .execute(&db.0)
+            .await;
 
     match res {
         Ok(_) => {
@@ -278,6 +301,7 @@ pub struct UpdateUserRolesReq {
 
 pub async fn update_user_roles(
     db: web::Data<Db>,
+    chat: web::Data<actix::Addr<ChatServer>>,
     user: AuthUser,
     path: web::Path<String>,
     body: web::Json<UpdateUserRolesReq>,
@@ -319,13 +343,23 @@ pub async fn update_user_roles(
 
     for rid in &unique_roles {
         sqlx::query("INSERT INTO user_roles(user_id, role_id) VALUES (?, ?)")
-            .bind(&target_id)
+            .bind(target_id.clone())
             .bind(rid)
             .execute(&mut *tx)
             .await?;
     }
 
     tx.commit().await?;
+
+    // Broadcast profile update
+    chat.do_send(BroadcastAll {
+        payload: serde_json::json!({
+            "type": "user_updated",
+            "user_id": target_id,
+        })
+        .to_string(),
+    });
+
     log::info!(
         "AdminAction: update_user_roles admin_id={} target_id={} role_ids={:?}",
         user.user_id,
