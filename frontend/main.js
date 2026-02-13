@@ -11,7 +11,9 @@ import {
     modifyMembersInModal, loadChannels, selectChannel
 } from './modules/channels.js';
 import {
-    sendMessage, enableComposer
+    sendMessage, enableComposer, loadOlder,
+    showAttachmentPreview,
+    hideAttachmentPreview
 } from './modules/messages.js';
 import {
     startCall, leaveCall, startScreenShare, stopScreenShare,
@@ -151,13 +153,20 @@ function bindUI() {
 
     $('#attachFile').addEventListener('change', () => {
         if ($('#attachFile').files && $('#attachFile').files[0]) {
-            const name = $('#attachFile').files[0].name;
-            $('#msgInput').placeholder = 'Attached: ' + name;
+            const file = $('#attachFile').files[0];
+            showAttachmentPreview(file);
             // Clear any pending attachment from paste/drop when file input is used
             setPendingAttachment(null);
         } else {
-            $('#msgInput').placeholder = ' ';
+            hideAttachmentPreview();
         }
+    });
+
+    // Remove attachment button
+    $('#btnRemoveAttachment').addEventListener('click', () => {
+        $('#attachFile').value = '';
+        setPendingAttachment(null);
+        hideAttachmentPreview();
     });
 
     // Paste handler for images/files
@@ -169,7 +178,7 @@ function bindUI() {
                 const file = item.getAsFile();
                 if (file) {
                     setPendingAttachment(file);
-                    $('#msgInput').placeholder = 'Attached: ' + file.name;
+                    showAttachmentPreview(file);
                     // Clear the file input to avoid confusion
                     $('#attachFile').value = '';
                     break;
@@ -202,7 +211,7 @@ function bindUI() {
         if (files && files.length > 0) {
             const file = files[0];
             setPendingAttachment(file);
-            msgInput.placeholder = 'Attached: ' + file.name;
+            showAttachmentPreview(file);
             // Clear the file input to avoid confusion
             $('#attachFile').value = '';
         }

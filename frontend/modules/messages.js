@@ -513,6 +513,46 @@ export async function fetchMessagesPage(channelId, beforeId = null) {
     if (isFirstLoad || atBottom) scrollToBottom();
 }
 
+// Attachment Preview
+export function showAttachmentPreview(file) {
+    const preview = $('#attachmentPreview');
+    const thumb = $('#attachPreviewThumb');
+    const name = $('#attachPreviewName');
+    const size = $('#attachPreviewSize');
+
+    if (!preview || !file) return;
+
+    // Reset
+    preview.style.backgroundImage = 'linear-gradient(90deg, var(--glass-strong) 0%, var(--glass) 0%)';
+    thumb.innerHTML = '';
+
+    // Set info
+    name.textContent = file.name;
+    size.textContent = formatFileSize(file.size);
+
+    // Thumbnail
+    if (file.type.startsWith('image/')) {
+        const img = document.createElement('img');
+        img.src = URL.createObjectURL(file);
+        img.onload = () => URL.revokeObjectURL(img.src);
+        thumb.appendChild(img);
+    } else {
+        const i = document.createElement('i');
+        i.className = 'bi bi-file-earmark';
+        thumb.appendChild(i);
+    }
+
+    preview.classList.remove('hidden');
+}
+
+export function hideAttachmentPreview() {
+    const preview = $('#attachmentPreview');
+    if (!preview) return;
+    preview.classList.add('hidden');
+    // Reset background
+    preview.style.backgroundImage = '';
+}
+
 export async function sendMessage() {
     connectWs(); // Ensure we are connected
     const content = $('#msgInput').value.trim();
@@ -523,28 +563,64 @@ export async function sendMessage() {
     const fileToUpload = (fileInput.files && fileInput.files[0]) || store.pendingAttachment;
 
     if (fileToUpload) {
+        // Use XHR for progress
         const fd = new FormData();
         fd.append('file', fileToUpload);
-        const res = await fetch(store.baseUrl + '/api/files', {
-            method: 'POST',
-            headers: store.accessToken ? { 'Authorization': 'Bearer ' + store.accessToken } : {},
-            body: fd
-        });
-        if (!res.ok) {
-            let msg = 'File upload failed';
-            try { const d = await res.json(); if (d.error) msg = d.error; } catch { }
-            alert(msg);
+
+        try {
+            const data = await new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', store.baseUrl + '/api/files');
+                if (store.accessToken) {
+                    xhr.setRequestHeader('Authorization', 'Bearer ' + store.accessToken);
+                }
+
+                xhr.upload.onprogress = (e) => {
+                    if (e.lengthComputable) {
+                        const pct = (e.loaded / e.total) * 100;
+                        const preview = $('#attachmentPreview');
+                        if (preview && !preview.classList.contains('hidden')) {
+                            preview.style.backgroundImage = `linear-gradient(90deg, var(--glass-strong) ${pct}%, var(--glass) ${pct}%)`;
+                        }
+                    }
+                };
+
+                xhr.onload = () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        try {
+                            const res = JSON.parse(xhr.responseText);
+                            resolve(res);
+                        } catch (e) {
+                            reject(new Error('Invalid response'));
+                        }
+                    } else {
+                        let msg = 'File upload failed';
+                        try {
+                            const d = JSON.parse(xhr.responseText);
+                            if (d.error) msg = d.error;
+                        } catch { }
+                        reject(new Error(msg));
+                    }
+                };
+
+                xhr.onerror = () => reject(new Error('Network error during upload'));
+                xhr.send(fd);
+            });
+
+            file_id = data.file_id;
+        } catch (e) {
+            alert(e.message);
+            // Don't clear message if upload failed, so user can try again
             return;
         }
-        const data = await res.json();
-        file_id = data.file_id;
     }
 
     if (!content && !file_id) return;
     $('#msgInput').value = '';
-    $('#msgInput').placeholder = ' ';
+    $('#msgInput').placeholder = ' '; // Reset placeholder
     fileInput.value = '';
     store.pendingAttachment = null; // Clear pending attachment
+    hideAttachmentPreview(); // Hide preview on success
 
     try {
         await apiFetch(`/api/channels/${store.currentChannelId}/messages`, {

@@ -165,6 +165,20 @@
 
             <div class="typing" id="typingIndicator" style="display:none">Someone is typing…</div>
 
+            <div id="attachmentPreview" class="attachment-preview hidden">
+                <div class="attachment-preview-thumb" id="attachPreviewThumb">
+                    <i class="bi bi-file-earmark"></i>
+                </div>
+                <div class="attachment-preview-info">
+                    <div class="attachment-preview-name" id="attachPreviewName"></div>
+                    <div class="attachment-preview-size" id="attachPreviewSize"></div>
+                </div>
+                <button id="btnRemoveAttachment" class="iconbtn" title="Remove attachment"
+                    style="width:28px;height:28px;font-size:14px;">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+
             <div class="inputbar" style="position: relative;">
                 <label class="iconbtn" title="Attach file" style="cursor:pointer">
                     <i class="bi bi-upload"></i>
@@ -325,7 +339,8 @@
                             <div class="row" style="align-items:center; flex-wrap:wrap">
                                 <input id="adminNewPassword" class="input grow" type="password"
                                     placeholder="New password" />
-                                <button id="btnAdminSetPassword" class="button" style="width:180px">Set Password</button>
+                                <button id="btnAdminSetPassword" class="button" style="width:180px">Set
+                                    Password</button>
                             </div>
                             <div class="row">
                                 <button id="btnAdminSaveUser" class="button">Save User Info</button>
@@ -341,7 +356,9 @@
                     </div>
                     <div style="gap: 8px;display: flex;flex-direction: column;" class="">
                         <div class="hint" style="min-width:120px">Roles</div>
-                        <select id="adminUserRoles" class="select grow" multiple="" size="6"><option value="96a3bab1-b126-4e7a-b0da-6a8e62d1a198">admin</option></select>
+                        <select id="adminUserRoles" class="select grow" multiple="" size="6">
+                            <option value="96a3bab1-b126-4e7a-b0da-6a8e62d1a198">admin</option>
+                        </select>
                         <button id="btnAdminSaveRoles" class="button alt" style="width:180px">Update Roles</button>
                     </div>
                 </section>
