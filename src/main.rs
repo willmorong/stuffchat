@@ -259,6 +259,14 @@ async fn main() -> std::io::Result<()> {
                     )
                     // Add top-level messages edit/delete endpoints
                     .route(
+                        "/messages/search",
+                        web::get().to(messages_routes::search_messages),
+                    )
+                    .route(
+                        "/messages/{id}/context",
+                        web::get().to(messages_routes::get_message_context),
+                    )
+                    .route(
                         "/messages/{id}",
                         web::patch().to(messages_routes::edit_message),
                     )

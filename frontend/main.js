@@ -28,6 +28,7 @@ import {
 } from './modules/invites.js';
 import { heartbeat, setupMembersModalListeners } from './modules/presence.js';
 import { initEmojiPicker } from './modules/emojis.js';
+import { initSearch } from './modules/search.js';
 
 // Dependency injection to break cycles
 setupApi(logout, connectWs);
@@ -236,6 +237,9 @@ function bindUI() {
 
     // Emoji Picker
     initEmojiPicker();
+
+    // Search modal
+    initSearch();
 
     window.addEventListener('beforeunload', () => {
         if (store.ws) try { store.ws.close(); } catch { }

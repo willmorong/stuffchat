@@ -50,7 +50,7 @@ export function renderChannelList() {
     });
 }
 
-export async function selectChannel(channelId) {
+export async function selectChannel(channelId, opts = {}) {
     if (store.currentChannelId && store.ws && store.ws.readyState === 1) {
         if (store.currentChannelId !== store.callChannelId) {
             store.ws.send(JSON.stringify({ type: 'leave', channel_id: store.currentChannelId }));
@@ -82,11 +82,41 @@ export async function selectChannel(channelId) {
         store.ws.send(JSON.stringify({ type: 'join', channel_id: channelId }));
     }
 
-    await fetchMessagesPage(channelId);
+    const focusMessageId = opts.focusMessageId || store.pendingFocusMessageId;
+    if (focusMessageId) {
+        try {
+            const ctx = await apiFetch(`/api/messages/${encodeURIComponent(focusMessageId)}/context?before=30&after=20`);
+            const contextMessages = Array.isArray(ctx?.messages) ? ctx.messages : [];
+            store.messages.set(channelId, contextMessages);
+            store.oldestMessageId.set(channelId, contextMessages.length ? contextMessages[0].id : null);
+            renderMessages(channelId);
 
-    const msgs = store.messages.get(channelId);
-    if (msgs && msgs.length > 0) {
-        markChannelRead(channelId, msgs[msgs.length - 1]);
+            const target = document.querySelector(`.msg[data-msg-id="${focusMessageId}"]`);
+            if (target) {
+                target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                target.classList.add('search-target');
+                setTimeout(() => target.classList.remove('search-target'), 2200);
+            }
+
+            if (contextMessages.length > 0) {
+                markChannelRead(channelId, contextMessages[contextMessages.length - 1]);
+            }
+        } catch (e) {
+            console.warn('Failed to load message context, falling back to latest page', e);
+            await fetchMessagesPage(channelId);
+            const msgs = store.messages.get(channelId);
+            if (msgs && msgs.length > 0) {
+                markChannelRead(channelId, msgs[msgs.length - 1]);
+            }
+        } finally {
+            store.pendingFocusMessageId = null;
+        }
+    } else {
+        await fetchMessagesPage(channelId);
+        const msgs = store.messages.get(channelId);
+        if (msgs && msgs.length > 0) {
+            markChannelRead(channelId, msgs[msgs.length - 1]);
+        }
     }
 
     enableComposer(true);

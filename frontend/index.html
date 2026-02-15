@@ -99,7 +99,10 @@
             <div class="panel">
                 <div class="row" style="align-items: center; margin-bottom: 6px;">
                     <h3 style="padding: 6px;">Channels</h3>
-                    <button id="btnOpenCreateChannel" class="iconbtn" title="Create Channel" style="margin-left: auto;">
+                    <button id="btnOpenSearch" class="iconbtn" title="Search messages" style="margin-left: auto;">
+                        <i class="bi bi-search"></i>
+                    </button>
+                    <button id="btnOpenCreateChannel" class="iconbtn" title="Create Channel">
                         <i class="bi bi-plus-lg"></i>
                     </button>
                 </div>
@@ -542,6 +545,30 @@
                 <section class="panel">
                     <h3>Members</h3>
                     <div id="membersList" class="members-list"></div>
+                </section>
+            </div>
+        </div>
+    </div>
+    <!-- Search Modal -->
+    <div id="searchModal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-card glass search-modal">
+            <div class="modal-header">
+                <div class="brand small"><i class="bi bi-search"></i> Search Messages</div>
+                <button id="btnCloseSearch" class="iconbtn" title="Close"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <div class="modal-content">
+                <section class="panel">
+                    <div class="row">
+                        <input id="searchInput" class="input grow"
+                            placeholder='Search messages (e.g. from:will before:2026-02-01 has:attachment "error text")' />
+                    </div>
+                    <div id="searchStatus" class="hint" style="margin-top: 8px;">
+                        Modifiers: from:, before:, after:, in:, has:attachment
+                    </div>
+                </section>
+                <section class="panel">
+                    <div id="searchResults" class="search-results"></div>
                 </section>
             </div>
         </div>

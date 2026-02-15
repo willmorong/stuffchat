@@ -50,6 +50,16 @@ export const store = {
     customEmojis: new Map(),
     // Clock sync: offset = serverTime - clientTime (positive means server is ahead)
     timeOffset: 0,
+    // Search modal state
+    search: {
+        query: '',
+        results: [],
+        nextCursor: null,
+        loading: false,
+        error: '',
+        requestSeq: 0,
+    },
+    pendingFocusMessageId: null,
 };
 
 export function setPendingAttachment(file) {

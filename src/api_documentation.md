@@ -56,6 +56,8 @@ All endpoints below require `Authorization: Bearer <access_token>` header.
 ### Messages
 - `GET /api/channels/{id}/messages`: List messages. Query: `?before=<message_id>&limit=50`.
 - `POST /api/channels/{id}/messages`: Post message. Body: `{ "content": "..." (opt), "file_id": "..." (opt) }`
+- `GET /api/messages/search`: Search messages across readable channels. Query: `?q=<query>&tz=<offset>&limit=25&cursor=<token>` (cursor optional, `tz` required for date-only modifiers).
+- `GET /api/messages/{id}/context`: Load a window of messages around a specific message. Query: `?before=30&after=20`.
 - `PATCH /api/messages/{id}`: Edit message. Body: `{ "content": "..." }`
 - `DELETE /api/messages/{id}`: Delete message.
 ### Files
@@ -200,6 +202,50 @@ Returned by `POST /api/auth/register`, `/login`, `/refresh`:
 **`POST /api/channels/{id}/messages`** — Returns:
 ```json
 { "id": "string" }
+```
+**`GET /api/messages/search`** — Returns search hits:
+```json
+{
+  "results": [
+    {
+      "id": "string",
+      "channel_id": "string",
+      "channel_name": "string",
+      "user_id": "string",
+      "username": "string",
+      "content_preview": "string",
+      "has_attachment": true,
+      "created_at": "timestamp"
+    }
+  ],
+  "next_cursor": "string?"
+}
+```
+> Search supports modifiers: `from:username`, `before:date|timestamp`, `after:date|timestamp`, `in:channel`, and `has:attachment`.  
+> Date-only modifiers (like `before:2026-02-01`) require `tz` and use the client's local midnight boundary.  
+> `tz` is a UTC offset string such as `-08:00`.  
+> Results are always restricted to channels where the caller has `can_read = 1`.
+
+**`GET /api/messages/{id}/context`** — Returns:
+```json
+{
+  "channel_id": "string",
+  "anchor_message_id": "string",
+  "messages": [
+    {
+      "id": "string",
+      "channel_id": "string",
+      "user_id": "string",
+      "content": "string?",
+      "file_url": "string?",
+      "filename": "string?",
+      "file_size": 12345,
+      "created_at": "timestamp",
+      "edited_at": "timestamp?",
+      "reactions": []
+    }
+  ]
+}
 ```
 **`PATCH /api/messages/{id}`**, **`DELETE /api/messages/{id}`** — Return `200 OK` with an empty body.
 ### Reactions
