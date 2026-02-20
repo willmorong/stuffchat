@@ -30,7 +30,7 @@ struct SearchCursor {
     id: String,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct SearchFilters {
     terms: Vec<String>,
     from_username: Option<String>,
