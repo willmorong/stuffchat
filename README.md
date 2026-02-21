@@ -14,6 +14,9 @@ Frontend is plain vanilla HTML/CSS/JS. Database is SQLite using sqlx to talk to 
 
 ## Installation
 
+Install Rust to compile from source, then install SQLite (at least 3.9.0 for FTS5) to run your backend database. 
+(I'm also using Caddy as a reverse-proxy for easy HTTPS support, which might be needed for WebRTC and WebSocket.)
+
 Clone the repo and change the address in [config.toml](config.toml) to your server's address. Then run `cargo run --release` to start the server. It's all one binary, so you can also run `cargo build --release` to build it and put it in a separate folder.
 
 ### Admin bootstrap
