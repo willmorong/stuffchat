@@ -57,6 +57,7 @@ All endpoints below require `Authorization: Bearer <access_token>` header.
 - `GET /api/channels/{id}/messages`: List messages. Query: `?before=<message_id>&limit=50`.
 - `POST /api/channels/{id}/messages`: Post message. Body: `{ "content": "..." (opt), "file_id": "..." (opt), "replying_to": "..." (opt) }`
 - `GET /api/messages/search`: Search messages across readable channels. Query: `?q=<query>&tz=<offset>&limit=25&cursor=<token>` (cursor optional, `tz` required for date-only modifiers).
+- `GET /api/messages/{id}`: Get message by ID.
 - `GET /api/messages/{id}/context`: Load a window of messages around a specific message. Query: `?before=30&after=20`.
 - `PATCH /api/messages/{id}`: Edit message. Body: `{ "content": "..." }`
 - `DELETE /api/messages/{id}`: Delete message.

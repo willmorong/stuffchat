@@ -12,9 +12,9 @@ mod ws;
 use crate::config::Config;
 use crate::db::Db;
 use crate::routes::{
-    admin as admin_routes, auth as auth_routes, channels as channels_routes, emojis as emojis_routes,
-    files as files_routes, invites as invites_routes, messages as messages_routes,
-    reactions as reactions_routes, users as users_routes,
+    admin as admin_routes, auth as auth_routes, channels as channels_routes,
+    emojis as emojis_routes, files as files_routes, invites as invites_routes,
+    messages as messages_routes, reactions as reactions_routes, users as users_routes,
 };
 use actix::Actor;
 use actix_cors::Cors;
@@ -46,21 +46,25 @@ async fn bootstrap_admin(db: &Db, ident: &str) -> Result<(), errors::ApiError> {
     } else {
         let id = uuid::Uuid::new_v4().to_string();
         let created_at = chrono::Utc::now();
-        sqlx::query("INSERT INTO roles(id, name, permissions, created_at) VALUES (?, 'admin', 0, ?)")
-            .bind(&id)
-            .bind(created_at)
-            .execute(&db.0)
-            .await?;
+        sqlx::query(
+            "INSERT INTO roles(id, name, permissions, created_at) VALUES (?, 'admin', 0, ?)",
+        )
+        .bind(&id)
+        .bind(created_at)
+        .execute(&db.0)
+        .await?;
         log::info!("Admin bootstrap: created admin role id={}", id);
         id
     };
 
-    let user_row = sqlx::query("SELECT id, username, email FROM users WHERE id = ? OR username = ? OR email = ? LIMIT 1")
-        .bind(ident)
-        .bind(ident)
-        .bind(ident)
-        .fetch_optional(&db.0)
-        .await?;
+    let user_row = sqlx::query(
+        "SELECT id, username, email FROM users WHERE id = ? OR username = ? OR email = ? LIMIT 1",
+    )
+    .bind(ident)
+    .bind(ident)
+    .bind(ident)
+    .fetch_optional(&db.0)
+    .await?;
 
     let Some(user_row) = user_row else {
         log::warn!("Admin bootstrap: user not found for ident={}", ident);
@@ -257,7 +261,6 @@ async fn main() -> std::io::Result<()> {
                                 web::post().to(messages_routes::post_message),
                             ),
                     )
-                    // Add top-level messages edit/delete endpoints
                     .route(
                         "/messages/search",
                         web::get().to(messages_routes::search_messages),
@@ -265,6 +268,10 @@ async fn main() -> std::io::Result<()> {
                     .route(
                         "/messages/{id}/context",
                         web::get().to(messages_routes::get_message_context),
+                    )
+                    .route(
+                        "/messages/{id}",
+                        web::get().to(messages_routes::get_message),
                     )
                     .route(
                         "/messages/{id}",

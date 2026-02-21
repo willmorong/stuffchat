@@ -618,6 +618,47 @@ pub async fn get_message_context(
     })))
 }
 
+pub async fn get_message(
+    db: web::Data<Db>,
+    user: AuthUser,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ApiError> {
+    let id = path.into_inner();
+    let row = sqlx::query(
+        "SELECT m.id, m.channel_id, m.user_id, m.content, m.file_id, m.created_at, m.edited_at, m.replying_to, f.original_name, f.size_bytes
+         FROM messages m
+         LEFT JOIN files f ON f.id = m.file_id
+         WHERE m.id = ? AND m.deleted_at IS NULL",
+    )
+    .bind(&id)
+    .fetch_optional(&db.0)
+    .await?;
+
+    let row = row.ok_or(ApiError::NotFound)?;
+    let channel_id: String = row.get("channel_id");
+
+    let m =
+        sqlx::query("SELECT can_read FROM channel_members WHERE channel_id = ? AND user_id = ?")
+            .bind(&channel_id)
+            .bind(&user.user_id)
+            .fetch_optional(&db.0)
+            .await?;
+    let m = m.ok_or(ApiError::Forbidden)?;
+    if m.get::<i64, _>("can_read") == 0 {
+        return Err(ApiError::Forbidden);
+    }
+
+    let msg_ids = vec![id.clone()];
+    let reactions_map = collect_reactions(&db, &msg_ids).await?;
+    let mut messages = serialize_message_rows(vec![row], &reactions_map);
+
+    if let Some(msg) = messages.pop() {
+        Ok(HttpResponse::Ok().json(msg))
+    } else {
+        Err(ApiError::NotFound)
+    }
+}
+
 #[derive(Deserialize)]
 pub struct PostMessageReq {
     pub content: Option<String>,

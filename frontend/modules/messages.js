@@ -70,6 +70,48 @@ export async function loadOlder() {
     await fetchMessagesPage(chan, before);
 }
 
+async function jumpToMessageContext(channelId, messageId) {
+    try {
+        const ctx = await apiFetch(`/api/messages/${encodeURIComponent(messageId)}/context?before=30&after=20`);
+        const contextMessages = Array.isArray(ctx?.messages) ? ctx.messages : [];
+        store.messages.set(channelId, contextMessages);
+        store.oldestMessageId.set(channelId, contextMessages.length ? contextMessages[0].id : null);
+        renderMessages(channelId);
+        addJumpToLatestButton();
+
+        const target = document.querySelector(`.msg[data-msg-id="${messageId}"]`);
+        if (target) {
+            target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            target.classList.add('search-target');
+            setTimeout(() => target.classList.remove('search-target'), 2200);
+        }
+    } catch (e) {
+        console.warn('Failed to load message context', e);
+    }
+}
+
+function addJumpToLatestButton() {
+    const wrap = $('#messages');
+    // Remove existing jump button if present
+    const existing = wrap.querySelector('#jumpToLatest');
+    if (existing) existing.remove();
+
+    const btn = el('div', {
+        class: 'load-older', id: 'jumpToLatest',
+        style: 'position:sticky; bottom:0; z-index:10;',
+        onclick: async () => {
+            const chan = store.currentChannelId;
+            store.messages.set(chan, []);
+            store.oldestMessageId.set(chan, null);
+            await fetchMessagesPage(chan);
+            scrollToBottom();
+        }
+    }, [
+        el('i', { class: 'bi bi-chevron-down' }), ' Jump to latest'
+    ]);
+    wrap.appendChild(btn);
+}
+
 function renderAttachment(message) {
     const box = el('div', { class: 'attachment' }, []);
     const url = message.file_url
@@ -354,36 +396,86 @@ export function renderMessageItem(m) {
         const chanMsgs = store.messages.get(m.channel_id) || [];
         const refMsg = chanMsgs.find(msg => msg.id === m.replying_to);
 
-        let replyText = 'Original message not found';
+        let replyText = refMsg ? (refMsg.content || (refMsg.filename ? '[Attachment]' : '')) : 'Loading...';
         let replyUser = 'Unknown';
 
         if (refMsg) {
-            let uName = 'Unknown';
             if (refMsg.user_id === store.user?.id) {
-                uName = store.user?.username || 'You';
+                replyUser = store.user?.username || 'You';
             } else {
                 const u = store.users.get(refMsg.user_id);
-                if (u) uName = u.username;
+                if (u) replyUser = u.username;
             }
-            replyUser = uName;
-            replyText = refMsg.content || (refMsg.filename ? '[Attachment]' : '');
+        }
+
+        if (!refMsg) {
+            // Fetch the original message async; use data attribute to update the DOM
+            // because fetchUser -> renderMessages may re-render and orphan element refs
+            apiFetch(`/api/messages/${m.replying_to}`).then(fetchedMsg => {
+                // Cache in a lightweight map so subsequent re-renders pick it up
+                if (!store._replyCache) store._replyCache = new Map();
+                store._replyCache.set(m.replying_to, fetchedMsg);
+                // Find indicator in DOM by data attribute and update
+                const indicator = document.querySelector(`.reply-indicator[data-reply-to="${m.replying_to}"]`);
+                if (!indicator) return;
+                const userNode = indicator.querySelector('.reply-user');
+                const textNode = indicator.querySelector('.reply-text');
+                if (!userNode || !textNode) return;
+                let fUser = 'Unknown';
+                if (fetchedMsg.user_id === store.user?.id) {
+                    fUser = store.user?.username || 'You';
+                } else {
+                    const u = store.users.get(fetchedMsg.user_id);
+                    if (u) fUser = u.username;
+                }
+                userNode.textContent = fUser + ':';
+                textNode.textContent = fetchedMsg.content || (fetchedMsg.filename ? '[Attachment]' : '');
+            }).catch(() => {
+                if (!store._replyCache) store._replyCache = new Map();
+                store._replyCache.set(m.replying_to, null);
+                const indicator = document.querySelector(`.reply-indicator[data-reply-to="${m.replying_to}"]`);
+                if (!indicator) return;
+                const userNode = indicator.querySelector('.reply-user');
+                const textNode = indicator.querySelector('.reply-text');
+                if (userNode) userNode.textContent = 'Unknown:';
+                if (textNode) textNode.textContent = 'Original message not found';
+            });
+        }
+
+        // On re-render, check the cache for previously fetched replies
+        if (!refMsg && store._replyCache && store._replyCache.has(m.replying_to)) {
+            const cached = store._replyCache.get(m.replying_to);
+            if (cached) {
+                replyText = cached.content || (cached.filename ? '[Attachment]' : '');
+                if (cached.user_id === store.user?.id) {
+                    replyUser = store.user?.username || 'You';
+                } else {
+                    const u = store.users.get(cached.user_id);
+                    if (u) replyUser = u.username;
+                }
+            } else {
+                replyText = 'Original message not found';
+            }
         }
 
         replyIndicator = el('div', {
             class: 'reply-indicator',
+            'data-reply-to': m.replying_to,
             style: 'font-size:12px; color:var(--text-dim); margin-bottom:4px; display:flex; align-items:center; gap:6px; cursor:pointer;',
-            onclick: () => {
+            onclick: async () => {
                 const elTarget = document.querySelector(`.msg[data-msg-id="${m.replying_to}"]`);
                 if (elTarget) {
                     elTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     elTarget.classList.add('search-target');
                     setTimeout(() => elTarget.classList.remove('search-target'), 2000);
+                } else {
+                    jumpToMessageContext(m.channel_id, m.replying_to);
                 }
             }
         }, [
             el('i', { class: 'bi bi-reply' }),
-            el('strong', {}, replyUser + ':'),
-            el('span', { style: 'white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:200px;' }, replyText)
+            el('strong', { class: 'reply-user' }, replyUser + ':'),
+            el('span', { class: 'reply-text', style: 'white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:200px;' }, replyText)
         ]);
     }
 
