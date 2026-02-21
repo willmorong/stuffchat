@@ -9,6 +9,9 @@ Frontend is plain vanilla HTML/CSS/JS. Database is SQLite using sqlx to talk to 
 - Public and private channels
 - Voice calls
 - Multi-person simulatenous screen sharing at higher quality than Discord Nitro
+- Message search
+- Custom emojis and reactions
+- Message replies and edits
 - Synced playlists in calls for listening parties with auto-download
 - Invite codes and user controls
 
@@ -17,14 +20,14 @@ Frontend is plain vanilla HTML/CSS/JS. Database is SQLite using sqlx to talk to 
 Install Rust to compile from source, then install SQLite (at least 3.9.0 for FTS5) to run your backend database. 
 (I'm also using Caddy as a reverse-proxy for easy HTTPS support, which might be needed for WebRTC and WebSocket.)
 
-Clone the repo and change the address in [config.toml](config.toml) to your server's address. Then run `cargo run --release` to start the server. It's all one binary, so you can also run `cargo build --release` to build it and put it in a separate folder.
+Clone the repo and change the address in [config.toml](config.toml) to your server's address. Then run `cargo run --release` to start the server. It's all one binary, so you can also run `cargo build --release` to build it and put it in a separate folder as "./stuffchat" (or whatever you want to name it).
 
 ### Admin bootstrap
 
 On startup you can grant the `admin` role to a user (and create the role if it doesn't exist) with:
 
 ```
-cargo run --release -- --admin <user-id|username|email>
+./stuffchat --admin <user-id|username|email>
 ```
 
 ## Configuration
