@@ -46,6 +46,8 @@ export const store = {
     isDeafened: false,
     // Pending attachment from paste/drop
     pendingAttachment: null,
+    // Message being replied to
+    pendingReplyTo: null,
     // Custom Emojis: name -> { name, created_at, created_by }
     customEmojis: new Map(),
     // Clock sync: offset = serverTime - clientTime (positive means server is ahead)

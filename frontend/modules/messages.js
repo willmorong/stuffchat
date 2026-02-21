@@ -1,5 +1,14 @@
 import { store } from './store.js';
 import { apiFetch } from './api.js';
+
+window.addEventListener('DOMContentLoaded', () => {
+    const btnCancelReply = $('#btnCancelReply');
+    if (btnCancelReply) {
+        btnCancelReply.addEventListener('click', () => {
+            hideReplyPreview();
+        });
+    }
+});
 import { connectWs } from './socket.js';
 import { $, el, absFileUrl, buildFileUrl, setIf, truncateId, presenceClass, localizeDate, replaceEmojisAndLinkify, isEmojiOnly, formatFileSize } from './utils.js';
 import { prefetchUsers } from './users.js';
@@ -270,6 +279,43 @@ function openImagePreview(url, filename) {
     };
 }
 
+export function showReplyPreview(message) {
+    store.pendingReplyTo = message;
+    const preview = $('#replyPreview');
+    const nameEl = $('#replyPreviewName');
+    const textEl = $('#replyPreviewText');
+    const input = $('#msgInput');
+
+    if (!preview) return;
+
+    let username = 'Unknown';
+    if (message.user_id === store.user?.id) {
+        username = store.user?.username || 'You';
+    } else {
+        const user = store.users.get(message.user_id);
+        if (user) username = user.username;
+    }
+
+    nameEl.textContent = `Replying to ${username}`;
+
+    // Create a plain text preview
+    let previewText = message.content || '';
+    if (message.file_id || message.file_url) {
+        previewText = previewText ? `[Attachment] ${previewText}` : '[Attachment]';
+    }
+    textEl.textContent = previewText;
+
+    preview.classList.remove('hidden');
+
+    if (input) input.focus();
+}
+
+export function hideReplyPreview() {
+    store.pendingReplyTo = null;
+    const preview = $('#replyPreview');
+    if (preview) preview.classList.add('hidden');
+}
+
 export function renderMessageItem(m) {
     const own = (m.user_id === (store.user && store.user.id));
     const avatar = el('div', { class: 'avatar' });
@@ -302,7 +348,52 @@ export function renderMessageItem(m) {
     const attach = hasAttach ? renderAttachment(m) : null;
     const reactionsRow = renderReactions(m);
 
+    let replyIndicator = null;
+    if (m.replying_to) {
+        // Try to find the referenced message in the store
+        const chanMsgs = store.messages.get(m.channel_id) || [];
+        const refMsg = chanMsgs.find(msg => msg.id === m.replying_to);
+
+        let replyText = 'Original message not found';
+        let replyUser = 'Unknown';
+
+        if (refMsg) {
+            let uName = 'Unknown';
+            if (refMsg.user_id === store.user?.id) {
+                uName = store.user?.username || 'You';
+            } else {
+                const u = store.users.get(refMsg.user_id);
+                if (u) uName = u.username;
+            }
+            replyUser = uName;
+            replyText = refMsg.content || (refMsg.filename ? '[Attachment]' : '');
+        }
+
+        replyIndicator = el('div', {
+            class: 'reply-indicator',
+            style: 'font-size:12px; color:var(--text-dim); margin-bottom:4px; display:flex; align-items:center; gap:6px; cursor:pointer;',
+            onclick: () => {
+                const elTarget = document.querySelector(`.msg[data-msg-id="${m.replying_to}"]`);
+                if (elTarget) {
+                    elTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    elTarget.classList.add('search-target');
+                    setTimeout(() => elTarget.classList.remove('search-target'), 2000);
+                }
+            }
+        }, [
+            el('i', { class: 'bi bi-reply' }),
+            el('strong', {}, replyUser + ':'),
+            el('span', { style: 'white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:200px;' }, replyText)
+        ]);
+    }
+
     const tools = el('div', { class: 'tools' }, []);
+
+    // Reply button
+    tools.append(
+        el('button', { class: 'iconbtn', title: 'Reply', onclick: (e) => { e.stopPropagation(); showReplyPreview(m); } }, el('i', { class: 'bi bi-reply' }))
+    );
+
     // Reaction button for ALL messages
     tools.append(
         el('button', { class: 'iconbtn', title: 'React', onclick: (e) => { e.stopPropagation(); showReactionPicker(m.id, e.currentTarget); } }, el('i', { class: 'bi bi-emoji-smile' }))
@@ -314,8 +405,12 @@ export function renderMessageItem(m) {
         );
     }
 
+    const msgRightItems = [];
+    if (replyIndicator) msgRightItems.push(replyIndicator);
+    msgRightItems.push(meta, content, attach, reactionsRow);
+
     return el('div', { class: 'msg' + (own ? ' highlight' : ''), 'data-msg-id': m.id, 'data-user-id': m.user_id }, [
-        avatar, el('div', { class: 'msg-right' }, [meta, content, attach, reactionsRow]), tools
+        avatar, el('div', { class: 'msg-right' }, msgRightItems), tools
     ]);
 }
 
@@ -620,12 +715,14 @@ export async function sendMessage() {
     $('#msgInput').placeholder = ' '; // Reset placeholder
     fileInput.value = '';
     store.pendingAttachment = null; // Clear pending attachment
+    const replyingToId = store.pendingReplyTo ? store.pendingReplyTo.id : null;
     hideAttachmentPreview(); // Hide preview on success
+    hideReplyPreview(); // Hide reply preview on success
 
     try {
         await apiFetch(`/api/channels/${store.currentChannelId}/messages`, {
             method: 'POST',
-            body: JSON.stringify({ content: content || null, file_id: file_id || null })
+            body: JSON.stringify({ content: content || null, file_id: file_id || null, replying_to: replyingToId })
         });
     } catch (e) {
         alert('Send failed: ' + e.message);

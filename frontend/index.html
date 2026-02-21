@@ -168,15 +168,29 @@
 
             <div class="typing" id="typingIndicator" style="display:none">Someone is typing…</div>
 
-            <div id="attachmentPreview" class="attachment-preview hidden">
-                <div class="attachment-preview-thumb" id="attachPreviewThumb">
+            <div id="attachmentPreview" class="preview-bar hidden">
+                <div class="preview-bar-thumb" id="attachPreviewThumb">
                     <i class="bi bi-file-earmark"></i>
                 </div>
-                <div class="attachment-preview-info">
-                    <div class="attachment-preview-name" id="attachPreviewName"></div>
-                    <div class="attachment-preview-size" id="attachPreviewSize"></div>
+                <div class="preview-bar-info">
+                    <div class="preview-bar-name" id="attachPreviewName"></div>
+                    <div class="preview-bar-text" id="attachPreviewSize"></div>
                 </div>
                 <button id="btnRemoveAttachment" class="iconbtn" title="Remove attachment"
+                    style="width:28px;height:28px;font-size:14px;">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+
+            <div id="replyPreview" class="preview-bar hidden">
+                <div class="preview-bar-thumb">
+                    <i class="bi bi-reply-fill"></i>
+                </div>
+                <div class="preview-bar-info">
+                    <div class="preview-bar-name" id="replyPreviewName">Replying to username</div>
+                    <div class="preview-bar-text" id="replyPreviewText">Message preview text</div>
+                </div>
+                <button id="btnCancelReply" class="iconbtn" title="Cancel reply"
                     style="width:28px;height:28px;font-size:14px;">
                     <i class="bi bi-x-lg"></i>
                 </button>

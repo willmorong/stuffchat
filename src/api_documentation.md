@@ -55,7 +55,7 @@ All endpoints below require `Authorization: Bearer <access_token>` header.
 - `POST /api/channels/{id}/members`: Add/remove members. Body: `{ "add": [...], "remove": [...] }`
 ### Messages
 - `GET /api/channels/{id}/messages`: List messages. Query: `?before=<message_id>&limit=50`.
-- `POST /api/channels/{id}/messages`: Post message. Body: `{ "content": "..." (opt), "file_id": "..." (opt) }`
+- `POST /api/channels/{id}/messages`: Post message. Body: `{ "content": "..." (opt), "file_id": "..." (opt), "replying_to": "..." (opt) }`
 - `GET /api/messages/search`: Search messages across readable channels. Query: `?q=<query>&tz=<offset>&limit=25&cursor=<token>` (cursor optional, `tz` required for date-only modifiers).
 - `GET /api/messages/{id}/context`: Load a window of messages around a specific message. Query: `?before=30&after=20`.
 - `PATCH /api/messages/{id}`: Edit message. Body: `{ "content": "..." }`
@@ -187,6 +187,7 @@ Returned by `POST /api/auth/register`, `/login`, `/refresh`:
     "file_size": 12345,
     "created_at": "timestamp",
     "edited_at": "timestamp?",
+    "replying_to": "string?",
     "reactions": [
       {
         "emoji": "👍",
@@ -215,7 +216,8 @@ Returned by `POST /api/auth/register`, `/login`, `/refresh`:
       "username": "string",
       "content_preview": "string",
       "has_attachment": true,
-      "created_at": "timestamp"
+      "created_at": "timestamp",
+      "replying_to": "string?"
     }
   ],
   "next_cursor": "string?"
@@ -242,6 +244,7 @@ Returned by `POST /api/auth/register`, `/login`, `/refresh`:
       "file_size": 12345,
       "created_at": "timestamp",
       "edited_at": "timestamp?",
+      "replying_to": "string?",
       "reactions": []
     }
   ]
@@ -374,7 +377,7 @@ Sent as JSON strings.
 | Type | Payload | Description |
 |------|---------|-------------|
 | `connection_metadata` | `{ "session_id": "...", "server_time": "..." }` | Sent on connection |
-| `message_created` | `{ "id": "...", "channel_id": "...", "user_id": "...", "content": "...", "file_url": "...", "created_at": "..." }` | New message |
+| `message_created` | `{ "id": "...", "channel_id": "...", "user_id": "...", "content": "...", "file_url": "...", "created_at": "...", "replying_to": "..." }` | New message |
 | `message_edited` | `{ "id": "...", "channel_id": "...", "content": "...", "edited_at": "..." }` | Message edited |
 | `message_deleted` | `{ "id": "...", "channel_id": "...", "deleted_at": "..." }` | Message deleted |
 | `typing` | `{ "channel_id": "...", "user_id": "...", "started": bool }` | User typing status |

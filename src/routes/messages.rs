@@ -330,6 +330,7 @@ fn serialize_message_rows(
                 "file_size": size_bytes,
                 "created_at": r.get::<DateTime<Utc>,_>("created_at"),
                 "edited_at": r.get::<Option<DateTime<Utc>>,_>("edited_at"),
+                "replying_to": r.get::<Option<String>,_>("replying_to"),
                 "reactions": reactions,
             })
         })
@@ -380,7 +381,7 @@ pub async fn list_messages(
             .map(|r| (r.get("created_at"), r.get("id")))
             .unwrap_or_else(|| (Utc::now(), before_id.clone()));
         sqlx::query(
-            "SELECT m.id, m.channel_id, m.user_id, m.content, m.file_id, m.created_at, m.edited_at, f.original_name, f.size_bytes
+            "SELECT m.id, m.channel_id, m.user_id, m.content, m.file_id, m.created_at, m.edited_at, m.replying_to, f.original_name, f.size_bytes
              FROM messages m
              LEFT JOIN files f ON f.id = m.file_id
              WHERE m.channel_id = ? AND m.deleted_at IS NULL
@@ -396,7 +397,7 @@ pub async fn list_messages(
             .await?
     } else {
         sqlx::query(
-            "SELECT m.id, m.channel_id, m.user_id, m.content, m.file_id, m.created_at, m.edited_at, f.original_name, f.size_bytes
+            "SELECT m.id, m.channel_id, m.user_id, m.content, m.file_id, m.created_at, m.edited_at, m.replying_to, f.original_name, f.size_bytes
              FROM messages m
              LEFT JOIN files f ON f.id = m.file_id
              WHERE m.channel_id = ? AND m.deleted_at IS NULL
@@ -431,7 +432,7 @@ pub async fn search_messages(
     };
 
     let mut sql = String::from(
-        "SELECT m.id, m.channel_id, c.name AS channel_name, m.user_id, u.username, m.content, m.file_id, m.created_at
+        "SELECT m.id, m.channel_id, c.name AS channel_name, m.user_id, u.username, m.content, m.file_id, m.created_at, m.replying_to
          FROM messages m
          INNER JOIN channels c ON c.id = m.channel_id
          INNER JOIN channel_members cm ON cm.channel_id = m.channel_id
@@ -521,6 +522,7 @@ pub async fn search_messages(
                 "content_preview": preview,
                 "has_attachment": r.get::<Option<String>,_>("file_id").is_some(),
                 "created_at": r.get::<DateTime<Utc>,_>("created_at"),
+                "replying_to": r.get::<Option<String>,_>("replying_to"),
             })
         })
         .collect();
@@ -542,7 +544,7 @@ pub async fn get_message_context(
     let after_limit = q.after.unwrap_or(20).clamp(1, 100);
 
     let anchor = sqlx::query(
-        "SELECT m.id, m.channel_id, m.user_id, m.content, m.file_id, m.created_at, m.edited_at, f.original_name, f.size_bytes
+        "SELECT m.id, m.channel_id, m.user_id, m.content, m.file_id, m.created_at, m.edited_at, m.replying_to, f.original_name, f.size_bytes
          FROM messages m
          LEFT JOIN files f ON f.id = m.file_id
          WHERE m.id = ? AND m.deleted_at IS NULL",
@@ -567,7 +569,7 @@ pub async fn get_message_context(
     }
 
     let mut before_rows = sqlx::query(
-        "SELECT m.id, m.channel_id, m.user_id, m.content, m.file_id, m.created_at, m.edited_at, f.original_name, f.size_bytes
+        "SELECT m.id, m.channel_id, m.user_id, m.content, m.file_id, m.created_at, m.edited_at, m.replying_to, f.original_name, f.size_bytes
          FROM messages m
          LEFT JOIN files f ON f.id = m.file_id
          WHERE m.channel_id = ? AND m.deleted_at IS NULL
@@ -585,7 +587,7 @@ pub async fn get_message_context(
     before_rows.reverse();
 
     let after_rows = sqlx::query(
-        "SELECT m.id, m.channel_id, m.user_id, m.content, m.file_id, m.created_at, m.edited_at, f.original_name, f.size_bytes
+        "SELECT m.id, m.channel_id, m.user_id, m.content, m.file_id, m.created_at, m.edited_at, m.replying_to, f.original_name, f.size_bytes
          FROM messages m
          LEFT JOIN files f ON f.id = m.file_id
          WHERE m.channel_id = ? AND m.deleted_at IS NULL
@@ -620,6 +622,7 @@ pub async fn get_message_context(
 pub struct PostMessageReq {
     pub content: Option<String>,
     pub file_id: Option<String>,
+    pub replying_to: Option<String>,
 }
 
 pub async fn post_message(
@@ -676,11 +679,10 @@ pub async fn post_message(
 
     let id = uuid::Uuid::new_v4().to_string();
     let now = Utc::now();
-    sqlx::query("INSERT INTO messages(id, channel_id, user_id, content, file_id, created_at) VALUES (?, ?, ?, ?, ?, ?)")
-        .bind(&id).bind(&channel_id).bind(&user.user_id).bind(&body.content).bind(&body.file_id).bind(now)
+    sqlx::query("INSERT INTO messages(id, channel_id, user_id, content, file_id, created_at, replying_to) VALUES (?, ?, ?, ?, ?, ?, ?)")
+        .bind(&id).bind(&channel_id).bind(&user.user_id).bind(&body.content).bind(&body.file_id).bind(now).bind(&body.replying_to)
         .execute(&db.0).await?;
 
-    // Broadcast to WS
     // Broadcast to WS
     let payload = serde_json::json!({
         "type": "message_created",
@@ -692,6 +694,7 @@ pub async fn post_message(
         "filename": filename,
         "file_size": file_size,
         "created_at": now,
+        "replying_to": body.replying_to,
     })
     .to_string();
     chat.do_send(Broadcast {
