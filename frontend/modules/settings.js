@@ -65,6 +65,49 @@ export function renderEmojiList() {
     });
 }
 
+async function updateMediaCapabilities() {
+    const videoCodecs = [
+        { name: 'VP8', contentType: 'video/VP8' },
+        { name: 'VP9', contentType: 'video/VP9; profile-id=0' },
+        { name: 'H264', contentType: 'video/H264; profile-level-id=42e01f' },
+        { name: 'AV1', contentType: 'video/AV1' }
+    ];
+    const audioCodecs = [
+        { name: 'Opus', contentType: 'audio/opus' }
+    ];
+
+    const testCodec = async (codec, isVideo) => {
+        try {
+            const config = { type: 'webrtc' };
+            if (isVideo) {
+                config.video = { contentType: codec.contentType, width: 1280, height: 720, bitrate: 1000000, framerate: 30 };
+            } else {
+                config.audio = { contentType: codec.contentType, channels: 2, bitrate: 48000, samplerate: 48000 };
+            }
+            const dec = await navigator.mediaCapabilities.decodingInfo(config);
+            const enc = await navigator.mediaCapabilities.encodingInfo(config);
+
+            let features = [];
+            if (dec.powerEfficient) features.push('Dec');
+            if (enc.powerEfficient) features.push('Enc');
+            if (features.length === 0) {
+                if (dec.supported || enc.supported) return `${codec.name} (SW)`;
+                return `${codec.name} (No)`;
+            }
+            return `${codec.name} (HW ${features.join('/')})`;
+        } catch (e) {
+            console.error('MediaCap error:', e);
+            return `${codec.name} (Err)`;
+        }
+    };
+
+    const vCodecs = await Promise.all(videoCodecs.map(c => testCodec(c, true)));
+    const aCodecs = await Promise.all(audioCodecs.map(c => testCodec(c, false)));
+
+    setIf('#debugHwVideo', 'textContent', vCodecs.join(', '));
+    setIf('#debugHwAudio', 'textContent', aCodecs.join(', '));
+}
+
 export function openSettings() {
     // Fill current values
     setIf('#profileUsername', 'value', store.user?.username || '');
@@ -96,6 +139,7 @@ export function openSettings() {
 
     // Debug information
     setIf('#debugUserAgent', 'textContent', navigator.userAgent);
+    updateMediaCapabilities().catch(console.error);
 
     renderEmojiList();
 
