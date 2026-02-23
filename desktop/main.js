@@ -22,6 +22,8 @@ if (process.platform === 'linux') {
     app.commandLine.appendSwitch('ignore-gpu-blocklist');
     app.commandLine.appendSwitch('enable-gpu-rasterization');
     app.commandLine.appendSwitch('enable-zero-copy');
+    app.commandLine.appendSwitch('enable-accelerated-video');
+    app.commandLine.appendSwitch('enable-accelerated-video-decode');
     app.commandLine.appendSwitch('disable-renderer-backgrounding');
     app.commandLine.appendSwitch('disable-background-timer-throttling');
 }

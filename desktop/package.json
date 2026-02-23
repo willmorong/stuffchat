@@ -1,6 +1,6 @@
 {
     "name": "stuffchat-desktop",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "description": "Desktop client for stuffchat",
     "main": "main.js",
     "scripts": {
@@ -18,7 +18,7 @@
         "electron-builder": "^26.7.0"
     },
     "build": {
-        "appId": "org.stuffcity.chat",
+        "appId": "org.willmorong.stuffchat",
         "productName": "stuffchat",
         "icon": "icon.png",
         "directories": {
