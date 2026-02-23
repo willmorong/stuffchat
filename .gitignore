@@ -2,7 +2,7 @@
 /temp
 /uploads
 stuffchat.sqlite3*
-Cargo.lock
 */node_modules/
 desktop/dist/
 .DS_Store
+Cargo.lock
