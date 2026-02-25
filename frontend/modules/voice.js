@@ -184,7 +184,18 @@ export function updateCallUI() {
                     avatar.appendChild(el('img', { src: buildFileUrl(u.avatar_file_id, 'avatar') }));
                 }
                 info.appendChild(avatar);
-                info.appendChild(el('div', { class: 'username' }, u?.username || uid));
+                let isConnected = uid === store.user.id;
+                if (!isConnected) {
+                    for (const [pcid, pc] of store.pcs) {
+                        if (pcid.startsWith(uid + ':') && pc.connectionState === 'connected') {
+                            isConnected = true;
+                            break;
+                        }
+                    }
+                }
+                const usernameEl = el('div', { class: 'username' }, u?.username || uid);
+                usernameEl.style.fontStyle = isConnected ? 'normal' : 'italic';
+                info.appendChild(usernameEl);
 
                 row.appendChild(info);
 
@@ -253,8 +264,20 @@ export function updateCallUI() {
                         avatar.innerHTML = '';
                     }
                 }
-                if (u && usernameEl && usernameEl.textContent !== u.username) {
-                    usernameEl.textContent = u.username;
+                if (usernameEl) {
+                    let isConnected = uid === store.user.id;
+                    if (!isConnected) {
+                        for (const [pcid, pc] of store.pcs) {
+                            if (pcid.startsWith(uid + ':') && pc.connectionState === 'connected') {
+                                isConnected = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (u && usernameEl.textContent !== u.username) {
+                        usernameEl.textContent = u.username;
+                    }
+                    usernameEl.style.fontStyle = isConnected ? 'normal' : 'italic';
                 }
             }
 
@@ -428,6 +451,7 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
 
     peerConnection.onconnectionstatechange = () => {
         console.log(`Connection State [${pcId}]: ${peerConnection.connectionState}`);
+        updateCallUI();
         if (peerConnection.connectionState === 'connected') {
             updateVideoGrid();
         }
@@ -553,6 +577,18 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
     }
 
     updateVideoGrid();
+
+    setTimeout(() => {
+        if (peerConnection.connectionState !== 'connected' && peerConnection.connectionState !== 'closed') {
+            const usersInCall = store.voiceUsers.get(store.callChannelId) || new Set();
+            if (Array.from(usersInCall).some(cid => cid.startsWith(targetUserId + ':'))) {
+                console.log(`[${pcId}] Connection timeout after 3s, retrying...`);
+                peerConnection.close();
+                cleanupPeerConnection(pcId);
+                createPeerConnection(targetUserId, targetSessionId, initiator);
+            }
+        }
+    }, 3000);
 
     return peerConnection;
 }
