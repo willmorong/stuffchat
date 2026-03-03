@@ -1,8 +1,12 @@
 /target
 /temp
 /uploads
+/bridge_secret
 stuffchat.sqlite3*
 */node_modules/
 desktop/dist/
 .DS_Store
 Cargo.lock
+bridge/.cursor.json
+bridge/.env
+bridge/__pycache__/

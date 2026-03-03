@@ -1,0 +1,1 @@
+"""Stuffchat Discord bridge package."""

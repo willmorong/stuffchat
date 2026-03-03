@@ -34,6 +34,22 @@ On startup you can grant the `admin` role to a user (and create the role if it d
 
 See [config.toml](config.toml) for configuration options.
 
+### Bridge
+
+Stuffchat can expose a small read-only bridge API for external bots such as the Discord bridge in [`bridge/`](bridge/).
+
+- Set `bridge_enabled = true` in [`config.toml`](config.toml).
+- On startup, Stuffchat will create `./bridge_secret` if it does not already exist.
+- Use the secret from that file as the bearer token for bridge clients.
+
+The bridge API is intended for trusted machine clients and currently exposes:
+
+- `GET /api/bridge/status`
+- `GET /api/bridge/events`
+- `POST /api/bridge/resolve`
+
+The included Discord bridge bot polls those endpoints and posts notices like `alice has joined call in #main` into one configured Discord text channel.
+
 ## License
 
 This project is licensed under the MIT license. (you can use it however but you have to credit me somewhere)

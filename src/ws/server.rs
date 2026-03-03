@@ -7,15 +7,17 @@ pub struct ChatServer {
     voice_participants: HashMap<String, HashSet<(String, String)>>, // channel_id -> set of (user_id, session_id)
     user_sessions: HashMap<String, HashMap<String, actix::Addr<super::session::WsSession>>>, // user_id -> { session_id -> addr }
     pub shareplay_states: HashMap<String, SharePlayState>,
+    bridge_runtime: Option<crate::bridge::BridgeRuntime>,
 }
 
 impl ChatServer {
-    pub fn new() -> Self {
+    pub fn new(bridge_runtime: Option<crate::bridge::BridgeRuntime>) -> Self {
         Self {
             rooms: HashMap::new(),
             voice_participants: HashMap::new(),
             user_sessions: HashMap::new(),
             shareplay_states: HashMap::new(),
+            bridge_runtime,
         }
     }
 }
@@ -254,6 +256,10 @@ impl Handler<Leave> for ChatServer {
                     let user_still_in_call = voice_users.iter().any(|(uid, _)| uid == &msg.user_id);
 
                     if !user_still_in_call {
+                        if let Some(bridge_runtime) = &self.bridge_runtime {
+                            bridge_runtime
+                                .record_call_left(msg.channel_id.clone(), msg.user_id.clone());
+                        }
                         // Broadcast voice_left only if no more sessions of this user are in the call
                         let payload = serde_json::json!({
                             "type": "voice_left",
@@ -315,7 +321,13 @@ impl Handler<JoinVoice> for ChatServer {
             .voice_participants
             .entry(msg.channel_id.clone())
             .or_default();
+        let user_already_in_call = voice_users.iter().any(|(uid, _)| uid == &msg.user_id);
         if voice_users.insert((msg.user_id.clone(), msg.session_id.clone())) {
+            if !user_already_in_call {
+                if let Some(bridge_runtime) = &self.bridge_runtime {
+                    bridge_runtime.record_call_joined(msg.channel_id.clone(), msg.user_id.clone());
+                }
+            }
             let payload = serde_json::json!({
                 "type": "voice_joined",
                 "channel_id": msg.channel_id,
@@ -345,6 +357,10 @@ impl Handler<LeaveVoice> for ChatServer {
                 let user_still_in_call = voice_users.iter().any(|(uid, _)| uid == &msg.user_id);
 
                 if !user_still_in_call {
+                    if let Some(bridge_runtime) = &self.bridge_runtime {
+                        bridge_runtime
+                            .record_call_left(msg.channel_id.clone(), msg.user_id.clone());
+                    }
                     let payload = serde_json::json!({
                         "type": "voice_left",
                         "channel_id": msg.channel_id,

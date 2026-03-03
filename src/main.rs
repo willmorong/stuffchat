@@ -1,30 +1,18 @@
-mod auth;
-mod config;
-mod db;
-mod errors;
-mod models;
-mod permissions;
-mod routes;
-mod shareplay;
-mod utils;
-mod ws;
-
-use crate::config::Config;
-use crate::db::Db;
-use crate::routes::{
-    admin as admin_routes, auth as auth_routes, channels as channels_routes,
-    emojis as emojis_routes, files as files_routes, invites as invites_routes,
-    messages as messages_routes, reactions as reactions_routes, users as users_routes,
-};
 use actix::Actor;
 use actix_cors::Cors;
 use actix_web::http::header;
 use actix_web::middleware::Logger;
 use actix_web::web::Data;
-use actix_web::{App, HttpServer, web};
+use actix_web::{App, HttpServer};
 use env_logger::Env;
 use sqlx::Row;
-use ws::server::ChatServer;
+use stuffchat::app;
+use stuffchat::auth;
+use stuffchat::bridge::{BridgeRuntime, bridge_secret_path, load_or_create_bridge_secret};
+use stuffchat::config::Config;
+use stuffchat::db::Db;
+use stuffchat::errors;
+use stuffchat::ws::server::ChatServer;
 
 fn parse_admin_arg() -> Option<String> {
     let mut args = std::env::args().skip(1);
@@ -91,7 +79,6 @@ async fn bootstrap_admin(db: &Db, ident: &str) -> Result<(), errors::ApiError> {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    // Init logger to show info by default, but can be overridden by RUST_LOG
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     let cfg = Config::from_env_config();
 
@@ -99,19 +86,26 @@ async fn main() -> std::io::Result<()> {
         .await
         .expect("database init failed");
 
+    let bridge_runtime = if cfg.bridge_enabled {
+        let secret =
+            load_or_create_bridge_secret(bridge_secret_path()).expect("bridge secret init failed");
+        Some(BridgeRuntime::new(secret))
+    } else {
+        None
+    };
+
     if let Some(admin_ident) = parse_admin_arg() {
         if let Err(e) = bootstrap_admin(&db, &admin_ident).await {
             log::error!("Admin bootstrap failed: {}", e);
         }
     }
 
-    let chat_server = ChatServer::new().start();
+    let chat_server = ChatServer::new(bridge_runtime.clone()).start();
     log::info!("Starting server at {}", cfg.listen);
 
-    // Background task: Cleanup refresh tokens
     let db_clone = db.clone();
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600)); // Every hour
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
         match auth::cleanup_refresh_tokens(&db_clone).await {
             Ok(count) => {
                 if count > 0 {
@@ -140,7 +134,6 @@ async fn main() -> std::io::Result<()> {
         }
     });
 
-    // Clean up temp folder on startup
     let temp_dir = std::path::Path::new("temp");
     if temp_dir.exists() {
         if let Err(e) = std::fs::remove_dir_all(temp_dir) {
@@ -149,7 +142,6 @@ async fn main() -> std::io::Result<()> {
             log::info!("Cleaned temp directory on startup");
         }
     }
-    // Recreate empty temp directory
     if let Err(e) = std::fs::create_dir_all(temp_dir) {
         log::warn!("Failed to create temp directory: {}", e);
     }
@@ -161,7 +153,7 @@ async fn main() -> std::io::Result<()> {
             .allowed_origin_fn(move |origin, _req| {
                 origin
                     .to_str()
-                    .map(|s| allowed_origins.iter().any(|o| o == s))
+                    .map(|value| allowed_origins.iter().any(|allowed| allowed == value))
                     .unwrap_or(false)
             })
             .allowed_methods(vec!["GET", "POST", "PATCH", "PUT", "DELETE"])
@@ -173,169 +165,18 @@ async fn main() -> std::io::Result<()> {
             .supports_credentials()
             .max_age(3600);
 
-        App::new()
+        let mut app = App::new()
             .wrap(Logger::default())
             .wrap(cors)
             .app_data(Data::new(cfg.clone()))
             .app_data(Data::new(db.clone()))
-            .app_data(Data::new(chat_server.clone()))
-            .service(
-                web::scope("/api")
-                    .route("/health", web::get().to(routes::health::health_check))
-                    .service(
-                        web::scope("/auth")
-                            .route("/register", web::post().to(auth_routes::register))
-                            .route("/login", web::post().to(auth_routes::login))
-                            .route("/refresh", web::post().to(auth_routes::refresh))
-                            .route("/logout", web::post().to(auth_routes::logout)),
-                    )
-                    .service(
-                        web::scope("/users")
-                            .route("", web::get().to(users_routes::list_users))
-                            .route("/me", web::get().to(users_routes::me))
-                            .route("/me", web::patch().to(users_routes::update_me))
-                            .route("/me/password", web::put().to(users_routes::change_password))
-                            .route("/me/avatar", web::put().to(users_routes::upload_avatar))
-                            .route("/{id}", web::get().to(users_routes::get_user))
-                            .route("/{id}/avatar", web::get().to(users_routes::get_user_avatar)),
-                    )
-                    .service(
-                        web::scope("/admin")
-                            .route("/users", web::get().to(admin_routes::list_users))
-                            .route("/users/{id}", web::patch().to(admin_routes::update_user))
-                            .route(
-                                "/users/{id}/password",
-                                web::put().to(admin_routes::set_user_password),
-                            )
-                            .route(
-                                "/users/{id}/avatar",
-                                web::put().to(admin_routes::upload_user_avatar),
-                            )
-                            .route(
-                                "/users/{id}/roles",
-                                web::put().to(admin_routes::update_user_roles),
-                            )
-                            .route("/roles", web::get().to(admin_routes::list_roles))
-                            .route("/roles", web::post().to(admin_routes::create_role))
-                            .route("/roles/{id}", web::delete().to(admin_routes::delete_role)),
-                    )
-                    .service(
-                        web::scope("/channels")
-                            .route("", web::get().to(channels_routes::list_channels))
-                            .route("", web::post().to(channels_routes::create_channel))
-                            .route("/unread", web::get().to(channels_routes::get_unread))
-                            .route("/{id}", web::patch().to(channels_routes::edit_channel))
-                            .route("/{id}", web::delete().to(channels_routes::delete_channel))
-                            .route("/{id}/read", web::post().to(channels_routes::mark_read))
-                            .route(
-                                "/{id}/notified",
-                                web::post().to(channels_routes::mark_notified),
-                            )
-                            .route(
-                                "/{id}/ownership",
-                                web::get().to(channels_routes::check_ownership),
-                            )
-                            .route("/{id}/join", web::post().to(channels_routes::join_channel))
-                            .route(
-                                "/{id}/leave",
-                                web::post().to(channels_routes::leave_channel),
-                            )
-                            .route(
-                                "/{id}/members",
-                                web::get().to(channels_routes::list_members),
-                            )
-                            .route(
-                                "/{id}/members",
-                                web::post().to(channels_routes::modify_members),
-                            )
-                            .route(
-                                "/{id}/info",
-                                web::get().to(channels_routes::get_channel_info),
-                            )
-                            .route(
-                                "/{id}/messages",
-                                web::get().to(messages_routes::list_messages),
-                            )
-                            .route(
-                                "/{id}/messages",
-                                web::post().to(messages_routes::post_message),
-                            ),
-                    )
-                    .route(
-                        "/messages/search",
-                        web::get().to(messages_routes::search_messages),
-                    )
-                    .route(
-                        "/messages/{id}/context",
-                        web::get().to(messages_routes::get_message_context),
-                    )
-                    .route(
-                        "/messages/{id}",
-                        web::get().to(messages_routes::get_message),
-                    )
-                    .route(
-                        "/messages/{id}",
-                        web::patch().to(messages_routes::edit_message),
-                    )
-                    .route(
-                        "/messages/{id}",
-                        web::delete().to(messages_routes::delete_message),
-                    )
-                    // Reactions
-                    .route(
-                        "/messages/{id}/reactions",
-                        web::get().to(reactions_routes::list_reactions),
-                    )
-                    .route(
-                        "/messages/{id}/reactions/{emoji}",
-                        web::put().to(reactions_routes::toggle_reaction),
-                    )
-                    // Presence API
-                    .service(
-                        web::scope("/presence")
-                            .route("/heartbeat", web::post().to(routes::presence::heartbeat))
-                            .route(
-                                "/users",
-                                web::get().to(routes::presence::get_users_presence),
-                            ),
-                    )
-                    .service(
-                        web::scope("/invites")
-                            .route("", web::post().to(invites_routes::create_invite))
-                            .route("", web::get().to(invites_routes::list_my_invites)),
-                    )
-                    .service(
-                        web::scope("/files").route("", web::post().to(files_routes::upload_file)),
-                    )
-                    .service(
-                        web::scope("/emojis")
-                            .route("", web::get().to(emojis_routes::list_emojis))
-                            .route("", web::post().to(emojis_routes::upload_emoji))
-                            .route("/{name}", web::delete().to(emojis_routes::delete_emoji)),
-                    )
-                    .route(
-                        "/shareplay/{channel_id}/current",
-                        web::get().to(routes::shareplay::get_current_track),
-                    )
-                    .route(
-                        "/shareplay/song/{song_id}",
-                        web::get().to(routes::shareplay::get_song_by_id),
-                    )
-                    .route(
-                        "/shareplay/thumbnail/{item_id}",
-                        web::get().to(routes::shareplay::get_thumbnail_by_id),
-                    ),
-            )
-            .route("/ws", web::get().to(ws::session::ws_route))
-            .service(
-                web::resource("/files/{id}/{filename:.*}")
-                    .route(web::get().to(files_routes::get_file))
-                    .route(web::head().to(files_routes::get_file)),
-            )
-            .route(
-                "/emojis/{name}/image",
-                web::get().to(emojis_routes::get_emoji_image),
-            )
+            .app_data(Data::new(chat_server.clone()));
+
+        if let Some(bridge_runtime) = &bridge_runtime {
+            app = app.app_data(Data::new(bridge_runtime.clone()));
+        }
+
+        app.configure(|service_cfg| app::configure(service_cfg, bridge_runtime.is_some()))
     })
     .bind(listen_addr)?
     .run()

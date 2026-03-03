@@ -12,6 +12,7 @@ pub struct Config {
     pub max_upload_size: usize,
     pub presence_timeout_secs: i64,
     pub invite_only: bool,
+    pub bridge_enabled: bool,
 }
 
 impl Default for Config {
@@ -25,6 +26,7 @@ impl Default for Config {
             max_upload_size: 500 * 1024 * 1024,
             presence_timeout_secs: 60,
             invite_only: false,
+            bridge_enabled: false,
         }
     }
 }
