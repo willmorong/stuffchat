@@ -14,3 +14,5 @@ max_upload_size = 524288000
 presence_timeout_secs = 60
 # Whether registration requires an invite code
 invite_only = true
+# Whether to enable the external bridge API for bots and auxiliary integrations
+bridge_enabled = false
