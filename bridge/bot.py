@@ -1,55 +1,24 @@
 import asyncio
 import contextlib
 import logging
-import os
-from dataclasses import dataclass
 
 import discord
 
 try:
     from .client import BridgeAuthError, BridgeClient
     from .formatting import format_event_message
+    from .settings import BridgeSettings
     from .state import CursorStore
 except ImportError:
     from client import BridgeAuthError, BridgeClient
     from formatting import format_event_message
+    from settings import BridgeSettings
     from state import CursorStore
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 LOGGER = logging.getLogger("stuffchat-bridge")
 
-
-@dataclass
-class BridgeSettings:
-    discord_token: str
-    discord_channel_id: int
-    base_url: str
-    bridge_key: str
-    poll_interval_seconds: float = 2.0
-    poll_limit: int = 100
-    state_file: str = "bridge/.cursor.json"
-    http_timeout_seconds: float = 10.0
-
-    @classmethod
-    def from_env(cls) -> "BridgeSettings":
-        return cls(
-            discord_token=require_env("DISCORD_TOKEN"),
-            discord_channel_id=int(require_env("DISCORD_CHANNEL_ID")),
-            base_url=require_env("STUFFCHAT_BRIDGE_BASE_URL"),
-            bridge_key=require_env("STUFFCHAT_BRIDGE_KEY"),
-            poll_interval_seconds=float(os.getenv("STUFFCHAT_BRIDGE_POLL_INTERVAL_SECONDS", "2.0")),
-            poll_limit=int(os.getenv("STUFFCHAT_BRIDGE_POLL_LIMIT", "100")),
-            state_file=os.getenv("STUFFCHAT_BRIDGE_STATE_FILE", "bridge/.cursor.json"),
-            http_timeout_seconds=float(os.getenv("STUFFCHAT_BRIDGE_HTTP_TIMEOUT_SECONDS", "10")),
-        )
-
-
-def require_env(name: str) -> str:
-    value = os.getenv(name)
-    if not value:
-        raise RuntimeError(f"missing required environment variable {name}")
-    return value
 
 class StuffchatBridgeBot(discord.Client):
     def __init__(self, settings: BridgeSettings) -> None:

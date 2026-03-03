@@ -1,9 +1,11 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from bridge.formatting import format_event_message
+from bridge.settings import BridgeSettings
 from bridge.state import CursorStore
 
 try:
@@ -48,6 +50,63 @@ class FormatEventMessageTests(unittest.TestCase):
             }
         )
         self.assertEqual(message, "user user-1 has left call in channel channel-1")
+
+
+class BridgeSettingsTests(unittest.TestCase):
+    def test_from_env_loads_values_from_dotenv(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            env_path = Path(tmp_dir) / ".env"
+            env_path.write_text(
+                "\n".join(
+                    [
+                        "DISCORD_TOKEN=discord-token",
+                        "DISCORD_CHANNEL_ID=1234",
+                        "STUFFCHAT_BRIDGE_BASE_URL=https://example.com",
+                        "STUFFCHAT_BRIDGE_KEY=bridge-secret",
+                        'STUFFCHAT_BRIDGE_STATE_FILE="custom cursor.json"',
+                    ]
+                )
+            )
+            original_cwd = Path.cwd()
+            try:
+                os.chdir(tmp_dir)
+                with mock.patch.dict(os.environ, {}, clear=True):
+                    settings = BridgeSettings.from_env()
+            finally:
+                os.chdir(original_cwd)
+
+        self.assertEqual(settings.discord_token, "discord-token")
+        self.assertEqual(settings.discord_channel_id, 1234)
+        self.assertEqual(settings.base_url, "https://example.com")
+        self.assertEqual(settings.bridge_key, "bridge-secret")
+        self.assertEqual(settings.state_file, "custom cursor.json")
+
+    def test_from_env_keeps_existing_environment_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            env_path = Path(tmp_dir) / ".env"
+            env_path.write_text(
+                "\n".join(
+                    [
+                        "DISCORD_TOKEN=from-dotenv",
+                        "DISCORD_CHANNEL_ID=1234",
+                        "STUFFCHAT_BRIDGE_BASE_URL=https://example.com",
+                        "STUFFCHAT_BRIDGE_KEY=bridge-secret",
+                    ]
+                )
+            )
+            original_cwd = Path.cwd()
+            try:
+                os.chdir(tmp_dir)
+                with mock.patch.dict(
+                    os.environ,
+                    {"DISCORD_TOKEN": "from-env"},
+                    clear=True,
+                ):
+                    settings = BridgeSettings.from_env()
+            finally:
+                os.chdir(original_cwd)
+
+        self.assertEqual(settings.discord_token, "from-env")
 
 
 @unittest.skipIf(BridgeClient is None, "aiohttp is not installed")

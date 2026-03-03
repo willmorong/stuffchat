@@ -4,6 +4,8 @@ This bot polls the Stuffchat bridge API and posts call join/leave notifications 
 
 ## Environment
 
+On startup, the bot will automatically load variables from a `.env` file if one exists in the current working directory or the repository root. Existing shell environment variables take precedence over `.env`.
+
 Required:
 
 - `DISCORD_TOKEN`
