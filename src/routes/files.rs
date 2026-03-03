@@ -1,12 +1,12 @@
 use crate::{auth::AuthUser, config::Config, db::Db, errors::ApiError};
 use actix_multipart::Multipart;
+use actix_web::http::header::{ContentDisposition, DispositionParam, DispositionType};
 use actix_web::{HttpRequest, HttpResponse, web};
 use futures_util::TryStreamExt as _;
 use sanitize_filename::sanitize;
 use sqlx::Row;
 use std::io::Write;
 use std::path::Path;
-use actix_web::http::header::{ContentDisposition, DispositionParam, DispositionType};
 
 #[derive(serde::Serialize)]
 pub struct UploadResp {
@@ -36,7 +36,7 @@ pub async fn upload_file(
 }
 
 pub struct SavedFile {
-    pub file_id: String
+    pub file_id: String,
 }
 
 pub async fn save_multipart_file(
@@ -77,9 +77,7 @@ pub async fn save_multipart_file(
         .bind(data.len() as i64).bind(chrono::Utc::now())
         .execute(&db.0).await?;
 
-    Ok(SavedFile {
-        file_id: id
-    })
+    Ok(SavedFile { file_id: id })
 }
 
 // Updated to accept a filename segment for the URL, but only use the ID for lookup.
@@ -102,9 +100,12 @@ pub async fn get_file(
     let mime: Option<String> = row.get("mime_type");
 
     let p = std::path::Path::new(&cfg.uploads_dir).join(&stored);
-    if !p.exists() { return Err(ApiError::NotFound); }
+    if !p.exists() {
+        return Err(ApiError::NotFound);
+    }
 
-    let named = actix_files::NamedFile::open_async(p).await
+    let named = actix_files::NamedFile::open_async(p)
+        .await
         .map_err(|_| ApiError::Internal)?
         .use_last_modified(true)
         .prefer_utf8(true)
@@ -116,10 +117,8 @@ pub async fn get_file(
     let mut resp = named.into_response(&req);
     if let Some(m) = mime {
         if let Ok(val) = actix_web::http::header::HeaderValue::from_str(&m) {
-            resp.headers_mut().insert(
-                actix_web::http::header::CONTENT_TYPE,
-                val,
-            );
+            resp.headers_mut()
+                .insert(actix_web::http::header::CONTENT_TYPE, val);
         }
     }
     Ok(resp)

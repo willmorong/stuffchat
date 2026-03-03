@@ -481,15 +481,27 @@ export function renderMessageItem(m) {
 
     const tools = el('div', { class: 'tools' }, []);
 
+    // Reaction button
+    tools.append(
+        el('button', { class: 'iconbtn', title: 'React', onclick: (e) => { e.stopPropagation(); showReactionPicker(m.id, e.currentTarget); } }, el('i', { class: 'bi bi-emoji-smile' }))
+    );
+
     // Reply button
     tools.append(
         el('button', { class: 'iconbtn', title: 'Reply', onclick: (e) => { e.stopPropagation(); showReplyPreview(m); } }, el('i', { class: 'bi bi-reply' }))
     );
 
-    // Reaction button for ALL messages
     tools.append(
-        el('button', { class: 'iconbtn', title: 'React', onclick: (e) => { e.stopPropagation(); showReactionPicker(m.id, e.currentTarget); } }, el('i', { class: 'bi bi-emoji-smile' }))
+        el('button', {
+            class: 'iconbtn',
+            title: 'Flag for admin review',
+            onclick: (e) => {
+                e.stopPropagation();
+                flagMessage(m.id, e.currentTarget);
+            }
+        }, el('i', { class: 'bi bi-flag' }))
     );
+
     if (own) {
         tools.append(
             el('button', { class: 'iconbtn', title: 'Edit', onclick: () => editMessage(m) }, el('i', { class: 'bi bi-pencil' })),
@@ -542,6 +554,25 @@ async function toggleReaction(messageId, emoji) {
         await apiFetch(`/api/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`, { method: 'PUT' });
     } catch (e) {
         console.error('Reaction toggle failed:', e);
+    }
+}
+
+async function flagMessage(messageId, button) {
+    if (button) button.disabled = true;
+    try {
+        await apiFetch(`/api/messages/${encodeURIComponent(messageId)}/flag`, { method: 'POST' });
+        if (button) {
+            button.classList.add('active');
+            button.title = 'Flagged for admin review';
+            setTimeout(() => {
+                button.classList.remove('active');
+                button.title = 'Flag for admin review';
+            }, 1500);
+        }
+    } catch (e) {
+        alert('Flag failed: ' + e.message);
+    } finally {
+        if (button) button.disabled = false;
     }
 }
 

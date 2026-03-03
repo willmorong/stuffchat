@@ -1,4 +1,4 @@
-use crate::{auth::AuthUser, db::Db, errors::ApiError, ws::server::Broadcast};
+use crate::{admin_log, auth::AuthUser, db::Db, errors::ApiError, ws::server::Broadcast};
 use actix_web::{HttpResponse, web};
 use chrono::{DateTime, FixedOffset, NaiveDate, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
@@ -878,6 +878,60 @@ pub async fn delete_message(
         channel_id: channel_id.clone(),
         payload,
     });
+
+    Ok(HttpResponse::Ok().finish())
+}
+
+pub async fn flag_message(
+    db: web::Data<Db>,
+    user: AuthUser,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ApiError> {
+    let id = path.into_inner();
+    let row = sqlx::query(
+        r#"
+        SELECT m.channel_id, m.user_id AS sender_user_id, m.content, u.username AS sender_username
+        FROM messages m
+        INNER JOIN users u ON u.id = m.user_id
+        WHERE m.id = ? AND m.deleted_at IS NULL
+        "#,
+    )
+    .bind(&id)
+    .fetch_optional(&db.0)
+    .await?;
+    let row = row.ok_or(ApiError::NotFound)?;
+    let channel_id: String = row.get("channel_id");
+
+    let membership =
+        sqlx::query("SELECT can_read FROM channel_members WHERE channel_id = ? AND user_id = ?")
+            .bind(&channel_id)
+            .bind(&user.user_id)
+            .fetch_optional(&db.0)
+            .await?;
+    let membership = membership.ok_or(ApiError::Forbidden)?;
+    if membership.get::<i64, _>("can_read") == 0 {
+        return Err(ApiError::Forbidden);
+    }
+
+    let sender_user_id: String = row.get("sender_user_id");
+    let sender_username: String = row.get("sender_username");
+    let message_content: Option<String> = row.get("content");
+
+    admin_log::record_admin_log(
+        &db.0,
+        &user.user_id,
+        "message.flagged",
+        &serde_json::json!({
+            "message_id": id,
+            "channel_id": channel_id,
+            "message_content": message_content,
+            "message_sender": {
+                "id": sender_user_id,
+                "username": sender_username,
+            },
+        }),
+    )
+    .await?;
 
     Ok(HttpResponse::Ok().finish())
 }

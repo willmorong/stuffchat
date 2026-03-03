@@ -1,4 +1,4 @@
-use sqlx::{SqlitePool, sqlite::SqlitePoolOptions, sqlite::SqliteConnectOptions};
+use sqlx::{SqlitePool, sqlite::SqliteConnectOptions, sqlite::SqlitePoolOptions};
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -15,7 +15,8 @@ impl Db {
         let pool = SqlitePoolOptions::new()
             .max_connections(8)
             .acquire_timeout(Duration::from_secs(10))
-            .connect_with(opts).await?;
+            .connect_with(opts)
+            .await?;
         sqlx::migrate!("./migrations").run(&pool).await?;
         Ok(Db(pool))
     }

@@ -173,6 +173,13 @@ function formatAdminLogInfo(entry) {
             return `channel=${info.channel_name || info.channel_id || 'unknown'}`;
         case 'channel.members_modified':
             return `channel=${info.channel_id || 'unknown'} add=${JSON.stringify(info.added_user_ids || [])} remove=${JSON.stringify(info.removed_user_ids || [])}`;
+        case 'message.flagged': {
+            const sender = info.message_sender || {};
+            const senderLabel = sender.username || sender.id || 'unknown';
+            const flaggerLabel = entry.actor?.username || entry.actor?.id || 'unknown';
+            const content = info.message_content ? String(info.message_content) : '[no text content]';
+            return `message=${info.message_id || 'unknown'} sender=${senderLabel} flagged_by=${flaggerLabel} content=${content}`;
+        }
         default:
             return JSON.stringify(info);
     }

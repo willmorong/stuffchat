@@ -127,6 +127,10 @@ fn configure_api(cfg: &mut web::ServiceConfig, bridge_enabled: bool) {
         web::delete().to(messages_routes::delete_message),
     )
     .route(
+        "/messages/{id}/flag",
+        web::post().to(messages_routes::flag_message),
+    )
+    .route(
         "/messages/{id}/reactions",
         web::get().to(reactions_routes::list_reactions),
     )

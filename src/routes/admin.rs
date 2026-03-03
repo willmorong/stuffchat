@@ -109,7 +109,10 @@ pub async fn update_user(
     let current_email: Option<String> = existing.get("email");
 
     let mut changes = serde_json::Map::new();
-    if let Some(value) = username.as_ref().filter(|value| value.as_str() != current_username) {
+    if let Some(value) = username
+        .as_ref()
+        .filter(|value| value.as_str() != current_username)
+    {
         changes.insert("username".into(), json!(value));
     }
     if email != current_email {

@@ -61,7 +61,8 @@ pub async fn list_admin_logs(db: &Db, limit: i64) -> Result<Vec<AdminLogEntry>, 
     rows.into_iter()
         .map(|row| {
             let action_info: String = row.get("action_info");
-            let action_info = serde_json::from_str(&action_info).unwrap_or(Value::String(action_info));
+            let action_info =
+                serde_json::from_str(&action_info).unwrap_or(Value::String(action_info));
 
             Ok(AdminLogEntry {
                 id: row.get("id"),

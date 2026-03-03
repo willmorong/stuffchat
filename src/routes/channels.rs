@@ -351,10 +351,10 @@ pub async fn delete_channel(
         WHERE cm.channel_id = ? AND cm.user_id = ? AND c.deleted_at IS NULL
         "#,
     )
-            .bind(&id)
-            .bind(&user.user_id)
-            .fetch_optional(&db.0)
-            .await?;
+    .bind(&id)
+    .bind(&user.user_id)
+    .fetch_optional(&db.0)
+    .await?;
     let row = row.ok_or(ApiError::Forbidden)?;
     let can_manage: i64 = row.get("can_manage");
     if can_manage == 0 {

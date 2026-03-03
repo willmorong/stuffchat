@@ -1,6 +1,6 @@
-use actix_web::{HttpResponse, http::StatusCode, ResponseError};
-use thiserror::Error;
+use actix_web::{HttpResponse, ResponseError, http::StatusCode};
 use serde::Serialize;
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum ApiError {
@@ -20,7 +20,7 @@ pub enum ApiError {
 
 #[derive(Serialize)]
 struct ApiErrBody {
-    error: String
+    error: String,
 }
 
 impl ResponseError for ApiError {
@@ -35,7 +35,9 @@ impl ResponseError for ApiError {
         }
     }
     fn error_response(&self) -> HttpResponse {
-        HttpResponse::build(self.status_code()).json(ApiErrBody { error: self.to_string() })
+        HttpResponse::build(self.status_code()).json(ApiErrBody {
+            error: self.to_string(),
+        })
     }
 }
 

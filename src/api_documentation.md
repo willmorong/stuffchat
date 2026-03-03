@@ -62,6 +62,7 @@ All endpoints below require `Authorization: Bearer <access_token>` header.
 - `GET /api/messages/{id}/context`: Load a window of messages around a specific message. Query: `?before=30&after=20`.
 - `PATCH /api/messages/{id}`: Edit message. Body: `{ "content": "..." }`
 - `DELETE /api/messages/{id}`: Delete message.
+- `POST /api/messages/{id}/flag`: Flag a message for admin review. Creates an admin log entry containing the message text snapshot at flag time, the message sender, and the flagging user.
 ### Files
 - `POST /api/files`: Upload file. Content-Type: `multipart/form-data`. Returns `{ "file_id": "..." }`.
 - `GET /files/{id}/{filename}`: Download/view file. No auth required for this specific route (handled by signed URL or public access implication usually, but code shows standard GET).
@@ -266,7 +267,8 @@ Returned by `POST /api/auth/register`, `/login`, `/refresh`:
   ]
 }
 ```
-**`PATCH /api/messages/{id}`**, **`DELETE /api/messages/{id}`** — Return `200 OK` with an empty body.
+
+**`PATCH /api/messages/{id}`**, **`DELETE /api/messages/{id}`**, **`POST /api/messages/{id}/flag`** — Return `200 OK` with an empty body.
 ### Reactions
 **`PUT /api/messages/{id}/reactions/{emoji}`** — Returns updated reactions for the message:
 ```json
