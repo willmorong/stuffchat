@@ -4,6 +4,7 @@ use actix::Actor;
 use actix_web::test::TestRequest;
 use std::path::PathBuf;
 
+use stuffchat::auth;
 use stuffchat::bridge::BridgeRuntime;
 use stuffchat::config::Config;
 use stuffchat::db::Db;
@@ -91,6 +92,29 @@ pub async fn insert_channel(db: &Db, id: &str, name: &str, created_by: &str, is_
     .execute(&db.0)
     .await
     .expect("insert channel member");
+}
+
+pub async fn insert_role(db: &Db, id: &str, name: &str) {
+    sqlx::query("INSERT INTO roles(id, name, permissions, created_at) VALUES (?, ?, 0, ?)")
+        .bind(id)
+        .bind(name)
+        .bind(chrono::Utc::now())
+        .execute(&db.0)
+        .await
+        .expect("insert role");
+}
+
+pub async fn grant_role(db: &Db, user_id: &str, role_id: &str) {
+    sqlx::query("INSERT INTO user_roles(user_id, role_id) VALUES (?, ?)")
+        .bind(user_id)
+        .bind(role_id)
+        .execute(&db.0)
+        .await
+        .expect("grant role");
+}
+
+pub fn auth_token(cfg: &Config, user_id: &str) -> String {
+    auth::create_access_token(user_id, cfg).expect("create access token")
 }
 
 pub fn bridge_get(path: &str, secret: Option<&str>) -> TestRequest {

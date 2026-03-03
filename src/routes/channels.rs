@@ -1,7 +1,8 @@
-use crate::{auth::AuthUser, db::Db, errors::ApiError};
+use crate::{admin_log, auth::AuthUser, db::Db, errors::ApiError};
 use actix_web::{HttpResponse, web};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sqlx::Row;
 
 #[derive(Serialize)]
@@ -182,53 +183,67 @@ pub async fn edit_channel(
     let id = path.into_inner();
 
     // verify ownership
-    let row = sqlx::query("SELECT created_by FROM channels WHERE id = ? AND deleted_at IS NULL")
+    let row = sqlx::query(
+        "SELECT name, is_voice, is_private, created_by FROM channels WHERE id = ? AND deleted_at IS NULL",
+    )
         .bind(&id)
         .fetch_optional(&db.0)
         .await?;
     let row = row.ok_or(ApiError::NotFound)?;
+    let current_name: String = row.get("name");
+    let current_is_voice = row.get::<i64, _>("is_voice") != 0;
+    let current_is_private = row.get::<i64, _>("is_private") != 0;
     let created_by: String = row.get("created_by");
     if created_by != user.user_id {
         return Err(ApiError::Forbidden);
     }
 
-    let mut query = String::from("UPDATE channels SET ");
-    let mut params = Vec::new();
-    let mut updates = Vec::new();
-
-    if let Some(name) = &body.name {
-        if name.trim().is_empty() {
-            return Err(ApiError::BadRequest("name cannot be empty".into()));
+    let next_name = match body.name.as_ref() {
+        Some(name) => {
+            let trimmed = name.trim();
+            if trimmed.is_empty() {
+                return Err(ApiError::BadRequest("name cannot be empty".into()));
+            }
+            trimmed.to_string()
         }
-        updates.push("name = ?");
-        params.push(name.clone());
+        None => current_name.clone(),
+    };
+    let next_is_voice = body.is_voice.unwrap_or(current_is_voice);
+    let next_is_private = body.is_private.unwrap_or(current_is_private);
+
+    let mut changes = serde_json::Map::new();
+    if next_name != current_name {
+        changes.insert("name".into(), json!(next_name));
     }
-    if let Some(is_voice) = body.is_voice {
-        updates.push("is_voice = ?");
-        params.push(if is_voice { "1" } else { "0" }.to_string());
+    if next_is_voice != current_is_voice {
+        changes.insert("is_voice".into(), json!(next_is_voice));
     }
-    if let Some(is_private) = body.is_private {
-        updates.push("is_private = ?");
-        params.push(if is_private { "1" } else { "0" }.to_string());
+    if next_is_private != current_is_private {
+        changes.insert("is_private".into(), json!(next_is_private));
     }
 
-    if updates.is_empty() {
+    if changes.is_empty() {
         return Ok(HttpResponse::Ok().finish());
     }
 
-    query.push_str(&updates.join(", "));
-    query.push_str(" WHERE id = ?");
+    sqlx::query("UPDATE channels SET name = ?, is_voice = ?, is_private = ? WHERE id = ?")
+        .bind(&next_name)
+        .bind(next_is_voice)
+        .bind(next_is_private)
+        .bind(&id)
+        .execute(&db.0)
+        .await?;
 
-    let mut q = sqlx::query(&query);
-    for p in params {
-        if p == "1" || p == "0" {
-            q = q.bind(p == "1");
-        } else {
-            q = q.bind(p);
-        }
-    }
-    q = q.bind(&id);
-    q.execute(&db.0).await?;
+    admin_log::record_admin_log(
+        &db.0,
+        &user.user_id,
+        "channel.updated",
+        &json!({
+            "channel_id": &id,
+            "changes": changes,
+        }),
+    )
+    .await?;
 
     Ok(HttpResponse::Ok().finish())
 }
@@ -297,6 +312,25 @@ pub async fn create_channel(
             .execute(&mut *tx).await?;
     }
 
+    let action_info = if is_private {
+        json!({
+            "channel_id": &id,
+            "channel_name": body.name,
+            "is_voice": body.is_voice.unwrap_or(false),
+            "is_private": true,
+            "initial_member_ids": body.members.clone().unwrap_or_default(),
+        })
+    } else {
+        json!({
+            "channel_id": &id,
+            "channel_name": body.name,
+            "is_voice": body.is_voice.unwrap_or(false),
+            "is_private": false,
+            "membership_mode": "all_public_users",
+        })
+    };
+    admin_log::record_admin_log(&mut *tx, &user.user_id, "channel.created", &action_info).await?;
+
     tx.commit().await?;
 
     Ok(HttpResponse::Ok().json(serde_json::json!({"id": id})))
@@ -309,8 +343,14 @@ pub async fn delete_channel(
 ) -> Result<HttpResponse, ApiError> {
     let id = path.into_inner();
     // verify can_manage
-    let row =
-        sqlx::query("SELECT can_manage FROM channel_members WHERE channel_id = ? AND user_id = ?")
+    let row = sqlx::query(
+        r#"
+        SELECT cm.can_manage, c.name
+        FROM channel_members cm
+        INNER JOIN channels c ON c.id = cm.channel_id
+        WHERE cm.channel_id = ? AND cm.user_id = ? AND c.deleted_at IS NULL
+        "#,
+    )
             .bind(&id)
             .bind(&user.user_id)
             .fetch_optional(&db.0)
@@ -320,12 +360,23 @@ pub async fn delete_channel(
     if can_manage == 0 {
         return Err(ApiError::Forbidden);
     }
+    let channel_name: String = row.get("name");
 
     sqlx::query("UPDATE channels SET deleted_at = ? WHERE id = ?")
         .bind(chrono::Utc::now())
         .bind(&id)
         .execute(&db.0)
         .await?;
+    admin_log::record_admin_log(
+        &db.0,
+        &user.user_id,
+        "channel.deleted",
+        &json!({
+            "channel_id": &id,
+            "channel_name": channel_name,
+        }),
+    )
+    .await?;
     Ok(HttpResponse::Ok().finish())
 }
 
@@ -486,6 +537,9 @@ pub async fn modify_members(
         return Err(ApiError::Forbidden);
     }
 
+    let add = body.add.clone().unwrap_or_default();
+    let remove = body.remove.clone().unwrap_or_default();
+
     if let Some(add) = &body.add {
         for uid in add {
             sqlx::query("INSERT OR IGNORE INTO channel_members(channel_id, user_id, can_read, can_write, can_manage) VALUES (?, ?, 1, 1, 0)")
@@ -501,5 +555,20 @@ pub async fn modify_members(
                 .await?;
         }
     }
+
+    if !add.is_empty() || !remove.is_empty() {
+        admin_log::record_admin_log(
+            &db.0,
+            &user.user_id,
+            "channel.members_modified",
+            &json!({
+                "channel_id": &id,
+                "added_user_ids": add,
+                "removed_user_ids": remove,
+            }),
+        )
+        .await?;
+    }
+
     Ok(HttpResponse::Ok().finish())
 }

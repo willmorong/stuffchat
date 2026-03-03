@@ -1,3 +1,4 @@
+pub mod admin_log;
 pub mod app;
 pub mod auth;
 pub mod bridge;

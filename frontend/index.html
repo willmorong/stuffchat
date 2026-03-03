@@ -406,6 +406,25 @@
                         </table>
                     </div>
                 </section>
+                <section class="panel">
+                    <div class="row" style="align-items:center; justify-content:space-between; flex-wrap:wrap">
+                        <h3 style="margin:0">Admin Log</h3>
+                        <button id="btnAdminRefreshLogs" class="button alt" style="width:160px">Refresh Log</button>
+                    </div>
+                    <div class="table-container admin-log-container">
+                        <table class="admin-log-table">
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>User</th>
+                                    <th>Action</th>
+                                    <th>Info</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminLogList"></tbody>
+                        </table>
+                    </div>
+                </section>
                 <div id="adminStatus" class="hint"></div>
             </div>
         </div>

@@ -37,6 +37,7 @@ All endpoints below require `Authorization: Bearer <access_token>` header.
 - `PUT /api/admin/users/{id}/password`: Set user password. Body: `{ "new_password": "..." }`
 - `PUT /api/admin/users/{id}/avatar`: Upload avatar for user (multipart form data).
 - `PUT /api/admin/users/{id}/roles`: Replace user roles. Body: `{ "role_ids": ["..."] }`
+- `GET /api/admin/logs`: List recent admin log entries. Query: `?limit=100` (optional, max 200).
 - `GET /api/admin/roles`: List roles.
 - `POST /api/admin/roles`: Create role. Body: `{ "name": "...", "permissions": 0 }`
 - `DELETE /api/admin/roles/{id}`: Delete role.
@@ -354,6 +355,26 @@ Returned by `POST /api/auth/register`, `/login`, `/refresh`:
     "id": "string",
     "name": "string",
     "permissions": 0,
+    "created_at": "timestamp"
+  }
+]
+```
+**`GET /api/admin/logs`** — Array of recent admin log entries:
+```json
+[
+  {
+    "id": "string",
+    "actor": {
+      "id": "string",
+      "username": "string"
+    },
+    "action_type": "user.updated",
+    "action_info": {
+      "target_user_id": "string",
+      "changes": {
+        "username": "string"
+      }
+    },
     "created_at": "timestamp"
   }
 ]

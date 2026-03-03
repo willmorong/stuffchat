@@ -2,9 +2,11 @@ use actix_multipart::Multipart;
 use actix_web::{HttpResponse, web};
 use futures_util::TryStreamExt as _;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sqlx::Row;
 
 use crate::{
+    admin_log,
     auth::{self, AuthUser},
     config::Config,
     db::Db,
@@ -92,17 +94,48 @@ pub async fn update_user(
 ) -> Result<HttpResponse, ApiError> {
     require_admin(&db, &user.user_id).await?;
     let target_id = path.into_inner();
-    if body.username.as_deref().map_or(false, |u| u.len() < 3) {
+    let username = body.username.as_ref().map(|value| value.trim().to_string());
+    if username.as_deref().is_some_and(|u| u.len() < 3) {
         return Err(ApiError::BadRequest("username too short".into()));
+    }
+    let email = body.email.as_ref().map(|value| value.trim().to_string());
+
+    let existing = sqlx::query("SELECT username, email FROM users WHERE id = ?")
+        .bind(&target_id)
+        .fetch_optional(&db.0)
+        .await?;
+    let existing = existing.ok_or(ApiError::NotFound)?;
+    let current_username: String = existing.get("username");
+    let current_email: Option<String> = existing.get("email");
+
+    let mut changes = serde_json::Map::new();
+    if let Some(value) = username.as_ref().filter(|value| value.as_str() != current_username) {
+        changes.insert("username".into(), json!(value));
+    }
+    if email != current_email {
+        changes.insert("email".into(), json!(email));
     }
 
     sqlx::query("UPDATE users SET username = COALESCE(?, username), email = COALESCE(?, email), updated_at = ? WHERE id = ?")
-        .bind(&body.username)
-        .bind(&body.email)
+        .bind(&username)
+        .bind(&email)
         .bind(chrono::Utc::now())
         .bind(&target_id)
         .execute(&db.0)
         .await?;
+
+    if !changes.is_empty() {
+        admin_log::record_admin_log(
+            &db.0,
+            &user.user_id,
+            "user.updated",
+            &json!({
+                "target_user_id": target_id,
+                "changes": changes,
+            }),
+        )
+        .await?;
+    }
 
     // Broadcast profile update
     chat.do_send(BroadcastAll {
@@ -117,8 +150,8 @@ pub async fn update_user(
         "AdminAction: update_user admin_id={} target_id={} username={:?} email={:?}",
         user.user_id,
         target_id,
-        body.username,
-        body.email
+        username,
+        email
     );
 
     Ok(HttpResponse::Ok().finish())
@@ -147,6 +180,15 @@ pub async fn set_user_password(
         .bind(&target_id)
         .execute(&db.0)
         .await?;
+    admin_log::record_admin_log(
+        &db.0,
+        &user.user_id,
+        "user.password_set",
+        &json!({
+            "target_user_id": target_id,
+        }),
+    )
+    .await?;
     log::info!(
         "AdminAction: set_user_password admin_id={} target_id={}",
         user.user_id,
@@ -186,6 +228,16 @@ pub async fn upload_user_avatar(
         .bind(&target_id)
         .execute(&db.0)
         .await?;
+    admin_log::record_admin_log(
+        &db.0,
+        &user.user_id,
+        "user.avatar_updated",
+        &json!({
+            "target_user_id": target_id,
+            "avatar_file_id": saved.file_id,
+        }),
+    )
+    .await?;
 
     // Broadcast profile update
     chat.do_send(BroadcastAll {
@@ -224,6 +276,22 @@ pub async fn list_roles(db: web::Data<Db>, user: AuthUser) -> Result<HttpRespons
 }
 
 #[derive(Deserialize)]
+pub struct ListAdminLogsQuery {
+    pub limit: Option<i64>,
+}
+
+pub async fn list_admin_logs(
+    db: web::Data<Db>,
+    user: AuthUser,
+    query: web::Query<ListAdminLogsQuery>,
+) -> Result<HttpResponse, ApiError> {
+    require_admin(&db, &user.user_id).await?;
+    let limit = query.limit.unwrap_or(100).clamp(1, 200);
+    let logs = admin_log::list_admin_logs(&db, limit).await?;
+    Ok(HttpResponse::Ok().json(logs))
+}
+
+#[derive(Deserialize)]
 pub struct CreateRoleReq {
     pub name: String,
     pub permissions: Option<i64>,
@@ -255,6 +323,17 @@ pub async fn create_role(
 
     match res {
         Ok(_) => {
+            admin_log::record_admin_log(
+                &db.0,
+                &user.user_id,
+                "role.created",
+                &json!({
+                    "role_id": id,
+                    "role_name": name,
+                    "permissions": permissions,
+                }),
+            )
+            .await?;
             log::info!(
                 "AdminAction: create_role admin_id={} role_id={} name={}",
                 user.user_id,
@@ -282,10 +361,26 @@ pub async fn delete_role(
 ) -> Result<HttpResponse, ApiError> {
     require_admin(&db, &user.user_id).await?;
     let role_id = path.into_inner();
+    let existing = sqlx::query("SELECT name FROM roles WHERE id = ?")
+        .bind(&role_id)
+        .fetch_optional(&db.0)
+        .await?;
+    let existing = existing.ok_or(ApiError::NotFound)?;
+    let role_name: String = existing.get("name");
     sqlx::query("DELETE FROM roles WHERE id = ?")
         .bind(&role_id)
         .execute(&db.0)
         .await?;
+    admin_log::record_admin_log(
+        &db.0,
+        &user.user_id,
+        "role.deleted",
+        &json!({
+            "role_id": role_id,
+            "role_name": role_name,
+        }),
+    )
+    .await?;
     log::info!(
         "AdminAction: delete_role admin_id={} role_id={}",
         user.user_id,
@@ -335,6 +430,55 @@ pub async fn update_user_roles(
         }
     }
 
+    let role_rows = sqlx::query(
+        r#"
+        SELECT r.id, r.name
+        FROM user_roles ur
+        INNER JOIN roles r ON r.id = ur.role_id
+        WHERE ur.user_id = ?
+        ORDER BY r.name ASC
+        "#,
+    )
+    .bind(&target_id)
+    .fetch_all(&db.0)
+    .await?;
+    let previous_roles: Vec<serde_json::Value> = role_rows
+        .into_iter()
+        .map(|row| {
+            json!({
+                "id": row.get::<String, _>("id"),
+                "name": row.get::<String, _>("name"),
+            })
+        })
+        .collect();
+
+    let next_role_rows = if unique_roles.is_empty() {
+        Vec::new()
+    } else {
+        let placeholders = std::iter::repeat("?")
+            .take(unique_roles.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "SELECT id, name FROM roles WHERE id IN ({}) ORDER BY name ASC",
+            placeholders
+        );
+        let mut query = sqlx::query(&sql);
+        for rid in &unique_roles {
+            query = query.bind(rid);
+        }
+        query.fetch_all(&db.0).await?
+    };
+    let next_roles: Vec<serde_json::Value> = next_role_rows
+        .into_iter()
+        .map(|row| {
+            json!({
+                "id": row.get::<String, _>("id"),
+                "name": row.get::<String, _>("name"),
+            })
+        })
+        .collect();
+
     let mut tx = db.0.begin().await?;
     sqlx::query("DELETE FROM user_roles WHERE user_id = ?")
         .bind(&target_id)
@@ -350,6 +494,18 @@ pub async fn update_user_roles(
     }
 
     tx.commit().await?;
+
+    admin_log::record_admin_log(
+        &db.0,
+        &user.user_id,
+        "user.roles_updated",
+        &json!({
+            "target_user_id": target_id,
+            "previous_roles": previous_roles,
+            "new_roles": next_roles,
+        }),
+    )
+    .await?;
 
     // Broadcast profile update
     chat.do_send(BroadcastAll {

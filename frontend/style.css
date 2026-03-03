@@ -1006,6 +1006,53 @@ a:hover {
     gap: 8px;
 }
 
+.admin-log-container {
+    max-height: 340px;
+    overflow: auto;
+}
+
+.admin-log-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+}
+
+.admin-log-table th,
+.admin-log-table td {
+    padding: 8px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+}
+
+.admin-log-table th {
+    position: sticky;
+    top: 0;
+    background: var(--bg2);
+    z-index: 1;
+}
+
+.admin-log-table td:first-child,
+.admin-log-table td:nth-child(3) {
+    white-space: nowrap;
+}
+
+.admin-log-info {
+    font-family: monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text-dim);
+}
+
+@media (max-width: 900px) {
+    .admin-log-table th,
+    .admin-log-table td {
+        font-size: 12px;
+        padding: 6px;
+    }
+}
+
 /* Create Channel modal tweaks */
 #channelMembersSection select {
     min-height: 220px;

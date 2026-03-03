@@ -4,6 +4,7 @@ import { $, buildFileUrl } from './utils.js';
 
 let adminUsers = [];
 let adminRoles = [];
+let adminLogs = [];
 let adminLoaded = false;
 
 export function hasAdminRole() {
@@ -35,10 +36,17 @@ async function openAdminModal() {
 
 async function loadAdminData() {
     try {
-        adminUsers = await apiFetch('/api/admin/users');
-        adminRoles = await apiFetch('/api/admin/roles');
+        const [users, roles, logs] = await Promise.all([
+            apiFetch('/api/admin/users'),
+            apiFetch('/api/admin/roles'),
+            apiFetch('/api/admin/logs?limit=100')
+        ]);
+        adminUsers = users;
+        adminRoles = roles;
+        adminLogs = logs;
         renderAdminUsers();
         renderAdminRoles();
+        renderAdminLogs();
         adminLoaded = true;
         setStatus('');
     } catch (e) {
@@ -140,6 +148,78 @@ function renderAdminRoles() {
     });
 }
 
+function formatAdminLogInfo(entry) {
+    const info = entry?.action_info || {};
+    const changes = info.changes ? JSON.stringify(info.changes) : null;
+
+    switch (entry.action_type) {
+        case 'user.updated':
+            return `target=${info.target_user_id || 'unknown'} changes=${changes || '{}'}`;
+        case 'user.password_set':
+            return `target=${info.target_user_id || 'unknown'}`;
+        case 'user.avatar_updated':
+            return `target=${info.target_user_id || 'unknown'} avatar=${info.avatar_file_id || 'none'}`;
+        case 'user.roles_updated':
+            return `target=${info.target_user_id || 'unknown'} roles=${JSON.stringify(info.new_roles || [])}`;
+        case 'role.created':
+            return `role=${info.role_name || info.role_id || 'unknown'} permissions=${info.permissions ?? 0}`;
+        case 'role.deleted':
+            return `role=${info.role_name || info.role_id || 'unknown'}`;
+        case 'channel.created':
+            return `channel=${info.channel_name || info.channel_id || 'unknown'} private=${!!info.is_private} voice=${!!info.is_voice}`;
+        case 'channel.updated':
+            return `channel=${info.channel_id || 'unknown'} changes=${changes || '{}'}`;
+        case 'channel.deleted':
+            return `channel=${info.channel_name || info.channel_id || 'unknown'}`;
+        case 'channel.members_modified':
+            return `channel=${info.channel_id || 'unknown'} add=${JSON.stringify(info.added_user_ids || [])} remove=${JSON.stringify(info.removed_user_ids || [])}`;
+        default:
+            return JSON.stringify(info);
+    }
+}
+
+function renderAdminLogs() {
+    const body = $('#adminLogList');
+    if (!body) return;
+    body.innerHTML = '';
+
+    if (!adminLogs.length) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 4;
+        td.className = 'hint';
+        td.textContent = 'No admin log entries yet.';
+        tr.appendChild(td);
+        body.appendChild(tr);
+        return;
+    }
+
+    adminLogs.forEach(entry => {
+        const tr = document.createElement('tr');
+
+        const ts = document.createElement('td');
+        ts.textContent = entry.created_at ? new Date(entry.created_at).toLocaleString() : 'Unknown';
+
+        const actor = document.createElement('td');
+        actor.textContent = entry.actor?.username || entry.actor?.id || 'Unknown';
+
+        const action = document.createElement('td');
+        action.textContent = entry.action_type || 'unknown';
+
+        const info = document.createElement('td');
+        const infoInner = document.createElement('div');
+        infoInner.className = 'admin-log-info';
+        infoInner.textContent = formatAdminLogInfo(entry);
+        info.appendChild(infoInner);
+
+        tr.appendChild(ts);
+        tr.appendChild(actor);
+        tr.appendChild(action);
+        tr.appendChild(info);
+        body.appendChild(tr);
+    });
+}
+
 async function saveUserInfo() {
     const userId = $('#adminUserSelect').value;
     if (!userId) return;
@@ -238,6 +318,7 @@ export function bindAdminEvents() {
     });
 
     $('#btnAdminRefresh').addEventListener('click', loadAdminData);
+    $('#btnAdminRefreshLogs').addEventListener('click', loadAdminData);
     $('#adminUserSelect').addEventListener('change', renderSelectedUser);
 
     $('#btnAdminSaveUser').addEventListener('click', saveUserInfo);

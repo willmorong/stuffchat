@@ -46,6 +46,7 @@ fn configure_api(cfg: &mut web::ServiceConfig, bridge_enabled: bool) {
     .service(
         web::scope("/admin")
             .route("/users", web::get().to(admin_routes::list_users))
+            .route("/logs", web::get().to(admin_routes::list_admin_logs))
             .route("/users/{id}", web::patch().to(admin_routes::update_user))
             .route(
                 "/users/{id}/password",
