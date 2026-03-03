@@ -30,7 +30,8 @@ pub async fn test_context() -> TestContext {
         .await
         .expect("db init");
     let bridge_secret = "bridge-test-secret".to_string();
-    let bridge_runtime = BridgeRuntime::new(bridge_secret.clone());
+    let bridge_url = "http://127.0.0.1:9/bridge/events".to_string();
+    let bridge_runtime = BridgeRuntime::new(bridge_secret.clone(), bridge_url.clone(), db.clone());
     let chat_server = ChatServer::new(Some(bridge_runtime.clone())).start();
 
     TestContext {
@@ -45,6 +46,7 @@ pub async fn test_context() -> TestContext {
             presence_timeout_secs: 60,
             invite_only: false,
             bridge_enabled: true,
+            bridge_url: Some(bridge_url),
         },
         db,
         bridge_runtime,

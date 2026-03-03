@@ -1,8 +1,7 @@
 use crate::routes::{
-    admin as admin_routes, auth as auth_routes, bridge as bridge_routes,
-    channels as channels_routes, emojis as emojis_routes, files as files_routes,
-    invites as invites_routes, messages as messages_routes, reactions as reactions_routes,
-    users as users_routes,
+    admin as admin_routes, auth as auth_routes, channels as channels_routes,
+    emojis as emojis_routes, files as files_routes, invites as invites_routes,
+    messages as messages_routes, reactions as reactions_routes, users as users_routes,
 };
 use crate::ws;
 use actix_web::web;
@@ -21,7 +20,7 @@ pub fn configure(cfg: &mut web::ServiceConfig, bridge_enabled: bool) {
         );
 }
 
-fn configure_api(cfg: &mut web::ServiceConfig, bridge_enabled: bool) {
+fn configure_api(cfg: &mut web::ServiceConfig, _bridge_enabled: bool) {
     cfg.route(
         "/health",
         web::get().to(crate::routes::health::health_check),
@@ -173,8 +172,4 @@ fn configure_api(cfg: &mut web::ServiceConfig, bridge_enabled: bool) {
         "/shareplay/thumbnail/{item_id}",
         web::get().to(crate::routes::shareplay::get_thumbnail_by_id),
     );
-
-    if bridge_enabled {
-        cfg.service(web::scope("/bridge").configure(bridge_routes::configure));
-    }
 }

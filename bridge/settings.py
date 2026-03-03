@@ -8,26 +8,39 @@ from pathlib import Path
 class BridgeSettings:
     discord_token: str
     discord_channel_id: int
-    base_url: str
     bridge_key: str
-    poll_interval_seconds: float = 2.0
-    poll_limit: int = 100
-    state_file: str = "bridge/.cursor.json"
-    http_timeout_seconds: float = 10.0
+    listen_host: str = "127.0.0.1"
+    listen_port: int = 23901
 
     @classmethod
     def from_env(cls) -> "BridgeSettings":
         load_dotenv()
+        listen_host, listen_port = parse_listen_address(
+            os.getenv("STUFFCHAT_BRIDGE_LISTEN", "127.0.0.1:23901")
+        )
         return cls(
             discord_token=require_env("DISCORD_TOKEN"),
             discord_channel_id=int(require_env("DISCORD_CHANNEL_ID")),
-            base_url=require_env("STUFFCHAT_BRIDGE_BASE_URL"),
             bridge_key=require_env("STUFFCHAT_BRIDGE_KEY"),
-            poll_interval_seconds=float(os.getenv("STUFFCHAT_BRIDGE_POLL_INTERVAL_SECONDS", "2.0")),
-            poll_limit=int(os.getenv("STUFFCHAT_BRIDGE_POLL_LIMIT", "100")),
-            state_file=os.getenv("STUFFCHAT_BRIDGE_STATE_FILE", "bridge/.cursor.json"),
-            http_timeout_seconds=float(os.getenv("STUFFCHAT_BRIDGE_HTTP_TIMEOUT_SECONDS", "10")),
+            listen_host=listen_host,
+            listen_port=listen_port,
         )
+
+
+def parse_listen_address(value: str) -> tuple[str, int]:
+    host, separator, port = value.rpartition(":")
+    if not separator or not host:
+        raise RuntimeError("STUFFCHAT_BRIDGE_LISTEN must be in host:port format")
+
+    try:
+        parsed_port = int(port)
+    except ValueError as exc:
+        raise RuntimeError("STUFFCHAT_BRIDGE_LISTEN port must be an integer") from exc
+
+    if parsed_port <= 0 or parsed_port > 65535:
+        raise RuntimeError("STUFFCHAT_BRIDGE_LISTEN port must be between 1 and 65535")
+
+    return host, parsed_port
 
 
 def require_env(name: str) -> str:

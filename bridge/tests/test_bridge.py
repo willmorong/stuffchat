@@ -4,30 +4,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from aiohttp.test_utils import TestClient, TestServer
+
+from bridge.bot import create_bridge_app, is_authorized
 from bridge.formatting import format_event_message
-from bridge.settings import BridgeSettings
-from bridge.state import CursorStore
-
-try:
-    from bridge.client import BridgeAuthError, BridgeClient
-except ModuleNotFoundError:
-    BridgeAuthError = None
-    BridgeClient = None
-
-
-class CursorStoreTests(unittest.TestCase):
-    def test_load_returns_none_for_missing_or_invalid_file(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            store = CursorStore(Path(tmp_dir) / "cursor.json")
-            self.assertIsNone(store.load())
-            store.path.write_text("{not-json")
-            self.assertIsNone(store.load())
-
-    def test_save_and_load_round_trip(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            store = CursorStore(Path(tmp_dir) / "cursor.json")
-            store.save(42)
-            self.assertEqual(store.load(), 42)
+from bridge.settings import BridgeSettings, parse_listen_address
 
 
 class FormatEventMessageTests(unittest.TestCase):
@@ -61,9 +42,8 @@ class BridgeSettingsTests(unittest.TestCase):
                     [
                         "DISCORD_TOKEN=discord-token",
                         "DISCORD_CHANNEL_ID=1234",
-                        "STUFFCHAT_BRIDGE_BASE_URL=https://example.com",
                         "STUFFCHAT_BRIDGE_KEY=bridge-secret",
-                        'STUFFCHAT_BRIDGE_STATE_FILE="custom cursor.json"',
+                        "STUFFCHAT_BRIDGE_LISTEN=0.0.0.0:24000",
                     ]
                 )
             )
@@ -77,9 +57,9 @@ class BridgeSettingsTests(unittest.TestCase):
 
         self.assertEqual(settings.discord_token, "discord-token")
         self.assertEqual(settings.discord_channel_id, 1234)
-        self.assertEqual(settings.base_url, "https://example.com")
         self.assertEqual(settings.bridge_key, "bridge-secret")
-        self.assertEqual(settings.state_file, "custom cursor.json")
+        self.assertEqual(settings.listen_host, "0.0.0.0")
+        self.assertEqual(settings.listen_port, 24000)
 
     def test_from_env_keeps_existing_environment_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -89,8 +69,7 @@ class BridgeSettingsTests(unittest.TestCase):
                     [
                         "DISCORD_TOKEN=from-dotenv",
                         "DISCORD_CHANNEL_ID=1234",
-                        "STUFFCHAT_BRIDGE_BASE_URL=https://example.com",
-                        "STUFFCHAT_BRIDGE_KEY=bridge-secret",
+                        "STUFFCHAT_BRIDGE_KEY=dotenv-secret",
                     ]
                 )
             )
@@ -108,14 +87,54 @@ class BridgeSettingsTests(unittest.TestCase):
 
         self.assertEqual(settings.discord_token, "from-env")
 
+    def test_parse_listen_address_rejects_invalid_values(self) -> None:
+        with self.assertRaises(RuntimeError):
+            parse_listen_address("127.0.0.1")
+        with self.assertRaises(RuntimeError):
+            parse_listen_address("127.0.0.1:not-a-port")
 
-@unittest.skipIf(BridgeClient is None, "aiohttp is not installed")
-class BridgeClientTests(unittest.IsolatedAsyncioTestCase):
-    async def test_request_with_backoff_propagates_bridge_auth(self) -> None:
-        async with BridgeClient("https://example.com", "secret") as client:
-            request = mock.AsyncMock(side_effect=BridgeAuthError("bad auth"))
-            with self.assertRaises(BridgeAuthError):
-                await client.request_with_backoff(request)
+
+class BridgeAuthorizationTests(unittest.TestCase):
+    def test_authorization_requires_matching_bearer_token(self) -> None:
+        self.assertTrue(is_authorized("Bearer secret", "secret"))
+        self.assertFalse(is_authorized("Bearer wrong", "secret"))
+        self.assertFalse(is_authorized("Basic secret", "secret"))
+        self.assertFalse(is_authorized(None, "secret"))
+
+
+class BridgeApiTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        self.received_payloads: list[dict] = []
+
+        async def dispatch(payload: dict) -> None:
+            self.received_payloads.append(payload)
+
+        self.client = TestClient(TestServer(create_bridge_app("secret", dispatch)))
+        await self.client.start_server()
+
+    async def asyncTearDown(self) -> None:
+        await self.client.close()
+
+    async def test_events_endpoint_requires_authorization(self) -> None:
+        response = await self.client.post("/events", json={"type": "call_joined"})
+        self.assertEqual(response.status, 401)
+
+    async def test_events_endpoint_dispatches_payload(self) -> None:
+        response = await self.client.post(
+            "/events",
+            json={"type": "call_joined", "user": {}, "channel": {}},
+            headers={"Authorization": "Bearer secret"},
+        )
+        self.assertEqual(response.status, 200)
+        self.assertEqual(self.received_payloads, [{"type": "call_joined", "user": {}, "channel": {}}])
+
+    async def test_events_endpoint_rejects_invalid_json(self) -> None:
+        response = await self.client.post(
+            "/events",
+            data="not-json",
+            headers={"Authorization": "Bearer secret"},
+        )
+        self.assertEqual(response.status, 400)
 
 
 if __name__ == "__main__":

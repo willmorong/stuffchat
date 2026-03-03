@@ -36,19 +36,14 @@ See [config.toml](config.toml) for configuration options.
 
 ### Bridge
 
-Stuffchat can expose a small read-only bridge API for external bots such as the Discord bridge in [`bridge/`](bridge/).
+Stuffchat can push call join/leave events to an external bot such as the Discord bridge in [`bridge/`](bridge/).
 
 - Set `bridge_enabled = true` in [`config.toml`](config.toml).
+- Set `bridge_url` to the bot endpoint, for example `http://127.0.0.1:23901/events`.
 - On startup, Stuffchat will create `./bridge_secret` if it does not already exist.
-- Use the secret from that file as the bearer token for bridge clients.
+- Configure the bot with the same secret via `STUFFCHAT_BRIDGE_KEY`.
 
-The bridge API is intended for trusted machine clients and currently exposes:
-
-- `GET /api/bridge/status`
-- `GET /api/bridge/events`
-- `POST /api/bridge/resolve`
-
-The included Discord bridge bot polls those endpoints and posts notices like `alice has joined call in #main` into one configured Discord text channel.
+The included Discord bridge bot runs its own HTTP API and posts notices like `alice has joined call in #main` into one configured Discord text channel.
 
 ## License
 

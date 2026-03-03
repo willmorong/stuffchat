@@ -1,104 +1,128 @@
-import asyncio
 import contextlib
+import json
 import logging
+import secrets
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 import discord
+from aiohttp import ContentTypeError, web
 
 try:
-    from .client import BridgeAuthError, BridgeClient
     from .formatting import format_event_message
     from .settings import BridgeSettings
-    from .state import CursorStore
 except ImportError:
-    from client import BridgeAuthError, BridgeClient
     from formatting import format_event_message
     from settings import BridgeSettings
-    from state import CursorStore
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 LOGGER = logging.getLogger("stuffchat-bridge")
 
 
+def extract_bearer_token(header_value: str | None) -> str | None:
+    if not header_value:
+        return None
+    prefix = "Bearer "
+    if not header_value.startswith(prefix):
+        return None
+    token = header_value[len(prefix) :].strip()
+    return token or None
+
+
+def is_authorized(header_value: str | None, bridge_key: str) -> bool:
+    token = extract_bearer_token(header_value)
+    return token is not None and secrets.compare_digest(token, bridge_key)
+
+
+async def healthcheck(_: web.Request) -> web.Response:
+    return web.json_response({"ok": True})
+
+
+async def receive_event(request: web.Request) -> web.Response:
+    if not is_authorized(request.headers.get("Authorization"), request.app["bridge_key"]):
+        raise web.HTTPUnauthorized(text="unauthorized")
+
+    try:
+        payload = await request.json()
+    except (ContentTypeError, json.JSONDecodeError) as exc:
+        raise web.HTTPBadRequest(text="invalid JSON body") from exc
+
+    if not isinstance(payload, dict):
+        raise web.HTTPBadRequest(text="bridge event payload must be an object")
+
+    dispatch_event: Callable[[dict[str, Any]], Awaitable[None]] = request.app["dispatch_event"]
+    try:
+        await dispatch_event(payload)
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text=str(exc)) from exc
+    return web.json_response({"ok": True})
+
+
+def create_bridge_app(
+    bridge_key: str,
+    dispatch_event: Callable[[dict[str, Any]], Awaitable[None]],
+) -> web.Application:
+    app = web.Application()
+    app["bridge_key"] = bridge_key
+    app["dispatch_event"] = dispatch_event
+    app.router.add_get("/health", healthcheck)
+    app.router.add_post("/events", receive_event)
+    return app
+
+
 class StuffchatBridgeBot(discord.Client):
     def __init__(self, settings: BridgeSettings) -> None:
         super().__init__(intents=discord.Intents.none())
         self.settings = settings
-        self.cursor_store = CursorStore(settings.state_file)
         self.destination_channel: discord.abc.Messageable | None = None
-        self._bridge_client: BridgeClient | None = None
-        self._poll_task: asyncio.Task[None] | None = None
+        self._app_runner: web.AppRunner | None = None
+        self._app_site: web.TCPSite | None = None
+        self._logged_ready = False
 
     async def setup_hook(self) -> None:
-        self._bridge_client = BridgeClient(
-            self.settings.base_url,
-            self.settings.bridge_key,
-            timeout_seconds=self.settings.http_timeout_seconds,
+        app = create_bridge_app(self.settings.bridge_key, self.dispatch_bridge_event)
+        self._app_runner = web.AppRunner(app, access_log=None)
+        await self._app_runner.setup()
+        self._app_site = web.TCPSite(
+            self._app_runner,
+            host=self.settings.listen_host,
+            port=self.settings.listen_port,
         )
-        await self._bridge_client.__aenter__()
+        await self._app_site.start()
+        LOGGER.info(
+            "Bridge API listening on http://%s:%s/events",
+            self.settings.listen_host,
+            self.settings.listen_port,
+        )
 
     async def close(self) -> None:
-        if self._poll_task is not None:
-            self._poll_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._poll_task
-        if self._bridge_client is not None:
-            await self._bridge_client.__aexit__(None, None, None)
-            self._bridge_client = None
+        if self._app_runner is not None:
+            with contextlib.suppress(Exception):
+                await self._app_runner.cleanup()
+            self._app_runner = None
+            self._app_site = None
         await super().close()
 
     async def on_ready(self) -> None:
+        await self.get_destination_channel()
+        if not self._logged_ready:
+            LOGGER.info("Connected to Discord as %s", self.user)
+            self._logged_ready = True
+
+    async def get_destination_channel(self) -> discord.abc.Messageable:
         if self.destination_channel is None:
             channel = await self.fetch_channel(self.settings.discord_channel_id)
             if not isinstance(channel, discord.abc.Messageable):
                 raise RuntimeError("configured Discord channel is not messageable")
             self.destination_channel = channel
-            LOGGER.info("Connected to Discord as %s", self.user)
+        return self.destination_channel
 
-        if self._poll_task is None:
-            self._poll_task = asyncio.create_task(self.poll_loop())
-
-    async def poll_loop(self) -> None:
-        assert self._bridge_client is not None
-        assert self.destination_channel is not None
-
-        cursor = self.cursor_store.load()
-        if cursor is None:
-            status = await self._bridge_client.request_with_backoff(self._bridge_client.status)
-            cursor = int(status.get("latest_available", 0))
-            self.cursor_store.save(cursor)
-
-        while not self.is_closed():
-            try:
-                payload = await self._bridge_client.request_with_backoff(
-                    self._bridge_client.events,
-                    cursor,
-                    self.settings.poll_limit,
-                )
-                next_after = int(payload.get("next_after", cursor))
-                if payload.get("reset_required"):
-                    LOGGER.warning("Bridge cursor reset required; skipping to %s", next_after)
-                    cursor = next_after
-                    self.cursor_store.save(cursor)
-                    await asyncio.sleep(self.settings.poll_interval_seconds)
-                    continue
-
-                for event in payload.get("events", []):
-                    message = format_event_message(event)
-                    await self.destination_channel.send(message)
-
-                cursor = next_after
-                self.cursor_store.save(cursor)
-            except BridgeAuthError:
-                LOGGER.error("Bridge authentication failed; shutting down")
-                await self.close()
-                return
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:  # noqa: BLE001
-                LOGGER.exception("Bridge polling failed: %s", exc)
-
-            await asyncio.sleep(self.settings.poll_interval_seconds)
+    async def dispatch_bridge_event(self, payload: dict[str, Any]) -> None:
+        message = format_event_message(payload)
+        await self.wait_until_ready()
+        destination_channel = await self.get_destination_channel()
+        await destination_channel.send(message)
 
 
 def main() -> None:

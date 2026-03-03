@@ -87,9 +87,17 @@ async fn main() -> std::io::Result<()> {
         .expect("database init failed");
 
     let bridge_runtime = if cfg.bridge_enabled {
-        let secret =
-            load_or_create_bridge_secret(bridge_secret_path()).expect("bridge secret init failed");
-        Some(BridgeRuntime::new(secret))
+        match cfg.bridge_url.as_deref().map(str::trim) {
+            Some(url) if !url.is_empty() => {
+                let secret = load_or_create_bridge_secret(bridge_secret_path())
+                    .expect("bridge secret init failed");
+                Some(BridgeRuntime::new(secret, url.to_string(), db.clone()))
+            }
+            _ => {
+                log::warn!("Bridge is enabled but bridge_url is not set; bridge delivery disabled");
+                None
+            }
+        }
     } else {
         None
     };

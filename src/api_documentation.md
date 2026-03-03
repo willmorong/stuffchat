@@ -84,19 +84,32 @@ All endpoints below require `Authorization: Bearer <access_token>` header.
 - `GET /api/shareplay/{channel_id}/current`: Get current song ID.
 - `GET /api/shareplay/song/{song_id}`: Stream song audio.
 ### Bridge
-Bridge endpoints are disabled unless `bridge_enabled = true` in `config.toml`.
+Bridge delivery is disabled unless `bridge_enabled = true` and `bridge_url` is set in `config.toml`.
 
 Authentication uses:
 - `Authorization: Bearer <bridge_secret>`
 
 The server stores the bridge secret in `./bridge_secret`, generating it on startup when needed.
 
-Endpoints:
-- `GET /api/bridge/status`: Returns `{ "oldest_available": number|null, "latest_available": number }`
-- `GET /api/bridge/events?after=<seq>&limit=<n>`: Returns a paginated event feed for `call_joined` and `call_left`
-- `POST /api/bridge/resolve`: Resolves usernames and channel names from IDs
+Stuffchat does not expose bridge HTTP endpoints anymore. Instead it POSTs each bridge event to the configured `bridge_url` as JSON:
 
-Bridge event retention is memory-only. After a restart or queue overflow, clients may receive `reset_required = true` and should advance to `next_after` without replaying old events.
+```json
+{
+  "type": "call_joined",
+  "occurred_at": "2026-03-03T12:34:56Z",
+  "user": {
+    "id": "string",
+    "username": "string?"
+  },
+  "channel": {
+    "id": "string",
+    "name": "string?",
+    "is_voice": true
+  }
+}
+```
+
+Supported event types are `call_joined` and `call_left`.
 ## Response Structures
 All timestamps are ISO 8601 strings (e.g. `"2026-02-12T23:36:16Z"`). All IDs are UUID v4 strings. Fields marked with `?` are nullable/optional (may be `null` or absent).
 ### Authentication

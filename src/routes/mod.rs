@@ -1,6 +1,5 @@
 pub mod admin;
 pub mod auth;
-pub mod bridge;
 pub mod call;
 pub mod channels;
 pub mod emojis;
