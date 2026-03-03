@@ -14,7 +14,7 @@ max_upload_size = 524288000
 presence_timeout_secs = 60
 # Whether registration requires an invite code
 invite_only = true
-# Whether to enable outbound bridge delivery for bots and auxiliary integrations
-bridge_enabled = false
 # Full URL for the bot bridge endpoint that receives POSTed events
 bridge_url = "http://127.0.0.1:23901/events"
+# Whether to enable the external bridge API for bots and auxiliary integrations
+bridge_enabled = true
