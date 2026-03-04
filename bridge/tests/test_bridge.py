@@ -6,8 +6,8 @@ from unittest import mock
 
 from aiohttp.test_utils import TestClient, TestServer
 
-from bridge.bot import create_bridge_app, is_authorized
-from bridge.formatting import format_event_message
+from bridge.bot import CallStateTracker, create_bridge_app, is_authorized
+from bridge.formatting import format_call_ended_message, format_event_message
 from bridge.settings import BridgeSettings, parse_listen_address
 
 
@@ -31,6 +31,84 @@ class FormatEventMessageTests(unittest.TestCase):
             }
         )
         self.assertEqual(message, "user user-1 has left call in channel channel-1")
+
+    def test_formats_call_ended_message(self) -> None:
+        message = format_call_ended_message(
+            {
+                "channel": {"id": "channel-1", "name": "main"},
+            }
+        )
+        self.assertEqual(message, "Call in #main has ended")
+
+
+class CallStateTrackerTests(unittest.TestCase):
+    def test_sends_call_ended_when_last_participant_leaves(self) -> None:
+        tracker = CallStateTracker()
+
+        join_messages = tracker.messages_for_event(
+            {
+                "type": "call_joined",
+                "user": {"id": "user-1", "username": "alice"},
+                "channel": {"id": "channel-1", "name": "main"},
+            }
+        )
+        leave_messages = tracker.messages_for_event(
+            {
+                "type": "call_left",
+                "user": {"id": "user-1", "username": "alice"},
+                "channel": {"id": "channel-1", "name": "main"},
+            }
+        )
+
+        self.assertEqual(join_messages, ["alice has joined call in #main"])
+        self.assertEqual(
+            leave_messages,
+            [
+                "alice has left call in #main",
+                "Call in #main has ended",
+            ],
+        )
+
+    def test_does_not_send_call_ended_when_other_participants_remain(self) -> None:
+        tracker = CallStateTracker()
+
+        tracker.messages_for_event(
+            {
+                "type": "call_joined",
+                "user": {"id": "user-1", "username": "alice"},
+                "channel": {"id": "channel-1", "name": "main"},
+            }
+        )
+        tracker.messages_for_event(
+            {
+                "type": "call_joined",
+                "user": {"id": "user-2", "username": "bob"},
+                "channel": {"id": "channel-1", "name": "main"},
+            }
+        )
+
+        leave_messages = tracker.messages_for_event(
+            {
+                "type": "call_left",
+                "user": {"id": "user-1", "username": "alice"},
+                "channel": {"id": "channel-1", "name": "main"},
+            }
+        )
+
+        self.assertEqual(leave_messages, ["alice has left call in #main"])
+
+    def test_does_not_send_call_ended_for_untracked_leave(self) -> None:
+        tracker = CallStateTracker()
+
+        leave_messages = tracker.messages_for_event(
+            {
+                "type": "call_left",
+                "user": {"id": "user-1", "username": "alice"},
+                "channel": {"id": "channel-1", "name": "main"},
+            }
+        )
+
+        self.assertEqual(leave_messages, ["alice has left call in #main"])
 
 
 class BridgeSettingsTests(unittest.TestCase):

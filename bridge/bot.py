@@ -2,6 +2,7 @@ import contextlib
 import json
 import logging
 import secrets
+from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -9,10 +10,10 @@ import discord
 from aiohttp import ContentTypeError, web
 
 try:
-    from .formatting import format_event_message
+    from .formatting import format_call_ended_message, format_event_message
     from .settings import BridgeSettings
 except ImportError:
-    from formatting import format_event_message
+    from formatting import format_call_ended_message, format_event_message
     from settings import BridgeSettings
 
 
@@ -71,6 +72,34 @@ def create_bridge_app(
     return app
 
 
+class CallStateTracker:
+    def __init__(self) -> None:
+        self._participants_by_channel: dict[str, set[str]] = defaultdict(set)
+
+    def messages_for_event(self, payload: dict[str, Any]) -> list[str]:
+        messages = [format_event_message(payload)]
+        event_type = payload.get("type")
+        channel_id = ((payload.get("channel") or {}).get("id")) or "unknown-channel"
+        user_id = ((payload.get("user") or {}).get("id")) or "unknown-user"
+
+        if event_type == "call_joined":
+            self._participants_by_channel[channel_id].add(user_id)
+            return messages
+
+        if event_type == "call_left":
+            participants = self._participants_by_channel.get(channel_id)
+            if participants is None or user_id not in participants:
+                return messages
+
+            participants.remove(user_id)
+            if not participants:
+                del self._participants_by_channel[channel_id]
+                messages.append(format_call_ended_message(payload))
+            return messages
+
+        raise ValueError(f"unsupported bridge event type: {event_type}")
+
+
 class StuffchatBridgeBot(discord.Client):
     def __init__(self, settings: BridgeSettings) -> None:
         super().__init__(intents=discord.Intents.none())
@@ -79,6 +108,7 @@ class StuffchatBridgeBot(discord.Client):
         self._app_runner: web.AppRunner | None = None
         self._app_site: web.TCPSite | None = None
         self._logged_ready = False
+        self._call_state = CallStateTracker()
 
     async def setup_hook(self) -> None:
         app = create_bridge_app(self.settings.bridge_key, self.dispatch_bridge_event)
@@ -119,10 +149,11 @@ class StuffchatBridgeBot(discord.Client):
         return self.destination_channel
 
     async def dispatch_bridge_event(self, payload: dict[str, Any]) -> None:
-        message = format_event_message(payload)
+        messages = self._call_state.messages_for_event(payload)
         await self.wait_until_ready()
         destination_channel = await self.get_destination_channel()
-        await destination_channel.send(message)
+        for message in messages:
+            await destination_channel.send(message)
 
 
 def main() -> None:
