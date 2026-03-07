@@ -1,7 +1,7 @@
 use super::server::{
     Broadcast, ChatServer, Connect, DirectSignal, Disconnect, Join, Leave, SharePlayAction,
 };
-use crate::{auth, config::Config, db::Db};
+use crate::{auth, config::Config, db::Db, models::role::PERM_JOIN_VOICE, permissions};
 use actix::{Actor, ActorContext, Addr, AsyncContext, Handler, Message, StreamHandler, WrapFuture};
 use actix_web::{Error, HttpRequest, HttpResponse, web};
 use actix_web_actors::ws;
@@ -131,6 +131,12 @@ pub struct RoomState {
     pub voice_users: Vec<(String, String)>,
 }
 
+#[derive(Message)]
+#[rtype(result = "()")]
+struct SetVoiceChannel {
+    pub channel_id: Option<String>,
+}
+
 impl Handler<ServerMsg> for WsSession {
     type Result = ();
     fn handle(&mut self, msg: ServerMsg, ctx: &mut Self::Context) {
@@ -148,6 +154,14 @@ impl Handler<RoomState> for WsSession {
         })
         .to_string();
         ctx.text(payload);
+    }
+}
+
+impl Handler<SetVoiceChannel> for WsSession {
+    type Result = ();
+
+    fn handle(&mut self, msg: SetVoiceChannel, _ctx: &mut Self::Context) {
+        self.voice_channel = msg.channel_id;
     }
 }
 
@@ -179,6 +193,14 @@ async fn can_write(db: &crate::db::Db, user_id: &str, channel_id: &str) -> bool 
     .flatten()
     .map(|v| v != 0)
     .unwrap_or(false)
+}
+
+async fn can_join_voice_call(db: &crate::db::Db, user_id: &str, channel_id: &str) -> bool {
+    can_read(db, user_id, channel_id).await
+        && permissions::has_permission(db, user_id, PERM_JOIN_VOICE)
+            .await
+            .ok()
+            .unwrap_or(false)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -271,7 +293,15 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                             let server = self.server.clone();
                             ctx.spawn(
                                 async move {
-                                    if can_write(&db, &user_id, &channel_id).await {
+                                    if can_write(&db, &user_id, &channel_id).await
+                                        && permissions::has_permission(
+                                            &db,
+                                            &user_id,
+                                            crate::models::role::PERM_POST_MESSAGES,
+                                        )
+                                        .await
+                                        .unwrap_or(false)
+                                    {
                                         let payload = serde_json::json!({
                                             "type": "chat_message",
                                             "channel_id": channel_id,
@@ -356,13 +386,17 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                             let session_id = self.session_id.clone();
                             let server = self.server.clone();
                             let cid = channel_id.clone();
+                            let addr = ctx.address();
                             ctx.spawn(
                                 async move {
-                                    if can_read(&db, &user_id, &cid).await {
+                                    if can_join_voice_call(&db, &user_id, &cid).await {
                                         server.do_send(super::server::JoinVoice {
-                                            channel_id: cid,
+                                            channel_id: cid.clone(),
                                             user_id,
                                             session_id,
+                                        });
+                                        addr.do_send(SetVoiceChannel {
+                                            channel_id: Some(cid),
                                         });
                                     } else {
                                         log::warn!(
@@ -374,7 +408,6 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                                 }
                                 .into_actor(self),
                             );
-                            self.voice_channel = Some(channel_id);
                         }
                         ClientEvent::LeaveCall { channel_id } => {
                             log::info!(
@@ -383,12 +416,14 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                                 self.session_id,
                                 channel_id
                             );
-                            self.voice_channel = None;
-                            self.server.do_send(super::server::LeaveVoice {
-                                channel_id,
-                                user_id: self.user_id.clone(),
-                                session_id: self.session_id.clone(),
-                            });
+                            if self.voice_channel.as_deref() == Some(&channel_id) {
+                                self.voice_channel = None;
+                                self.server.do_send(super::server::LeaveVoice {
+                                    channel_id,
+                                    user_id: self.user_id.clone(),
+                                    session_id: self.session_id.clone(),
+                                });
+                            }
                         }
                         ClientEvent::SharePlayAction {
                             channel_id,
@@ -401,9 +436,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                             let cid = channel_id.clone();
                             ctx.spawn(
                                 async move {
-                                    // Must be in voice/read permission to control?
-                                    // For now check read permission
-                                    if can_read(&db, &user_id, &cid).await {
+                                    if can_join_voice_call(&db, &user_id, &cid).await {
                                         log::info!("WsSession sending SharePlayAction to server: user_id={}, channel_id={}, action={}", user_id, cid, action_type);
                                         server.do_send(SharePlayAction {
                                             channel_id: cid,
@@ -423,5 +456,86 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
             Ok(ws::Message::Close(_)) => ctx.stop(),
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::Db;
+    use chrono::Utc;
+
+    async fn setup_db() -> Db {
+        let path = std::env::temp_dir().join(format!(
+            "stuffchat-ws-session-test-{}.sqlite3",
+            uuid::Uuid::new_v4()
+        ));
+        Db::connect_and_migrate(path.to_str().expect("temp db path"))
+            .await
+            .expect("init db")
+    }
+
+    async fn insert_user(db: &Db, id: &str, username: &str) {
+        sqlx::query(
+            "INSERT INTO users(id, username, email, password_hash, created_at, updated_at)
+             VALUES (?, ?, ?, 'legacy-hash', ?, ?)",
+        )
+        .bind(id)
+        .bind(username)
+        .bind(format!("{username}@example.com"))
+        .bind(Utc::now())
+        .bind(Utc::now())
+        .execute(&db.0)
+        .await
+        .expect("insert user");
+    }
+
+    #[tokio::test]
+    async fn can_join_voice_call_requires_read_membership_and_join_voice_permission() {
+        let db = setup_db().await;
+        insert_user(&db, "voice-user", "voice-user").await;
+        let now = Utc::now();
+
+        sqlx::query(
+            "INSERT INTO channels(id, name, is_voice, is_private, created_by, created_at) VALUES (?, ?, 1, 0, ?, ?)",
+        )
+        .bind("channel-voice")
+        .bind("voice-room")
+        .bind("voice-user")
+        .bind(now)
+        .execute(&db.0)
+        .await
+        .expect("insert channel");
+
+        assert!(!can_join_voice_call(&db, "voice-user", "channel-voice").await);
+
+        sqlx::query(
+            "INSERT INTO channel_members(channel_id, user_id, can_read, can_write, can_manage) VALUES (?, ?, 1, 1, 0)",
+        )
+        .bind("channel-voice")
+        .bind("voice-user")
+        .execute(&db.0)
+        .await
+        .expect("insert membership");
+        assert!(!can_join_voice_call(&db, "voice-user", "channel-voice").await);
+
+        let role_id = uuid::Uuid::new_v4().to_string();
+        sqlx::query(
+            "INSERT INTO roles(id, name, permissions, created_at) VALUES (?, 'can-join-voice', ?, ?)",
+        )
+        .bind(&role_id)
+        .bind(crate::models::role::PERM_JOIN_VOICE)
+        .bind(now)
+        .execute(&db.0)
+        .await
+        .expect("insert voice role");
+        sqlx::query("INSERT INTO user_roles(user_id, role_id) VALUES (?, ?)")
+            .bind("voice-user")
+            .bind(&role_id)
+            .execute(&db.0)
+            .await
+            .expect("assign voice role");
+
+        assert!(can_join_voice_call(&db, "voice-user", "channel-voice").await);
     }
 }

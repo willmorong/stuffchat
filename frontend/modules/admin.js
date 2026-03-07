@@ -6,9 +6,16 @@ let adminUsers = [];
 let adminRoles = [];
 let adminLogs = [];
 let adminLoaded = false;
+const ADMIN_PERMISSION = 1;
+
+function hasAdminPermission() {
+    const perms = store.user?.permissions;
+    if (typeof perms !== 'number') return false;
+    return (perms & ADMIN_PERMISSION) === ADMIN_PERMISSION;
+}
 
 export function hasAdminRole() {
-    return !!store.user?.roles?.some(r => r.name === 'admin');
+    return hasAdminPermission();
 }
 
 export function refreshAdminVisibility() {

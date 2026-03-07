@@ -97,7 +97,11 @@ pub async fn insert_channel(db: &Db, id: &str, name: &str, created_by: &str, is_
 }
 
 pub async fn insert_role(db: &Db, id: &str, name: &str) {
-    sqlx::query("INSERT INTO roles(id, name, permissions, created_at) VALUES (?, ?, 0, ?)")
+    sqlx::query(
+        "INSERT INTO roles(id, name, permissions, created_at)
+         VALUES (?, ?, 0, ?)
+         ON CONFLICT(name) DO UPDATE SET id = excluded.id",
+    )
         .bind(id)
         .bind(name)
         .bind(chrono::Utc::now())

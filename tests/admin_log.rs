@@ -4,6 +4,7 @@ use actix_web::{App, http::StatusCode, test, web};
 use common::{auth_token, grant_role, insert_channel, insert_role, insert_user, test_context};
 use serde_json::{Value, json};
 use sqlx::Row;
+use stuffchat::models::role::PERM_CREATE_CHANNELS;
 
 fn find_log<'a>(logs: &'a [Value], action_type: &str) -> &'a Value {
     logs.iter()
@@ -158,6 +159,15 @@ async fn channel_owner_actions_are_logged() {
     insert_user(&ctx.db, "member-1", "member").await;
     insert_role(&ctx.db, "role-admin", "admin").await;
     grant_role(&ctx.db, "admin-1", "role-admin").await;
+    sqlx::query(
+        "INSERT INTO roles(id, name, permissions, created_at) VALUES ('role-owner', 'channel-owner', ?, ?)",
+    )
+    .bind(PERM_CREATE_CHANNELS)
+    .bind(chrono::Utc::now())
+    .execute(&ctx.db.0)
+    .await
+    .expect("create owner role");
+    grant_role(&ctx.db, "owner-1", "role-owner").await;
 
     let admin_token = auth_token(&ctx.cfg, "admin-1");
     let owner_token = auth_token(&ctx.cfg, "owner-1");

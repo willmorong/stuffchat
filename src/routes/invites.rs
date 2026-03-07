@@ -1,4 +1,10 @@
-use crate::{auth, db::Db, errors::ApiError};
+use crate::{
+    auth,
+    db::Db,
+    errors::ApiError,
+    models::role::PERM_INVITE_USERS,
+    permissions,
+};
 use actix_web::{HttpResponse, web};
 use serde::Serialize;
 use sqlx::Row;
@@ -16,6 +22,8 @@ pub async fn create_invite(
     db: web::Data<Db>,
     auth: auth::AuthUser,
 ) -> Result<HttpResponse, ApiError> {
+    permissions::require_permission(&db, &auth.user_id, PERM_INVITE_USERS).await?;
+
     let code = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now();
 

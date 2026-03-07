@@ -30,6 +30,26 @@ On startup you can grant the `admin` role to a user (and create the role if it d
 ./stuffchat --admin <user-id|username|email>
 ```
 
+### Permissions and roles
+
+Roles now carry numeric capability bits in the `roles.permissions` field. The built-in bits include:
+
+- `1` (`PERM_ADMIN_ALL`): full admin access.
+- `2` (`PERM_MANAGE_CHANNELS`): manage channels across all channels.
+- `4` (`PERM_POST_MESSAGES`): post new chat messages.
+- `8` (`PERM_UPLOAD_FILES`): upload and use file attachments.
+- `16` (`PERM_CREATE_CHANNELS`): create channels.
+- `32` (`PERM_JOIN_VOICE`): join voice calls.
+- `64` (`PERM_INVITE_USERS`): create invite codes.
+- `128` (`PERM_MANAGE_EMOJIS`): upload/delete custom emojis.
+
+On startup, the server seeds role rows and member role assignments so that:
+
+- the `admin` role always gets `ADMIN_ALL`, and
+- every user has at least the `member` role if they had no role assignment.
+
+The `--admin` flag still works for existing deployments by ensuring the named user has the `admin` role, whether or not legacy role setup existed before.
+
 ## Configuration
 
 See [config.toml](config.toml) for configuration options.

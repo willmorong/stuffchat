@@ -20,6 +20,15 @@ pub async fn me(
         .bind(&user.user_id)
         .fetch_optional(&db.0).await?;
     let row = row.ok_or(ApiError::NotFound)?;
+    let permissions: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(r.permissions), 0)
+         FROM user_roles ur
+         INNER JOIN roles r ON r.id = ur.role_id
+         WHERE ur.user_id = ?",
+    )
+    .bind(&user.user_id)
+    .fetch_one(&db.0)
+    .await?;
     let role_rows = sqlx::query("SELECT r.id, r.name FROM roles r INNER JOIN user_roles ur ON ur.role_id = r.id WHERE ur.user_id = ? ORDER BY r.name ASC")
         .bind(&user.user_id)
         .fetch_all(&db.0).await?;
@@ -39,6 +48,7 @@ pub async fn me(
         "avatar_file_id": row.get::<Option<String>,_>("avatar_file_id"),
         "created_at": row.get::<chrono::DateTime<chrono::Utc>,_>("created_at"),
         "updated_at": row.get::<chrono::DateTime<chrono::Utc>,_>("updated_at"),
+        "permissions": permissions,
         "roles": roles,
     });
     Ok(HttpResponse::Ok().json(user))

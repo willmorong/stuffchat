@@ -1,4 +1,11 @@
-use crate::{admin_log, auth::AuthUser, db::Db, errors::ApiError};
+use crate::{
+    admin_log,
+    auth::AuthUser,
+    db::Db,
+    errors::ApiError,
+    models::role::PERM_CREATE_CHANNELS,
+    permissions,
+};
 use actix_web::{HttpResponse, web};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -182,7 +189,7 @@ pub async fn edit_channel(
 ) -> Result<HttpResponse, ApiError> {
     let id = path.into_inner();
 
-    // verify ownership
+    // verify manage permission
     let row = sqlx::query(
         "SELECT name, is_voice, is_private, created_by FROM channels WHERE id = ? AND deleted_at IS NULL",
     )
@@ -193,8 +200,7 @@ pub async fn edit_channel(
     let current_name: String = row.get("name");
     let current_is_voice = row.get::<i64, _>("is_voice") != 0;
     let current_is_private = row.get::<i64, _>("is_private") != 0;
-    let created_by: String = row.get("created_by");
-    if created_by != user.user_id {
+    if !permissions::can_manage_channel(&db, &user.user_id, &id).await? {
         return Err(ApiError::Forbidden);
     }
 
@@ -262,6 +268,7 @@ pub async fn create_channel(
     user: AuthUser,
     body: web::Json<CreateChannelReq>,
 ) -> Result<HttpResponse, ApiError> {
+    permissions::require_permission(&db, &user.user_id, PERM_CREATE_CHANNELS).await?;
     if body.name.trim().is_empty() {
         return Err(ApiError::BadRequest("name required".into()));
     }
@@ -342,25 +349,16 @@ pub async fn delete_channel(
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
     let id = path.into_inner();
-    // verify can_manage
-    let row = sqlx::query(
-        r#"
-        SELECT cm.can_manage, c.name
-        FROM channel_members cm
-        INNER JOIN channels c ON c.id = cm.channel_id
-        WHERE cm.channel_id = ? AND cm.user_id = ? AND c.deleted_at IS NULL
-        "#,
-    )
-    .bind(&id)
-    .bind(&user.user_id)
-    .fetch_optional(&db.0)
-    .await?;
-    let row = row.ok_or(ApiError::Forbidden)?;
-    let can_manage: i64 = row.get("can_manage");
-    if can_manage == 0 {
+    // verify management permissions
+    let row = sqlx::query("SELECT name FROM channels WHERE id = ? AND deleted_at IS NULL")
+        .bind(&id)
+        .fetch_optional(&db.0)
+        .await?;
+    let row = row.ok_or(ApiError::NotFound)?;
+    let channel_name: String = row.get("name");
+    if !permissions::can_manage_channel(&db, &user.user_id, &id).await? {
         return Err(ApiError::Forbidden);
     }
-    let channel_name: String = row.get("name");
 
     sqlx::query("UPDATE channels SET deleted_at = ? WHERE id = ?")
         .bind(chrono::Utc::now())
@@ -409,6 +407,16 @@ pub async fn leave_channel(
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
     let id = path.into_inner();
+    let row = sqlx::query("SELECT created_by FROM channels WHERE id = ? AND deleted_at IS NULL")
+        .bind(&id)
+        .fetch_optional(&db.0)
+        .await?;
+    let row = row.ok_or(ApiError::NotFound)?;
+    let created_by: String = row.get("created_by");
+    if created_by == user.user_id {
+        return Err(ApiError::Forbidden);
+    }
+
     sqlx::query("DELETE FROM channel_members WHERE channel_id = ? AND user_id = ?")
         .bind(&id)
         .bind(&user.user_id)
@@ -526,14 +534,13 @@ pub async fn modify_members(
     body: web::Json<ModifyMembersReq>,
 ) -> Result<HttpResponse, ApiError> {
     let id = path.into_inner();
-    let row =
-        sqlx::query("SELECT can_manage FROM channel_members WHERE channel_id = ? AND user_id = ?")
-            .bind(&id)
-            .bind(&user.user_id)
-            .fetch_optional(&db.0)
-            .await?;
-    let row = row.ok_or(ApiError::Forbidden)?;
-    if row.get::<i64, _>("can_manage") == 0 {
+    let row = sqlx::query("SELECT created_by FROM channels WHERE id = ? AND deleted_at IS NULL")
+        .bind(&id)
+        .fetch_optional(&db.0)
+        .await?;
+    let row = row.ok_or(ApiError::NotFound)?;
+    let created_by: String = row.get("created_by");
+    if !permissions::can_manage_channel(&db, &user.user_id, &id).await? {
         return Err(ApiError::Forbidden);
     }
 
@@ -548,6 +555,9 @@ pub async fn modify_members(
     }
     if let Some(remove) = &body.remove {
         for uid in remove {
+            if uid == &created_by {
+                return Err(ApiError::Forbidden);
+            }
             sqlx::query("DELETE FROM channel_members WHERE channel_id = ? AND user_id = ?")
                 .bind(&id)
                 .bind(uid)

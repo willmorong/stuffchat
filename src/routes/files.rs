@@ -1,4 +1,5 @@
-use crate::{auth::AuthUser, config::Config, db::Db, errors::ApiError};
+use crate::{auth::AuthUser, config::Config, db::Db, errors::ApiError, models::role::PERM_UPLOAD_FILES};
+use crate::permissions;
 use actix_multipart::Multipart;
 use actix_web::http::header::{ContentDisposition, DispositionParam, DispositionType};
 use actix_web::{HttpRequest, HttpResponse, web};
@@ -19,6 +20,8 @@ pub async fn upload_file(
     user: AuthUser,
     mut payload: Multipart,
 ) -> Result<HttpResponse, ApiError> {
+    permissions::require_permission(&db, &user.user_id, PERM_UPLOAD_FILES).await?;
+
     let mut saved: Option<SavedFile> = None;
     while let Some(item) = payload
         .try_next()

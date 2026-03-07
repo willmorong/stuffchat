@@ -10,3 +10,5 @@ Cargo.lock
 bridge/.cursor.json
 bridge/.env
 bridge/__pycache__/
+Cargo.lock
+*.pyc

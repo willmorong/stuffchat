@@ -22,6 +22,29 @@ Authentication is token-based (JWT).
     - Headers: `Authorization: Bearer <access_token>`
 ## HTTP API
 All endpoints below require `Authorization: Bearer <access_token>` header.
+
+## Permissions and Roles
+- Stuffchat now uses capability-based authorization for protected actions.
+- Roles contribute a permission bitmask. A user’s effective permissions are the bitwise OR of all role `permissions`.
+- Admin checks are currently permission-based (no hard-coded role-name checks).
+- Channel ownership is handled separately: channel creators can manage their channels even without global manage permission.
+
+### Common capabilities
+- `PERM_ADMIN_ALL = 1`: full admin access (`/api/admin/*`).
+- `PERM_MANAGE_CHANNELS = 2`: can edit/delete channels and change membership.
+- `PERM_POST_MESSAGES = 4`: can post messages by API and WS.
+- `PERM_UPLOAD_FILES = 8`: can upload files.
+- `PERM_CREATE_CHANNELS = 16`: can create channels.
+- `PERM_JOIN_VOICE = 32`: can join voice channels and perform SharePlay actions.
+- `PERM_INVITE_USERS = 64`: can create invites.
+- `PERM_MANAGE_EMOJIS = 128`: can create and delete custom emojis.
+
+### First-time setup behavior
+- On startup, the server seeds default roles and assigns unassigned users a role:
+  - `admin` role is ensured to include `PERM_ADMIN_ALL`.
+  - `member` role is ensured to include baseline utility permissions.
+  - Users without roles are assigned `member`.
+- Running with `--admin <identifier>` applies/ensures the `admin` role and grants it to the matching user (`id`, `username`, or `email`), enabling admin access.
 ### Users
 - `GET /api/users`: List all users (public info).
 - `GET /api/users/me`: Get current user profile (includes roles).
@@ -32,31 +55,31 @@ All endpoints below require `Authorization: Bearer <access_token>` header.
 - `GET /api/users/{id}/avatar`: Get user avatar (redirects to file).
 
 ## Admin
-- `GET /api/admin/users`: List all users with roles (admin only).
-- `PATCH /api/admin/users/{id}`: Update user username/email. Body: `{ "username": "...", "email": "..." }`
-- `PUT /api/admin/users/{id}/password`: Set user password. Body: `{ "new_password": "..." }`
-- `PUT /api/admin/users/{id}/avatar`: Upload avatar for user (multipart form data).
-- `PUT /api/admin/users/{id}/roles`: Replace user roles. Body: `{ "role_ids": ["..."] }`
-- `GET /api/admin/logs`: List recent admin log entries. Query: `?limit=100` (optional, max 200).
-- `GET /api/admin/roles`: List roles.
-- `POST /api/admin/roles`: Create role. Body: `{ "name": "...", "permissions": 0 }`
-- `DELETE /api/admin/roles/{id}`: Delete role.
+- `GET /api/admin/users`: List all users with roles (`PERM_ADMIN_ALL`).
+- `PATCH /api/admin/users/{id}`: Update user username/email. Body: `{ "username": "...", "email": "..." }` (`PERM_ADMIN_ALL`).
+- `PUT /api/admin/users/{id}/password`: Set user password. Body: `{ "new_password": "..." }` (`PERM_ADMIN_ALL`).
+- `PUT /api/admin/users/{id}/avatar`: Upload avatar for user (multipart form data) (`PERM_ADMIN_ALL`).
+- `PUT /api/admin/users/{id}/roles`: Replace user roles. Body: `{ "role_ids": ["..."] }` (`PERM_ADMIN_ALL`).
+- `GET /api/admin/logs`: List recent admin log entries. Query: `?limit=100` (optional, max 200) (`PERM_ADMIN_ALL`).
+- `GET /api/admin/roles`: List roles (`PERM_ADMIN_ALL`).
+- `POST /api/admin/roles`: Create role. Body: `{ "name": "...", "permissions": 0 }` (`PERM_ADMIN_ALL`).
+- `DELETE /api/admin/roles/{id}`: Delete role (`PERM_ADMIN_ALL`).
 ### Channels
 - `GET /api/channels`: List channels user is a member of.
-- `POST /api/channels`: Create channel. Body: `{ "name": "...", "is_voice": bool, "is_private": bool, "members": [...] (opt, for private) }`
+- `POST /api/channels`: Create channel. Body: `{ "name": "...", "is_voice": bool, "is_private": bool, "members": [...] (opt, for private) } (`PERM_CREATE_CHANNELS`).
 - `GET /api/channels/unread`: Get unread state for all channels.
-- `PATCH /api/channels/{id}`: Edit channel. Body: `{ "name": "...", "is_voice": bool, "is_private": bool }`
-- `DELETE /api/channels/{id}`: Delete channel.
+- `PATCH /api/channels/{id}`: Edit channel. Body: `{ "name": "...", "is_voice": bool, "is_private": bool }`. Requires channel manager rights: channel owner, or `PERM_ADMIN_ALL`, or `PERM_MANAGE_CHANNELS`.
+- `DELETE /api/channels/{id}`: Delete channel. Requires channel manager rights: channel owner, or `PERM_ADMIN_ALL`, or `PERM_MANAGE_CHANNELS`.
 - `POST /api/channels/{id}/read`: Mark message as read. Body: `{ "message_id": "..." }`
 - `POST /api/channels/{id}/notified`: Mark message as notified. Body: `{ "message_id": "..." }`
 - `GET /api/channels/{id}/ownership`: Check if user owns channel.
 - `POST /api/channels/{id}/join`: Join a public channel.
 - `POST /api/channels/{id}/leave`: Leave a channel.
 - `GET /api/channels/{id}/members`: List channel members.
-- `POST /api/channels/{id}/members`: Add/remove members. Body: `{ "add": [...], "remove": [...] }`
+- `POST /api/channels/{id}/members`: Add/remove members. Body: `{ "add": [...], "remove": [...] }`. Requires channel manager rights: channel owner, or `PERM_ADMIN_ALL`, or `PERM_MANAGE_CHANNELS`.
 ### Messages
 - `GET /api/channels/{id}/messages`: List messages. Query: `?before=<message_id>&limit=50`.
-- `POST /api/channels/{id}/messages`: Post message. Body: `{ "content": "..." (opt), "file_id": "..." (opt), "replying_to": "..." (opt) }`
+- `POST /api/channels/{id}/messages`: Post message. Body: `{ "content": "..." (opt), "file_id": "..." (opt), "replying_to": "..." (opt) } (`PERM_POST_MESSAGES` plus channel `can_write`).
 - `GET /api/messages/search`: Search messages across readable channels. Query: `?q=<query>&tz=<offset>&limit=25&cursor=<token>` (cursor optional, `tz` required for date-only modifiers).
 - `GET /api/messages/{id}`: Get message by ID.
 - `GET /api/messages/{id}/context`: Load a window of messages around a specific message. Query: `?before=30&after=20`.
@@ -64,10 +87,10 @@ All endpoints below require `Authorization: Bearer <access_token>` header.
 - `DELETE /api/messages/{id}`: Delete message.
 - `POST /api/messages/{id}/flag`: Flag a message for admin review. Creates an admin log entry containing the message text snapshot at flag time, the message sender, and the flagging user.
 ### Files
-- `POST /api/files`: Upload file. Content-Type: `multipart/form-data`. Returns `{ "file_id": "..." }`.
+- `POST /api/files`: Upload file. Content-Type: `multipart/form-data`. Returns `{ "file_id": "..." }` (`PERM_UPLOAD_FILES`).
 - `GET /files/{id}/{filename}`: Download/view file. No auth required for this specific route (handled by signed URL or public access implication usually, but code shows standard GET).
 ### Invites
-- `POST /api/invites`: Create invite code.
+- `POST /api/invites`: Create invite code (`PERM_INVITE_USERS`).
 - `GET /api/invites`: List invites created by current user.
 ### Presence
 - `POST /api/presence/heartbeat`: Update status. Body: `{ "status": "online" | "away" | "dnd" | "invisible" | "offline" }`
@@ -77,8 +100,8 @@ All endpoints below require `Authorization: Bearer <access_token>` header.
 - `GET /api/messages/{id}/reactions`: List grouped reactions for a message.
 ### Emojis
 - `GET /api/emojis`: List all custom emojis.
-- `POST /api/emojis`: Upload a custom emoji. Content-Type: `multipart/form-data` (fields: `name`, `file`).
-- `DELETE /api/emojis/{name}`: Delete a custom emoji by name.
+- `POST /api/emojis`: Upload a custom emoji. Content-Type: `multipart/form-data` (fields: `name`, `file`) (`PERM_MANAGE_EMOJIS`).
+- `DELETE /api/emojis/{name}`: Delete a custom emoji by name (`PERM_MANAGE_EMOJIS`).
 - `GET /api/emojis/{name}/image`: Get emoji image (PNG).
 ### SharePlay (HTTP)
 - `GET /api/shareplay/{channel_id}/current`: Get current song ID.
@@ -411,12 +434,12 @@ Sent as JSON strings.
 |------|---------|-------------|
 | [join](file:///home/will/stuffchat/src/routes/channels.rs#332-354) | `{ "channel_id": "..." }` | Subscribe to channel events |
 | [leave](file:///home/will/stuffchat/src/routes/channels.rs#355-368) | `{ "channel_id": "..." }` | Unsubscribe from channel events |
-| `chat_message` | `{ "channel_id": "...", "content": "..." }` | Send a chat message |
+| `chat_message` | `{ "channel_id": "...", "content": "..." }` | Send a chat message; requires `can_write` membership and `PERM_POST_MESSAGES`. |
 | `typing` | `{ "channel_id": "...", "started": bool }` | Send typing indicator |
-| `join_call` | `{ "channel_id": "..." }` | Join voice channel |
+| `join_call` | `{ "channel_id": "..." }` | Join voice channel; requires `can_read` membership and `PERM_JOIN_VOICE`. |
 | `leave_call` | `{ "channel_id": "..." }` | Leave voice channel |
 | `webrtc_signal` | `{ "channel_id": "...", "to_user_id": "...", "data": {...} }` | Send WebRTC signal |
-| `shareplay_action` | `{ "channel_id": "...", "action_type": "...", "data": "..." }` | Control SharePlay |
+| `shareplay_action` | `{ "channel_id": "...", "action_type": "...", "data": "..." }` | Control SharePlay; requires same permission gate as join_call. |
 | `ping` | `null` | Keepalive |
 **SharePlay Actions**:
 - [add](file:///home/will/stuffchat/src/shareplay.rs#49-68): data = URL

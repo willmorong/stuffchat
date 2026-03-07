@@ -12,6 +12,7 @@ use stuffchat::bridge::{BridgeRuntime, bridge_secret_path, load_or_create_bridge
 use stuffchat::config::Config;
 use stuffchat::db::Db;
 use stuffchat::errors;
+use stuffchat::permissions;
 use stuffchat::ws::server::ChatServer;
 
 fn parse_admin_arg() -> Option<String> {
@@ -25,25 +26,7 @@ fn parse_admin_arg() -> Option<String> {
 }
 
 async fn bootstrap_admin(db: &Db, ident: &str) -> Result<(), errors::ApiError> {
-    let role_row = sqlx::query("SELECT id FROM roles WHERE name = 'admin'")
-        .fetch_optional(&db.0)
-        .await?;
-
-    let role_id: String = if let Some(row) = role_row {
-        row.get("id")
-    } else {
-        let id = uuid::Uuid::new_v4().to_string();
-        let created_at = chrono::Utc::now();
-        sqlx::query(
-            "INSERT INTO roles(id, name, permissions, created_at) VALUES (?, 'admin', 0, ?)",
-        )
-        .bind(&id)
-        .bind(created_at)
-        .execute(&db.0)
-        .await?;
-        log::info!("Admin bootstrap: created admin role id={}", id);
-        id
-    };
+    let role_id = permissions::seed_admin_role(db).await?;
 
     let user_row = sqlx::query(
         "SELECT id, username, email FROM users WHERE id = ? OR username = ? OR email = ? LIMIT 1",
@@ -85,6 +68,10 @@ async fn main() -> std::io::Result<()> {
     let db = Db::connect_and_migrate(&cfg.database_path)
         .await
         .expect("database init failed");
+
+    if let Err(e) = permissions::seed_default_roles(&db).await {
+        log::error!("Role seed failed: {}", e);
+    }
 
     let bridge_runtime = if cfg.bridge_enabled {
         match cfg.bridge_url.as_deref().map(str::trim) {

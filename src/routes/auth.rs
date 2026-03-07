@@ -87,6 +87,14 @@ pub async fn register(
         .execute(&mut *tx)
         .await?;
 
+    // Ensure every new user has at least the member role.
+    sqlx::query(
+        "INSERT OR IGNORE INTO user_roles(user_id, role_id) SELECT ?, id FROM roles WHERE name = 'member'",
+    )
+    .bind(&user_id)
+    .execute(&mut *tx)
+    .await?;
+
     tx.commit().await?;
 
     let access_token = auth::create_access_token(&user_id, &cfg)?;

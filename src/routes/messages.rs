@@ -1,4 +1,12 @@
-use crate::{admin_log, auth::AuthUser, db::Db, errors::ApiError, ws::server::Broadcast};
+use crate::{
+    admin_log,
+    auth::AuthUser,
+    db::Db,
+    errors::ApiError,
+    models::role::PERM_POST_MESSAGES,
+    permissions,
+    ws::server::Broadcast,
+};
 use actix_web::{HttpResponse, web};
 use chrono::{DateTime, FixedOffset, NaiveDate, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
@@ -673,6 +681,7 @@ pub async fn post_message(
     path: web::Path<String>,
     body: web::Json<PostMessageReq>,
 ) -> Result<HttpResponse, ApiError> {
+    permissions::require_permission(&db, &user.user_id, PERM_POST_MESSAGES).await?;
     let channel_id = path.into_inner();
     let m =
         sqlx::query("SELECT can_write FROM channel_members WHERE channel_id = ? AND user_id = ?")
@@ -793,14 +802,7 @@ pub async fn edit_message(
     let author_id: String = row.get("user_id");
 
     // Permission: author or channel manager
-    let can_manage =
-        sqlx::query("SELECT can_manage FROM channel_members WHERE channel_id = ? AND user_id = ?")
-            .bind(&channel_id)
-            .bind(&user.user_id)
-            .fetch_optional(&db.0)
-            .await?
-            .map(|r| r.get::<i64, _>("can_manage") != 0)
-            .unwrap_or(false);
+    let can_manage = permissions::can_manage_channel(&db, &user.user_id, &channel_id).await?;
     if user.user_id != author_id && !can_manage {
         return Err(ApiError::Forbidden);
     }
@@ -847,14 +849,7 @@ pub async fn delete_message(
     let author_id: String = row.get("user_id");
 
     // Permission: author or channel manager
-    let can_manage =
-        sqlx::query("SELECT can_manage FROM channel_members WHERE channel_id = ? AND user_id = ?")
-            .bind(&channel_id)
-            .bind(&user.user_id)
-            .fetch_optional(&db.0)
-            .await?
-            .map(|r| r.get::<i64, _>("can_manage") != 0)
-            .unwrap_or(false);
+    let can_manage = permissions::can_manage_channel(&db, &user.user_id, &channel_id).await?;
     if user.user_id != author_id && !can_manage {
         return Err(ApiError::Forbidden);
     }

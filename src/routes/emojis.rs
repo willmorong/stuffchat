@@ -1,4 +1,11 @@
-use crate::{auth::AuthUser, config::Config, db::Db, errors::ApiError};
+use crate::{
+    auth::AuthUser,
+    config::Config,
+    db::Db,
+    errors::ApiError,
+    models::role::PERM_MANAGE_EMOJIS,
+    permissions,
+};
 use actix_multipart::Multipart;
 use actix_web::{HttpResponse, web};
 use futures_util::TryStreamExt as _;
@@ -29,6 +36,8 @@ pub async fn upload_emoji(
     user: AuthUser,
     mut payload: Multipart,
 ) -> Result<HttpResponse, ApiError> {
+    permissions::require_permission(&db, &user.user_id, PERM_MANAGE_EMOJIS).await?;
+
     let mut name: Option<String> = None;
     let mut file_data: Option<Vec<u8>> = None;
 
@@ -122,9 +131,11 @@ pub async fn upload_emoji(
 
 pub async fn delete_emoji(
     db: web::Data<Db>,
-    _user: AuthUser,
+    user: AuthUser,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
+    permissions::require_permission(&db, &user.user_id, PERM_MANAGE_EMOJIS).await?;
+
     let name = path.into_inner();
 
     let res = sqlx::query(

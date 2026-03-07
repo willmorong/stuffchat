@@ -1,4 +1,15 @@
-// pub const PERM_ADMIN: i64 = 1 << 0;
-// pub const PERM_MANAGE_CHANNELS: i64 = 1 << 1;
-// pub const PERM_POST_MESSAGES: i64 = 1 << 2;
-// pub const PERM_UPLOAD_FILES: i64 = 1 << 3;
+pub const PERM_ADMIN_ALL: i64 = 1 << 0;
+pub const PERM_MANAGE_CHANNELS: i64 = 1 << 1;
+pub const PERM_POST_MESSAGES: i64 = 1 << 2;
+pub const PERM_UPLOAD_FILES: i64 = 1 << 3;
+pub const PERM_CREATE_CHANNELS: i64 = 1 << 4;
+pub const PERM_JOIN_VOICE: i64 = 1 << 5;
+pub const PERM_INVITE_USERS: i64 = 1 << 6;
+pub const PERM_MANAGE_EMOJIS: i64 = 1 << 7;
+
+pub const DEFAULT_MEMBER_PERMISSIONS: i64 = PERM_POST_MESSAGES
+    | PERM_UPLOAD_FILES
+    | PERM_CREATE_CHANNELS
+    | PERM_JOIN_VOICE
+    | PERM_INVITE_USERS
+    | PERM_MANAGE_EMOJIS;
