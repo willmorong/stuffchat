@@ -2,31 +2,17 @@
 
 -- Ensure baseline roles exist and always include the expected capability bits.
 INSERT INTO roles(id, name, permissions, created_at)
-SELECT (
-    substr(id_hex, 1, 8) || '-' ||
-    substr(id_hex, 9, 4) || '-' ||
-    substr(id_hex, 13, 4) || '-' ||
-    substr(id_hex, 17, 4) || '-' ||
-    substr(id_hex, 21, 12)
-),
+SELECT LOWER(HEX(RANDOMBLOB(16))),
        'admin',
        255,
        CURRENT_TIMESTAMP
-FROM (SELECT LOWER(HEX(RANDOMBLOB(16))) AS id_hex)
 WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'admin');
 
 INSERT INTO roles(id, name, permissions, created_at)
-SELECT (
-    substr(id_hex, 1, 8) || '-' ||
-    substr(id_hex, 9, 4) || '-' ||
-    substr(id_hex, 13, 4) || '-' ||
-    substr(id_hex, 17, 4) || '-' ||
-    substr(id_hex, 21, 12)
-),
+SELECT LOWER(HEX(RANDOMBLOB(16))),
        'member',
        252,
        CURRENT_TIMESTAMP
-FROM (SELECT LOWER(HEX(RANDOMBLOB(16))) AS id_hex)
 WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'member');
 
 UPDATE roles
