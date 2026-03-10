@@ -1,7 +1,8 @@
 use crate::routes::{
     admin as admin_routes, auth as auth_routes, channels as channels_routes,
     emojis as emojis_routes, files as files_routes, invites as invites_routes,
-    messages as messages_routes, reactions as reactions_routes, users as users_routes,
+    messages as messages_routes, push as push_routes, reactions as reactions_routes,
+    users as users_routes,
 };
 use crate::ws;
 use actix_web::web;
@@ -136,6 +137,18 @@ fn configure_api(cfg: &mut web::ServiceConfig, _bridge_enabled: bool) {
     .route(
         "/messages/{id}/reactions/{emoji}",
         web::put().to(reactions_routes::toggle_reaction),
+    )
+    .service(
+        web::scope("/push")
+            .route("/capabilities", web::get().to(push_routes::capabilities))
+            .route(
+                "/devices/current",
+                web::put().to(push_routes::upsert_current_device),
+            )
+            .route(
+                "/devices/current",
+                web::delete().to(push_routes::delete_current_device),
+            ),
     )
     .service(
         web::scope("/presence")

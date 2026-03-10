@@ -8,6 +8,7 @@ Frontend is plain vanilla HTML/CSS/JS. Database is SQLite using sqlx to talk to 
 - File sharing
 - Public and private channels
 - Voice calls
+- Native iOS push notifications through an external relay
 - Multi-person simulatenous screen sharing at higher quality than Discord Nitro
 - Message search
 - Custom emojis and reactions
@@ -64,6 +65,19 @@ Stuffchat can push call join/leave events to an external bot such as the Discord
 - Configure the bot with the same secret via `STUFFCHAT_BRIDGE_KEY`.
 
 The included Discord bridge bot runs its own HTTP API and posts notices like `alice has joined call in #main` into one configured Discord text channel.
+
+### Push Relay
+
+Stuffchat can deliver native iOS push notifications through the standalone relay in [`relay/`](relay/).
+
+- Build and run the relay separately on a VPS that has the APNS key material.
+- Provision a self-hosted Stuffchat server with:
+  - `cargo run --manifest-path relay/Cargo.toml -- server create --label "<your server name>"`
+- Copy the emitted `server_id` and `server_secret` into the main server's `config.toml` as:
+  - `push_relay_server_id`
+  - `push_relay_server_secret`
+- Set `push_relay_enabled = true` and `push_relay_url` to the relay base URL.
+- The iOS app will then use `/api/push/capabilities` plus `/api/push/devices/current` to register APNS tokens against that self-hosted server.
 
 ## License
 

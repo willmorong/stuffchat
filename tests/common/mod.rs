@@ -32,7 +32,7 @@ pub async fn test_context() -> TestContext {
     let bridge_secret = "bridge-test-secret".to_string();
     let bridge_url = "http://127.0.0.1:9/bridge/events".to_string();
     let bridge_runtime = BridgeRuntime::new(bridge_secret.clone(), bridge_url.clone(), db.clone());
-    let chat_server = ChatServer::new(Some(bridge_runtime.clone())).start();
+    let chat_server = ChatServer::new(Some(bridge_runtime.clone()), None).start();
 
     TestContext {
         root_dir,
@@ -47,6 +47,11 @@ pub async fn test_context() -> TestContext {
             invite_only: false,
             bridge_enabled: true,
             bridge_url: Some(bridge_url),
+            push_relay_enabled: false,
+            push_relay_url: None,
+            push_relay_server_id: None,
+            push_relay_server_secret: None,
+            push_relay_timeout_secs: 10,
         },
         db,
         bridge_runtime,

@@ -5,7 +5,8 @@ use crate::{
     errors::ApiError,
     models::role::PERM_POST_MESSAGES,
     permissions,
-    ws::server::Broadcast,
+    push::{PushActorInfo, PushChannelInfo, PushMessageInfo, PushRelayRuntime},
+    ws::server::{Broadcast, GetChannelActiveUsers},
 };
 use actix_web::{HttpResponse, web};
 use chrono::{DateTime, FixedOffset, NaiveDate, TimeZone, Utc};
@@ -677,6 +678,7 @@ pub struct PostMessageReq {
 pub async fn post_message(
     db: web::Data<Db>,
     chat: web::Data<actix::Addr<crate::ws::server::ChatServer>>,
+    push_runtime: web::Data<Option<PushRelayRuntime>>,
     user: AuthUser,
     path: web::Path<String>,
     body: web::Json<PostMessageReq>,
@@ -693,6 +695,20 @@ pub async fn post_message(
     if m.get::<i64, _>("can_write") == 0 {
         return Err(ApiError::Forbidden);
     }
+    let channel_row =
+        sqlx::query("SELECT name, is_voice FROM channels WHERE id = ? AND deleted_at IS NULL")
+            .bind(&channel_id)
+            .fetch_optional(&db.0)
+            .await?;
+    let channel_row = channel_row.ok_or(ApiError::NotFound)?;
+    let channel_name: String = channel_row.get("name");
+    let is_voice = channel_row.get::<i64, _>("is_voice") != 0;
+    let user_row = sqlx::query("SELECT username FROM users WHERE id = ?")
+        .bind(&user.user_id)
+        .fetch_optional(&db.0)
+        .await?;
+    let user_row = user_row.ok_or(ApiError::Unauthorized)?;
+    let actor_username: String = user_row.get("username");
 
     if body
         .content
@@ -765,10 +781,55 @@ pub async fn post_message(
 
     if !member_ids.is_empty() {
         chat.do_send(crate::ws::server::NotifyUsers {
-            user_ids: member_ids,
-            payload,
+            user_ids: member_ids.clone(),
+            payload: payload.clone(),
             skip_channel: Some(channel_id.clone()),
         });
+    }
+
+    if let Some(push_runtime) = push_runtime.get_ref().as_ref() {
+        let active_user_ids = chat
+            .send(GetChannelActiveUsers {
+                channel_id: channel_id.clone(),
+                include_voice: false,
+            })
+            .await
+            .map_err(|_| ApiError::Internal)?
+            .map_err(|_| ApiError::Internal)?;
+        let active_user_ids: std::collections::HashSet<String> =
+            active_user_ids.into_iter().collect();
+        let recipient_user_ids: Vec<String> = member_ids
+            .into_iter()
+            .filter(|user_id| !active_user_ids.contains(user_id))
+            .collect();
+        if !recipient_user_ids.is_empty() {
+            let preview = {
+                let text = build_content_preview(body.content.as_deref());
+                if !text.is_empty() {
+                    text
+                } else if body.file_id.is_some() {
+                    "Sent an attachment".to_string()
+                } else {
+                    String::new()
+                }
+            };
+            let _ = push_runtime
+                .enqueue_message_event(
+                    PushChannelInfo {
+                        id: channel_id.clone(),
+                        name: channel_name,
+                        is_voice,
+                    },
+                    PushActorInfo {
+                        id: user.user_id.clone(),
+                        username: actor_username,
+                    },
+                    PushMessageInfo { id: id.clone(), preview },
+                    recipient_user_ids,
+                    now,
+                )
+                .await;
+        }
     }
 
     Ok(HttpResponse::Ok().json(serde_json::json!({ "id": id })))

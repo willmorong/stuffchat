@@ -39,6 +39,7 @@ async fn admin_log_endpoint_requires_admin_role() {
             .app_data(web::Data::new(ctx.cfg.clone()))
             .app_data(web::Data::new(ctx.db.clone()))
             .app_data(web::Data::new(ctx.chat_server.clone()))
+            .app_data(web::Data::new(None::<stuffchat::push::PushRelayRuntime>))
             .configure(|cfg| stuffchat::app::configure(cfg, true)),
     )
     .await;
@@ -66,6 +67,7 @@ async fn admin_actions_are_logged_without_password_data() {
             .app_data(web::Data::new(ctx.cfg.clone()))
             .app_data(web::Data::new(ctx.db.clone()))
             .app_data(web::Data::new(ctx.chat_server.clone()))
+            .app_data(web::Data::new(None::<stuffchat::push::PushRelayRuntime>))
             .configure(|cfg| stuffchat::app::configure(cfg, true)),
     )
     .await;
@@ -176,6 +178,7 @@ async fn channel_owner_actions_are_logged() {
             .app_data(web::Data::new(ctx.cfg.clone()))
             .app_data(web::Data::new(ctx.db.clone()))
             .app_data(web::Data::new(ctx.chat_server.clone()))
+            .app_data(web::Data::new(None::<stuffchat::push::PushRelayRuntime>))
             .configure(|cfg| stuffchat::app::configure(cfg, true)),
     )
     .await;
@@ -297,6 +300,7 @@ async fn message_flags_are_logged_for_admin_review() {
             .app_data(web::Data::new(ctx.cfg.clone()))
             .app_data(web::Data::new(ctx.db.clone()))
             .app_data(web::Data::new(ctx.chat_server.clone()))
+            .app_data(web::Data::new(None::<stuffchat::push::PushRelayRuntime>))
             .configure(|cfg| stuffchat::app::configure(cfg, true)),
     )
     .await;
@@ -358,6 +362,7 @@ async fn flag_endpoint_requires_message_read_access() {
             .app_data(web::Data::new(ctx.cfg.clone()))
             .app_data(web::Data::new(ctx.db.clone()))
             .app_data(web::Data::new(ctx.chat_server.clone()))
+            .app_data(web::Data::new(None::<stuffchat::push::PushRelayRuntime>))
             .configure(|cfg| stuffchat::app::configure(cfg, true)),
     )
     .await;

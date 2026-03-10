@@ -13,6 +13,7 @@ use stuffchat::config::Config;
 use stuffchat::db::Db;
 use stuffchat::errors;
 use stuffchat::permissions;
+use stuffchat::push::PushRelayRuntime;
 use stuffchat::ws::server::ChatServer;
 
 fn parse_admin_arg() -> Option<String> {
@@ -89,13 +90,25 @@ async fn main() -> std::io::Result<()> {
         None
     };
 
+    let push_runtime = if cfg.push_relay_enabled {
+        match PushRelayRuntime::new(&cfg, db.clone()) {
+            Ok(runtime) => Some(runtime),
+            Err(err) => {
+                log::warn!("Push relay is enabled but not configured correctly: {err}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     if let Some(admin_ident) = parse_admin_arg() {
         if let Err(e) = bootstrap_admin(&db, &admin_ident).await {
             log::error!("Admin bootstrap failed: {}", e);
         }
     }
 
-    let chat_server = ChatServer::new(bridge_runtime.clone()).start();
+    let chat_server = ChatServer::new(bridge_runtime.clone(), push_runtime.clone()).start();
     log::info!("Starting server at {}", cfg.listen);
 
     let db_clone = db.clone();
@@ -165,7 +178,8 @@ async fn main() -> std::io::Result<()> {
             .wrap(cors)
             .app_data(Data::new(cfg.clone()))
             .app_data(Data::new(db.clone()))
-            .app_data(Data::new(chat_server.clone()));
+            .app_data(Data::new(chat_server.clone()))
+            .app_data(Data::new(push_runtime.clone()));
 
         if let Some(bridge_runtime) = &bridge_runtime {
             app = app.app_data(Data::new(bridge_runtime.clone()));

@@ -119,7 +119,7 @@ async fn bridge_emits_join_and_leave_once_per_user_presence() {
 
     let (bridge_url, mut receiver, handle) = spawn_bridge_receiver().await;
     let bridge_runtime = BridgeRuntime::new(ctx.bridge_secret.clone(), bridge_url, ctx.db.clone());
-    let server = ChatServer::new(Some(bridge_runtime)).start();
+    let server = ChatServer::new(Some(bridge_runtime), None).start();
 
     server
         .send(JoinVoice {

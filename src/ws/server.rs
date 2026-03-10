@@ -1,23 +1,31 @@
+use crate::push::PushRelayRuntime;
 use crate::shareplay::SharePlayState;
 use actix::{Actor, AsyncContext, Context, Handler, Message};
 use std::collections::{HashMap, HashSet};
 
 pub struct ChatServer {
     rooms: HashMap<String, HashSet<actix::Addr<super::session::WsSession>>>,
+    room_members: HashMap<String, HashSet<(String, String)>>, // channel_id -> set of (user_id, session_id)
     voice_participants: HashMap<String, HashSet<(String, String)>>, // channel_id -> set of (user_id, session_id)
     user_sessions: HashMap<String, HashMap<String, actix::Addr<super::session::WsSession>>>, // user_id -> { session_id -> addr }
     pub shareplay_states: HashMap<String, SharePlayState>,
     bridge_runtime: Option<crate::bridge::BridgeRuntime>,
+    push_runtime: Option<PushRelayRuntime>,
 }
 
 impl ChatServer {
-    pub fn new(bridge_runtime: Option<crate::bridge::BridgeRuntime>) -> Self {
+    pub fn new(
+        bridge_runtime: Option<crate::bridge::BridgeRuntime>,
+        push_runtime: Option<PushRelayRuntime>,
+    ) -> Self {
         Self {
             rooms: HashMap::new(),
+            room_members: HashMap::new(),
             voice_participants: HashMap::new(),
             user_sessions: HashMap::new(),
             shareplay_states: HashMap::new(),
             bridge_runtime,
+            push_runtime,
         }
     }
 }
@@ -27,6 +35,23 @@ impl Actor for ChatServer {
 }
 
 impl ChatServer {
+    fn active_user_ids_for_channel(&self, channel_id: &str, include_voice: bool) -> Vec<String> {
+        let mut users = HashSet::new();
+        if let Some(room_members) = self.room_members.get(channel_id) {
+            for (user_id, _) in room_members {
+                users.insert(user_id.clone());
+            }
+        }
+        if include_voice {
+            if let Some(voice_users) = self.voice_participants.get(channel_id) {
+                for (user_id, _) in voice_users {
+                    users.insert(user_id.clone());
+                }
+            }
+        }
+        users.into_iter().collect()
+    }
+
     fn trigger_pending_downloads(&mut self, channel_id: String, ctx: &mut Context<Self>) {
         if let Some(state) = self.shareplay_states.get_mut(&channel_id) {
             let active_count = state
@@ -71,6 +96,8 @@ impl ChatServer {
 pub struct Join {
     pub channel_id: String,
     pub addr: actix::Addr<super::session::WsSession>,
+    pub user_id: String,
+    pub session_id: String,
 }
 
 #[derive(Message)]
@@ -79,6 +106,7 @@ pub struct Leave {
     pub channel_id: String,
     pub addr: actix::Addr<super::session::WsSession>,
     pub user_id: String,
+    pub session_id: String,
 }
 
 #[derive(Message)]
@@ -201,6 +229,13 @@ pub struct GetSharePlayThumbnailPath {
     pub item_id: String,
 }
 
+#[derive(Message)]
+#[rtype(result = "Result<Vec<String>, ()>")]
+pub struct GetChannelActiveUsers {
+    pub channel_id: String,
+    pub include_voice: bool,
+}
+
 impl Handler<Join> for ChatServer {
     type Result = ();
     fn handle(&mut self, msg: Join, _: &mut Context<Self>) {
@@ -208,6 +243,10 @@ impl Handler<Join> for ChatServer {
             .entry(msg.channel_id.clone())
             .or_default()
             .insert(msg.addr.clone());
+        self.room_members
+            .entry(msg.channel_id.clone())
+            .or_default()
+            .insert((msg.user_id, msg.session_id));
 
         // Send current voice participants to the joining user
         if let Some(voice_users) = self.voice_participants.get(&msg.channel_id) {
@@ -240,56 +279,52 @@ impl Handler<Leave> for ChatServer {
         if let Some(s) = self.rooms.get_mut(&msg.channel_id) {
             s.retain(|a| a != &msg.addr);
         }
+        if let Some(members) = self.room_members.get_mut(&msg.channel_id) {
+            members.remove(&(msg.user_id.clone(), msg.session_id.clone()));
+            if members.is_empty() {
+                self.room_members.remove(&msg.channel_id);
+            }
+        }
         // If user was in voice, remove them
         if let Some(voice_users) = self.voice_participants.get_mut(&msg.channel_id) {
-            // Find session_id for this user and addr
-            let maybe_session_id = self.user_sessions.get(&msg.user_id).and_then(|sessions| {
-                sessions
-                    .iter()
-                    .find(|(_, a)| *a == &msg.addr)
-                    .map(|(s, _)| s.clone())
-            });
+            if voice_users.remove(&(msg.user_id.clone(), msg.session_id)) {
+                // Check if any other session of this user is still in the voice call
+                let user_still_in_call = voice_users.iter().any(|(uid, _)| uid == &msg.user_id);
 
-            if let Some(sid) = maybe_session_id {
-                if voice_users.remove(&(msg.user_id.clone(), sid)) {
-                    // Check if any other session of this user is still in the voice call
-                    let user_still_in_call = voice_users.iter().any(|(uid, _)| uid == &msg.user_id);
+                if !user_still_in_call {
+                    if let Some(bridge_runtime) = &self.bridge_runtime {
+                        bridge_runtime
+                            .record_call_left(msg.channel_id.clone(), msg.user_id.clone());
+                    }
+                    // Broadcast voice_left only if no more sessions of this user are in the call
+                    let payload = serde_json::json!({
+                        "type": "voice_left",
+                        "channel_id": msg.channel_id,
+                        "user_id": msg.user_id
+                    })
+                    .to_string();
+                    ctx.notify(Broadcast {
+                        channel_id: msg.channel_id.clone(),
+                        payload,
+                    });
+                }
 
-                    if !user_still_in_call {
-                        if let Some(bridge_runtime) = &self.bridge_runtime {
-                            bridge_runtime
-                                .record_call_left(msg.channel_id.clone(), msg.user_id.clone());
-                        }
-                        // Broadcast voice_left only if no more sessions of this user are in the call
-                        let payload = serde_json::json!({
-                            "type": "voice_left",
-                            "channel_id": msg.channel_id,
-                            "user_id": msg.user_id
+                // If NO ONE is left in voice, clean up SharePlay
+                if voice_users.is_empty() {
+                    if let Some(state) = self.shareplay_states.remove(&msg.channel_id) {
+                        crate::shareplay::cleanup_channel_files(&state);
+                        log::info!("Cleaned up SharePlay for empty channel {}", msg.channel_id);
+
+                        // Notify clients
+                        let clear_payload = serde_json::json!({
+                            "type": "shareplay_cleared",
+                            "channel_id": msg.channel_id
                         })
                         .to_string();
                         ctx.notify(Broadcast {
                             channel_id: msg.channel_id.clone(),
-                            payload,
+                            payload: clear_payload,
                         });
-                    }
-
-                    // If NO ONE is left in voice, clean up SharePlay
-                    if voice_users.is_empty() {
-                        if let Some(state) = self.shareplay_states.remove(&msg.channel_id) {
-                            crate::shareplay::cleanup_channel_files(&state);
-                            log::info!("Cleaned up SharePlay for empty channel {}", msg.channel_id);
-
-                            // Notify clients
-                            let clear_payload = serde_json::json!({
-                                "type": "shareplay_cleared",
-                                "channel_id": msg.channel_id
-                            })
-                            .to_string();
-                            ctx.notify(Broadcast {
-                                channel_id: msg.channel_id.clone(),
-                                payload: clear_payload,
-                            });
-                        }
                     }
                 }
             }
@@ -317,15 +352,29 @@ impl Handler<JoinVoice> for ChatServer {
             msg.user_id,
             msg.channel_id
         );
-        let voice_users = self
-            .voice_participants
-            .entry(msg.channel_id.clone())
-            .or_default();
-        let user_already_in_call = voice_users.iter().any(|(uid, _)| uid == &msg.user_id);
-        if voice_users.insert((msg.user_id.clone(), msg.session_id.clone())) {
+        let (inserted, user_already_in_call, channel_was_empty) = {
+            let voice_users = self
+                .voice_participants
+                .entry(msg.channel_id.clone())
+                .or_default();
+            let user_already_in_call = voice_users.iter().any(|(uid, _)| uid == &msg.user_id);
+            let channel_was_empty = voice_users.is_empty();
+            let inserted = voice_users.insert((msg.user_id.clone(), msg.session_id.clone()));
+            (inserted, user_already_in_call, channel_was_empty)
+        };
+        if inserted {
             if !user_already_in_call {
                 if let Some(bridge_runtime) = &self.bridge_runtime {
                     bridge_runtime.record_call_joined(msg.channel_id.clone(), msg.user_id.clone());
+                }
+            }
+            if channel_was_empty {
+                if let Some(push_runtime) = &self.push_runtime {
+                    push_runtime.record_call_started(
+                        msg.channel_id.clone(),
+                        msg.user_id.clone(),
+                        self.active_user_ids_for_channel(&msg.channel_id, true),
+                    );
                 }
             }
             let payload = serde_json::json!({
@@ -415,6 +464,14 @@ impl Handler<Disconnect> for ChatServer {
                 self.user_sessions.remove(&msg.user_id);
             }
         }
+    }
+}
+
+impl Handler<GetChannelActiveUsers> for ChatServer {
+    type Result = Result<Vec<String>, ()>;
+
+    fn handle(&mut self, msg: GetChannelActiveUsers, _: &mut Context<Self>) -> Self::Result {
+        Ok(self.active_user_ids_for_channel(&msg.channel_id, msg.include_voice))
     }
 }
 

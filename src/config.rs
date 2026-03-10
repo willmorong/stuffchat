@@ -14,6 +14,11 @@ pub struct Config {
     pub invite_only: bool,
     pub bridge_enabled: bool,
     pub bridge_url: Option<String>,
+    pub push_relay_enabled: bool,
+    pub push_relay_url: Option<String>,
+    pub push_relay_server_id: Option<String>,
+    pub push_relay_server_secret: Option<String>,
+    pub push_relay_timeout_secs: u64,
 }
 
 impl Default for Config {
@@ -29,6 +34,11 @@ impl Default for Config {
             invite_only: false,
             bridge_enabled: false,
             bridge_url: None,
+            push_relay_enabled: false,
+            push_relay_url: None,
+            push_relay_server_id: None,
+            push_relay_server_secret: None,
+            push_relay_timeout_secs: 10,
         }
     }
 }

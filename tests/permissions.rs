@@ -94,6 +94,7 @@ async fn api_channel_creation_requires_create_channel_permission() {
             .app_data(web::Data::new(ctx.cfg.clone()))
             .app_data(web::Data::new(ctx.db.clone()))
             .app_data(web::Data::new(ctx.chat_server.clone()))
+            .app_data(web::Data::new(None::<stuffchat::push::PushRelayRuntime>))
             .configure(|cfg| stuffchat::app::configure(cfg, true)),
     )
     .await;
@@ -150,6 +151,7 @@ async fn api_admin_routes_require_admin_permission_bit_not_name_only() {
             .app_data(web::Data::new(ctx.cfg.clone()))
             .app_data(web::Data::new(ctx.db.clone()))
             .app_data(web::Data::new(ctx.chat_server.clone()))
+            .app_data(web::Data::new(None::<stuffchat::push::PushRelayRuntime>))
             .configure(|cfg| stuffchat::app::configure(cfg, true)),
     )
     .await;
@@ -198,6 +200,7 @@ async fn api_posting_requires_post_message_capability() {
             .app_data(web::Data::new(ctx.cfg.clone()))
             .app_data(web::Data::new(ctx.db.clone()))
             .app_data(web::Data::new(ctx.chat_server.clone()))
+            .app_data(web::Data::new(None::<stuffchat::push::PushRelayRuntime>))
             .configure(|cfg| stuffchat::app::configure(cfg, true)),
     )
     .await;
@@ -262,6 +265,7 @@ async fn api_file_upload_requires_upload_permission() {
             .app_data(web::Data::new(ctx.cfg.clone()))
             .app_data(web::Data::new(ctx.db.clone()))
             .app_data(web::Data::new(ctx.chat_server.clone()))
+            .app_data(web::Data::new(None::<stuffchat::push::PushRelayRuntime>))
             .configure(|cfg| stuffchat::app::configure(cfg, true)),
     )
     .await;
@@ -320,6 +324,7 @@ async fn api_invite_creation_requires_invite_permission() {
             .app_data(web::Data::new(ctx.cfg.clone()))
             .app_data(web::Data::new(ctx.db.clone()))
             .app_data(web::Data::new(ctx.chat_server.clone()))
+            .app_data(web::Data::new(None::<stuffchat::push::PushRelayRuntime>))
             .configure(|cfg| stuffchat::app::configure(cfg, true)),
     )
     .await;
@@ -358,6 +363,7 @@ async fn api_emoji_upload_requires_manage_emojis_permission() {
             .app_data(web::Data::new(ctx.cfg.clone()))
             .app_data(web::Data::new(ctx.db.clone()))
             .app_data(web::Data::new(ctx.chat_server.clone()))
+            .app_data(web::Data::new(None::<stuffchat::push::PushRelayRuntime>))
             .configure(|cfg| stuffchat::app::configure(cfg, true)),
     )
     .await;
@@ -440,6 +446,7 @@ async fn api_channel_owners_can_manage_without_global_manage_channel_permissions
             .app_data(web::Data::new(ctx.cfg.clone()))
             .app_data(web::Data::new(ctx.db.clone()))
             .app_data(web::Data::new(ctx.chat_server.clone()))
+            .app_data(web::Data::new(None::<stuffchat::push::PushRelayRuntime>))
             .configure(|cfg| stuffchat::app::configure(cfg, true)),
     )
     .await;

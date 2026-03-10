@@ -95,6 +95,10 @@ All endpoints below require `Authorization: Bearer <access_token>` header.
 ### Presence
 - `POST /api/presence/heartbeat`: Update status. Body: `{ "status": "online" | "away" | "dnd" | "invisible" | "offline" }`
 - `GET /api/presence/users`: Get presence. Query: `?ids=uid1,uid2...`
+### Push
+- `GET /api/push/capabilities`: Returns push availability and supported platforms.
+- `PUT /api/push/devices/current`: Register or update the current authenticated device. Body: `{ "installation_id": "...", "platform": "ios", "push_token": "...", "environment": "development" | "production", "message_notifications": true, "call_notifications": true }`
+- `DELETE /api/push/devices/current`: Delete the current authenticated device registration. Body: `{ "installation_id": "..." }`
 ### Reactions
 - `PUT /api/messages/{id}/reactions/{emoji}`: Toggle a reaction (adds if not present, removes if present). Emoji is URL-encoded.
 - `GET /api/messages/{id}/reactions`: List grouped reactions for a message.
@@ -226,6 +230,19 @@ Returned by `POST /api/auth/register`, `/login`, `/refresh`:
 { "is_owner": true }
 ```
 **`PATCH /api/channels/{id}`**, **`DELETE /api/channels/{id}`**, **`POST /api/channels/{id}/join`**, **`POST /api/channels/{id}/leave`**, **`POST /api/channels/{id}/read`**, **`POST /api/channels/{id}/notified`**, **`POST /api/channels/{id}/members`** — Return `200 OK` with an empty body.
+### Push
+**`GET /api/push/capabilities`** — Returns:
+```json
+{
+  "enabled": true,
+  "provider": "relay",
+  "message_notifications": true,
+  "call_notifications": true,
+  "ios": { "enabled": true },
+  "android": { "enabled": false }
+}
+```
+**`PUT /api/push/devices/current`**, **`DELETE /api/push/devices/current`** — Return `200 OK` with an empty body.
 ### Messages
 **`GET /api/channels/{id}/messages`** — Array of message objects (newest first):
 ```json

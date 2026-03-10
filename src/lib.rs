@@ -7,6 +7,7 @@ pub mod db;
 pub mod errors;
 pub mod models;
 pub mod permissions;
+pub mod push;
 pub mod routes;
 pub mod shareplay;
 pub mod utils;

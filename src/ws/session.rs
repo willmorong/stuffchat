@@ -90,6 +90,7 @@ impl Actor for WsSession {
                 channel_id: ch,
                 addr: ctx.address(),
                 user_id: self.user_id.clone(),
+                session_id: self.session_id.clone(),
             });
         }
         if let Some(voice_ch) = self.voice_channel.take() {
@@ -251,6 +252,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                         ClientEvent::Join { channel_id } => {
                             let db = self.db.clone();
                             let user_id = self.user_id.clone();
+                            let session_id = self.session_id.clone();
                             let server = self.server.clone();
                             let addr = ctx.address();
                             let cid = channel_id.clone();
@@ -260,6 +262,8 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                                         server.do_send(Join {
                                             channel_id: cid,
                                             addr,
+                                            user_id: user_id.clone(),
+                                            session_id: session_id.clone(),
                                         });
                                     } else {
                                         log::warn!(
@@ -280,6 +284,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                                     channel_id,
                                     addr: ctx.address(),
                                     user_id: self.user_id.clone(),
+                                    session_id: self.session_id.clone(),
                                 });
                                 self.joined = None;
                             }

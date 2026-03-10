@@ -12,3 +12,4 @@ bridge/.env
 bridge/__pycache__/
 Cargo.lock
 *.pyc
+relay/target/*
