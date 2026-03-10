@@ -175,7 +175,10 @@ struct BuiltApnsRequest {
 
 fn build_request_parts(notification: &ApnsNotification) -> BuiltApnsRequest {
     let title = match notification.event_type {
-        PushEventType::Message => notification.actor.username.clone(),
+        PushEventType::Message => {
+            let channel_name = notification.channel.name.trim().trim_start_matches('#');
+            format!("{} (#{})", notification.actor.username, channel_name)
+        }
         PushEventType::CallStarted => "Call Started".to_string(),
     };
     let body = match notification.event_type {
@@ -186,7 +189,7 @@ fn build_request_parts(notification: &ApnsNotification) -> BuiltApnsRequest {
                 .map(|message| message.preview.as_str())
                 .filter(|preview| !preview.trim().is_empty())
                 .unwrap_or("Sent an attachment");
-            format!("{}: {}", notification.channel.name, preview)
+            preview.to_string()
         }
         PushEventType::CallStarted => {
             format!(
@@ -263,5 +266,34 @@ mod tests {
             built.payload["aps"]["thread-id"].as_str(),
             Some("channel-1")
         );
+        assert_eq!(built.payload["aps"]["alert"]["title"].as_str(), Some("alice (#general)"));
+        assert_eq!(built.payload["aps"]["alert"]["body"].as_str(), Some("hello"));
+    }
+
+    #[test]
+    fn message_title_normalizes_channel_prefix() {
+        let built = build_request_parts(&ApnsNotification {
+            event_type: PushEventType::Message,
+            channel: PushChannelInfo {
+                id: "channel-1".to_string(),
+                name: "#random".to_string(),
+                is_voice: false,
+            },
+            actor: PushActorInfo {
+                id: "user-1".to_string(),
+                username: "alice".to_string(),
+            },
+            message: Some(PushMessageInfo {
+                id: "message-1".to_string(),
+                preview: "hello".to_string(),
+            }),
+            device: RelayPushDevice {
+                installation_id: "installation-1".to_string(),
+                push_token: "token".to_string(),
+                environment: PushEnvironment::Development,
+            },
+        });
+
+        assert_eq!(built.payload["aps"]["alert"]["title"].as_str(), Some("alice (#random)"));
     }
 }
