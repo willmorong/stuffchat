@@ -23,11 +23,7 @@ pub async fn has_permission(db: &Db, user_id: &str, permission: i64) -> Result<b
     Ok((mask & permission) == permission)
 }
 
-pub async fn require_permission(
-    db: &Db,
-    user_id: &str,
-    permission: i64,
-) -> Result<(), ApiError> {
+pub async fn require_permission(db: &Db, user_id: &str, permission: i64) -> Result<(), ApiError> {
     if has_permission(db, user_id, permission).await? {
         Ok(())
     } else {
@@ -39,11 +35,7 @@ pub async fn require_admin(db: &Db, user_id: &str) -> Result<(), ApiError> {
     require_permission(db, user_id, PERM_ADMIN_ALL).await
 }
 
-pub async fn is_channel_owner(
-    db: &Db,
-    user_id: &str,
-    channel_id: &str,
-) -> Result<bool, ApiError> {
+pub async fn is_channel_owner(db: &Db, user_id: &str, channel_id: &str) -> Result<bool, ApiError> {
     let row = sqlx::query_scalar::<_, Option<i64>>(
         "SELECT 1 FROM channels WHERE id = ? AND created_by = ? AND deleted_at IS NULL",
     )
@@ -114,8 +106,8 @@ async fn ensure_role_with_permissions(
 
 pub async fn seed_default_roles(db: &Db) -> Result<(), ApiError> {
     ensure_role_with_permissions(db, DEFAULT_ADMIN_ROLE, PERM_ADMIN_ALL).await?;
-    let member_role_id = ensure_role_with_permissions(db, DEFAULT_MEMBER_ROLE, DEFAULT_MEMBER_PERMISSIONS)
-        .await?;
+    let member_role_id =
+        ensure_role_with_permissions(db, DEFAULT_MEMBER_ROLE, DEFAULT_MEMBER_PERMISSIONS).await?;
 
     // Assign everyone a member role unless they already have any roles.
     sqlx::query(
@@ -185,21 +177,22 @@ mod tests {
 
         seed_default_roles(&db).await.expect("seed roles");
 
-        let admin_permissions: i64 = sqlx::query_scalar(
-            "SELECT permissions FROM roles WHERE name = 'admin' LIMIT 1",
-        )
-        .fetch_one(&db.0)
-        .await
-        .expect("admin role");
+        let admin_permissions: i64 =
+            sqlx::query_scalar("SELECT permissions FROM roles WHERE name = 'admin' LIMIT 1")
+                .fetch_one(&db.0)
+                .await
+                .expect("admin role");
         assert!((admin_permissions & PERM_ADMIN_ALL) == PERM_ADMIN_ALL);
 
-        let member_permissions: i64 = sqlx::query_scalar(
-            "SELECT permissions FROM roles WHERE name = 'member' LIMIT 1",
-        )
-        .fetch_one(&db.0)
-        .await
-        .expect("member role");
-        assert_eq!(member_permissions & DEFAULT_MEMBER_PERMISSIONS, DEFAULT_MEMBER_PERMISSIONS);
+        let member_permissions: i64 =
+            sqlx::query_scalar("SELECT permissions FROM roles WHERE name = 'member' LIMIT 1")
+                .fetch_one(&db.0)
+                .await
+                .expect("member role");
+        assert_eq!(
+            member_permissions & DEFAULT_MEMBER_PERMISSIONS,
+            DEFAULT_MEMBER_PERMISSIONS
+        );
 
         let user_count = sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*) FROM user_roles ur
@@ -221,13 +214,12 @@ mod tests {
             .expect("clear admin role permissions");
 
         let role_id = seed_admin_role(&db).await.expect("seed admin");
-        let permissions: i64 = sqlx::query_scalar(
-            "SELECT permissions FROM roles WHERE id = ? LIMIT 1",
-        )
-        .bind(role_id)
-        .fetch_one(&db.0)
-        .await
-        .expect("admin role after seed");
+        let permissions: i64 =
+            sqlx::query_scalar("SELECT permissions FROM roles WHERE id = ? LIMIT 1")
+                .bind(role_id)
+                .fetch_one(&db.0)
+                .await
+                .expect("admin role after seed");
         assert!((permissions & PERM_ADMIN_ALL) == PERM_ADMIN_ALL);
     }
 
@@ -253,18 +245,26 @@ mod tests {
         .await
         .expect("insert manager membership");
 
-        assert!(can_manage_channel(&db, "owner", "channel-1")
-            .await
-            .expect("owner manage"));
-        assert!(can_manage_channel(&db, "manager", "channel-1")
-            .await
-            .expect("manager manage"));
-        assert!(can_manage_channel(&db, "admin", "channel-1")
-            .await
-            .expect("admin manage"));
-        assert!(!can_manage_channel(&db, "outsider", "channel-1")
-            .await
-            .expect("outsider manage"));
+        assert!(
+            can_manage_channel(&db, "owner", "channel-1")
+                .await
+                .expect("owner manage")
+        );
+        assert!(
+            can_manage_channel(&db, "manager", "channel-1")
+                .await
+                .expect("manager manage")
+        );
+        assert!(
+            can_manage_channel(&db, "admin", "channel-1")
+                .await
+                .expect("admin manage")
+        );
+        assert!(
+            !can_manage_channel(&db, "outsider", "channel-1")
+                .await
+                .expect("outsider manage")
+        );
     }
 
     #[tokio::test]
@@ -296,20 +296,8 @@ mod tests {
         let db = setup_db().await;
         insert_user(&db, "stacked-user", "stacked").await;
 
-        grant_user_role(
-            &db,
-            "stacked-user",
-            "create-role",
-            PERM_CREATE_CHANNELS,
-        )
-        .await;
-        grant_user_role(
-            &db,
-            "stacked-user",
-            "upload-role",
-            PERM_UPLOAD_FILES,
-        )
-        .await;
+        grant_user_role(&db, "stacked-user", "create-role", PERM_CREATE_CHANNELS).await;
+        grant_user_role(&db, "stacked-user", "upload-role", PERM_UPLOAD_FILES).await;
 
         let mask = role_permission_mask(&db, "stacked-user")
             .await

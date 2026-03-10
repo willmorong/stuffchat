@@ -1,6 +1,6 @@
 mod common;
 
-use actix_web::{test, web, App, http::StatusCode};
+use actix_web::{App, http::StatusCode, test, web};
 use common::{auth_token, insert_user, test_context};
 use serde_json::Value;
 use stuffchat::db::Db;
@@ -11,10 +11,10 @@ use stuffchat::models::role::{
 
 const MULTIPART_BOUNDARY: &str = "----stuffchat-perms-boundary";
 const SMALL_PNG_BYTES: &[u8] = &[
-    137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 2,
-    0, 0, 0, 144, 119, 83, 222, 0, 0, 0, 12, 80, 76, 84, 69, 0, 0, 0, 255, 255, 255, 255, 33,
-    33, 33, 33, 0, 0, 0, 0, 73, 68, 65, 84, 120, 156, 99, 96, 0, 0, 0, 2, 0, 1, 113, 47, 230,
-    173, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+    137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 2, 0,
+    0, 0, 144, 119, 83, 222, 0, 0, 0, 12, 80, 76, 84, 69, 0, 0, 0, 255, 255, 255, 255, 33, 33, 33,
+    33, 0, 0, 0, 0, 73, 68, 65, 84, 120, 156, 99, 96, 0, 0, 0, 2, 0, 1, 113, 47, 230, 173, 0, 0, 0,
+    0, 73, 69, 78, 68, 174, 66, 96, 130,
 ];
 
 enum MultipartPart<'a> {
@@ -37,10 +37,7 @@ fn build_multipart_body(boundary: &str, parts: &[MultipartPart<'_>]) -> Vec<u8> 
         match part {
             MultipartPart::Text { name, value } => {
                 body.extend_from_slice(
-                    format!(
-                        "Content-Disposition: form-data; name=\"{name}\"\r\n\r\n"
-                    )
-                    .as_bytes(),
+                    format!("Content-Disposition: form-data; name=\"{name}\"\r\n\r\n").as_bytes(),
                 );
                 body.extend_from_slice(value.as_bytes());
             }
@@ -70,13 +67,13 @@ async fn insert_permission_role(db: &Db, id: &str, name: &str, permissions: i64)
         "INSERT INTO roles(id, name, permissions, created_at) VALUES (?, ?, ?, ?)
          ON CONFLICT(name) DO UPDATE SET id = excluded.id, permissions = excluded.permissions",
     )
-        .bind(id)
-        .bind(name)
-        .bind(permissions)
-        .bind(chrono::Utc::now())
-        .execute(&db.0)
-        .await
-        .expect("insert permission role");
+    .bind(id)
+    .bind(name)
+    .bind(permissions)
+    .bind(chrono::Utc::now())
+    .execute(&db.0)
+    .await
+    .expect("insert permission role");
 }
 
 fn assert_is_owner_flag(payload: Value, expected: bool) {
@@ -111,7 +108,13 @@ async fn api_channel_creation_requires_create_channel_permission() {
     let response = test::call_service(&app, without_permission).await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
-    insert_permission_role(&ctx.db, "role-create", "can-create-channels", PERM_CREATE_CHANNELS).await;
+    insert_permission_role(
+        &ctx.db,
+        "role-create",
+        "can-create-channels",
+        PERM_CREATE_CHANNELS,
+    )
+    .await;
     sqlx::query("INSERT INTO user_roles(user_id, role_id) VALUES (?, ?)")
         .bind("user-create")
         .bind("role-create")
@@ -424,13 +427,7 @@ async fn api_channel_owners_can_manage_without_global_manage_channel_permissions
     insert_user(&ctx.db, "channel-owner", "channel-owner").await;
     insert_user(&ctx.db, "outsider", "outsider").await;
 
-    insert_permission_role(
-        &ctx.db,
-        "owner-role",
-        "owner-role",
-        PERM_CREATE_CHANNELS,
-    )
-    .await;
+    insert_permission_role(&ctx.db, "owner-role", "owner-role", PERM_CREATE_CHANNELS).await;
     sqlx::query("INSERT INTO user_roles(user_id, role_id) VALUES (?, ?)")
         .bind("channel-owner")
         .bind("owner-role")

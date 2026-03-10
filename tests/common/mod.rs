@@ -107,12 +107,12 @@ pub async fn insert_role(db: &Db, id: &str, name: &str) {
          VALUES (?, ?, 0, ?)
          ON CONFLICT(name) DO UPDATE SET id = excluded.id",
     )
-        .bind(id)
-        .bind(name)
-        .bind(chrono::Utc::now())
-        .execute(&db.0)
-        .await
-        .expect("insert role");
+    .bind(id)
+    .bind(name)
+    .bind(chrono::Utc::now())
+    .execute(&db.0)
+    .await
+    .expect("insert role");
 }
 
 pub async fn grant_role(db: &Db, user_id: &str, role_id: &str) {

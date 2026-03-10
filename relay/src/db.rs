@@ -22,4 +22,3 @@ impl Db {
         Ok(Db(pool))
     }
 }
-

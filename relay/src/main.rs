@@ -13,6 +13,7 @@ use apns::{ApnsNotification, ApnsOutcome, RealApnsSender, SharedApnsSender};
 use chrono::Utc;
 use config::Config;
 use db::Db;
+use env_logger::Env;
 use models::{RelayPushBatchRequest, RelayPushBatchResponse};
 use rand::TryRngCore;
 use sqlx::Row;
@@ -26,7 +27,7 @@ struct AppState {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    env_logger::init();
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
     if let Err(err) = run().await {
         eprintln!("{err:#}");
@@ -78,13 +79,15 @@ async fn maybe_run_cli(db: &Db, args: &[String]) -> anyhow::Result<Option<String
         let server_id = uuid::Uuid::new_v4().to_string();
         let server_secret = random_secret()?;
         let now = Utc::now();
-        sqlx::query("INSERT INTO relay_servers(server_id, label, secret, created_at) VALUES (?, ?, ?, ?)")
-            .bind(&server_id)
-            .bind(&label)
-            .bind(&server_secret)
-            .bind(now)
-            .execute(&db.0)
-            .await?;
+        sqlx::query(
+            "INSERT INTO relay_servers(server_id, label, secret, created_at) VALUES (?, ?, ?, ?)",
+        )
+        .bind(&server_id)
+        .bind(&label)
+        .bind(&server_secret)
+        .bind(now)
+        .execute(&db.0)
+        .await?;
         return Ok(Some(format!(
             "server_id={server_id}\nserver_secret={server_secret}"
         )));
@@ -112,6 +115,7 @@ async fn post_push_batch(
     let server_id = match auth::verify_request(&req, body.as_ref(), &state.db).await {
         Ok(server_id) => server_id,
         Err(err) => {
+            log::warn!("rejected push batch request: error={}", err);
             return HttpResponse::build(StatusCode::UNAUTHORIZED)
                 .json(serde_json::json!({ "error": err }));
         }
@@ -120,6 +124,11 @@ async fn post_push_batch(
     let batch: RelayPushBatchRequest = match serde_json::from_slice(body.as_ref()) {
         Ok(batch) => batch,
         Err(err) => {
+            log::warn!(
+                "rejected push batch request from server_id={}: invalid_json={}",
+                server_id,
+                err
+            );
             return HttpResponse::BadRequest().json(serde_json::json!({
                 "error": err.to_string()
             }));
@@ -128,9 +137,16 @@ async fn post_push_batch(
 
     match process_batch(&state, &server_id, batch).await {
         Ok(response) => HttpResponse::Ok().json(response),
-        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "error": err
-        })),
+        Err(err) => {
+            log::error!(
+                "failed to process push batch from server_id={}: {}",
+                server_id,
+                err
+            );
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": err
+            }))
+        }
     }
 }
 
@@ -139,6 +155,21 @@ async fn process_batch(
     server_id: &str,
     batch: RelayPushBatchRequest,
 ) -> Result<RelayPushBatchResponse, String> {
+    let request_id = batch.request_id.clone();
+    let event_id = batch.event_id.clone();
+    let event_type = format!("{:?}", batch.event_type);
+    let channel_id = batch.channel.id.clone();
+    let device_count = batch.devices.len();
+    log::info!(
+        "received push batch: server_id={} request_id={} event_id={} event_type={} channel_id={} devices={}",
+        server_id,
+        request_id,
+        event_id,
+        event_type,
+        channel_id,
+        device_count
+    );
+
     let mut invalid_installation_ids = Vec::new();
     let mut retryable_failures = 0usize;
 
@@ -157,8 +188,22 @@ async fn process_batch(
         if let Some(row) = existing {
             let status: String = row.get("status");
             match status.as_str() {
-                "delivered" => continue,
+                "delivered" => {
+                    log::info!(
+                        "skipping previously delivered push device: server_id={} event_id={} installation_id={}",
+                        server_id,
+                        batch.event_id,
+                        device.installation_id
+                    );
+                    continue;
+                }
                 "invalid" => {
+                    log::warn!(
+                        "skipping known invalid push device: server_id={} event_id={} installation_id={}",
+                        server_id,
+                        batch.event_id,
+                        device.installation_id
+                    );
                     invalid_installation_ids.push(device.installation_id.clone());
                     continue;
                 }
@@ -174,9 +219,27 @@ async fn process_batch(
             device: device.clone(),
         };
 
-        let outcome = state.apns_sender.send(notification).await?;
+        let outcome = match state.apns_sender.send(notification).await {
+            Ok(outcome) => outcome,
+            Err(err) => {
+                let message = format!(
+                    "APNS send failed: server_id={} event_id={} installation_id={} error={}",
+                    server_id, batch.event_id, device.installation_id, err
+                );
+                log::error!("{message}");
+                return Err(message);
+            }
+        };
         match outcome {
             ApnsOutcome::Delivered { apns_id } => {
+                log::info!(
+                    "delivered APNS notification: server_id={} event_id={} installation_id={} environment={:?} apns_id={}",
+                    server_id,
+                    batch.event_id,
+                    device.installation_id,
+                    device.environment,
+                    apns_id.as_deref().unwrap_or("-")
+                );
                 upsert_delivery(
                     &state.db,
                     server_id,
@@ -191,6 +254,14 @@ async fn process_batch(
                 .map_err(|err| err.to_string())?;
             }
             ApnsOutcome::InvalidToken { reason } => {
+                log::warn!(
+                    "APNS rejected device token: server_id={} event_id={} installation_id={} environment={:?} reason={}",
+                    server_id,
+                    batch.event_id,
+                    device.installation_id,
+                    device.environment,
+                    reason
+                );
                 invalid_installation_ids.push(device.installation_id.clone());
                 upsert_delivery(
                     &state.db,
@@ -206,6 +277,14 @@ async fn process_batch(
                 .map_err(|err| err.to_string())?;
             }
             ApnsOutcome::Retryable { reason } => {
+                log::warn!(
+                    "APNS returned retryable failure: server_id={} event_id={} installation_id={} environment={:?} reason={}",
+                    server_id,
+                    batch.event_id,
+                    device.installation_id,
+                    device.environment,
+                    reason
+                );
                 retryable_failures += 1;
                 upsert_delivery(
                     &state.db,
@@ -223,6 +302,17 @@ async fn process_batch(
         }
     }
 
+    log::info!(
+        "completed push batch: server_id={} request_id={} event_id={} event_type={} channel_id={} devices={} invalid_installations={} retryable_failures={}",
+        server_id,
+        request_id,
+        event_id,
+        event_type,
+        channel_id,
+        device_count,
+        invalid_installation_ids.len(),
+        retryable_failures
+    );
     Ok(RelayPushBatchResponse {
         accepted: retryable_failures == 0,
         invalid_installation_ids,
@@ -280,7 +370,10 @@ mod tests {
     use super::*;
     use actix_web::test;
     use async_trait::async_trait;
-    use models::{PushActorInfo, PushChannelInfo, PushEnvironment, PushEventType, PushMessageInfo, RelayPushDevice};
+    use models::{
+        PushActorInfo, PushChannelInfo, PushEnvironment, PushEventType, PushMessageInfo,
+        RelayPushDevice,
+    };
     use std::sync::Mutex;
 
     struct TestSender {
@@ -302,19 +395,19 @@ mod tests {
         let root_dir =
             std::env::temp_dir().join(format!("stuffchat-relay-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root_dir).expect("create temp relay dir");
-        let db = Db::connect_and_migrate(
-            root_dir.join("relay.sqlite3").to_str().expect("db path"),
-        )
-        .await
-        .expect("db");
-        sqlx::query("INSERT INTO relay_servers(server_id, label, secret, created_at) VALUES (?, ?, ?, ?)")
-            .bind("server-1")
-            .bind("Test")
-            .bind("secret")
-            .bind(Utc::now())
-            .execute(&db.0)
+        let db = Db::connect_and_migrate(root_dir.join("relay.sqlite3").to_str().expect("db path"))
             .await
-            .expect("insert server");
+            .expect("db");
+        sqlx::query(
+            "INSERT INTO relay_servers(server_id, label, secret, created_at) VALUES (?, ?, ?, ?)",
+        )
+        .bind("server-1")
+        .bind("Test")
+        .bind("secret")
+        .bind(Utc::now())
+        .execute(&db.0)
+        .await
+        .expect("insert server");
 
         AppState {
             db,

@@ -813,7 +813,7 @@ pub async fn post_message(
                     String::new()
                 }
             };
-            let _ = push_runtime
+            if let Err(err) = push_runtime
                 .enqueue_message_event(
                     PushChannelInfo {
                         id: channel_id.clone(),
@@ -824,11 +824,22 @@ pub async fn post_message(
                         id: user.user_id.clone(),
                         username: actor_username,
                     },
-                    PushMessageInfo { id: id.clone(), preview },
+                    PushMessageInfo {
+                        id: id.clone(),
+                        preview,
+                    },
                     recipient_user_ids,
                     now,
                 )
-                .await;
+                .await
+            {
+                log::error!(
+                    "failed to enqueue message push: message_id={} channel_id={} error={}",
+                    id,
+                    channel_id,
+                    err
+                );
+            }
         }
     }
 

@@ -1,9 +1,5 @@
 use crate::{
-    admin_log,
-    auth::AuthUser,
-    db::Db,
-    errors::ApiError,
-    models::role::PERM_CREATE_CHANNELS,
+    admin_log, auth::AuthUser, db::Db, errors::ApiError, models::role::PERM_CREATE_CHANNELS,
     permissions,
 };
 use actix_web::{HttpResponse, web};

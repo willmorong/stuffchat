@@ -199,7 +199,10 @@ fn build_request_parts(notification: &ApnsNotification) -> BuiltApnsRequest {
         PushEventType::Message => format!("message:{}", notification.channel.id),
         PushEventType::CallStarted => format!("call_started:{}", notification.channel.id),
     };
-    let message_id = notification.message.as_ref().map(|message| message.id.clone());
+    let message_id = notification
+        .message
+        .as_ref()
+        .map(|message| message.id.clone());
     let payload = json!({
         "aps": {
             "alert": {

@@ -1,10 +1,4 @@
-use crate::{
-    auth,
-    db::Db,
-    errors::ApiError,
-    models::role::PERM_INVITE_USERS,
-    permissions,
-};
+use crate::{auth, db::Db, errors::ApiError, models::role::PERM_INVITE_USERS, permissions};
 use actix_web::{HttpResponse, web};
 use serde::Serialize;
 use sqlx::Row;

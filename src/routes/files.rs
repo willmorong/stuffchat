@@ -1,5 +1,7 @@
-use crate::{auth::AuthUser, config::Config, db::Db, errors::ApiError, models::role::PERM_UPLOAD_FILES};
 use crate::permissions;
+use crate::{
+    auth::AuthUser, config::Config, db::Db, errors::ApiError, models::role::PERM_UPLOAD_FILES,
+};
 use actix_multipart::Multipart;
 use actix_web::http::header::{ContentDisposition, DispositionParam, DispositionType};
 use actix_web::{HttpRequest, HttpResponse, web};

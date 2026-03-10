@@ -22,12 +22,13 @@ pub async fn verify_request(req: &HttpRequest, body: &[u8], db: &Db) -> Result<S
         return Err("timestamp outside allowed skew".to_string());
     }
 
-    let row = sqlx::query("SELECT secret FROM relay_servers WHERE server_id = ? AND revoked_at IS NULL")
-        .bind(&server_id)
-        .fetch_optional(&db.0)
-        .await
-        .map_err(|err| err.to_string())?
-        .ok_or_else(|| "unknown relay server".to_string())?;
+    let row =
+        sqlx::query("SELECT secret FROM relay_servers WHERE server_id = ? AND revoked_at IS NULL")
+            .bind(&server_id)
+            .fetch_optional(&db.0)
+            .await
+            .map_err(|err| err.to_string())?
+            .ok_or_else(|| "unknown relay server".to_string())?;
     let secret: String = row.get("secret");
 
     let expected_signature = build_signature(

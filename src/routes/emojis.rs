@@ -1,9 +1,5 @@
 use crate::{
-    auth::AuthUser,
-    config::Config,
-    db::Db,
-    errors::ApiError,
-    models::role::PERM_MANAGE_EMOJIS,
+    auth::AuthUser, config::Config, db::Db, errors::ApiError, models::role::PERM_MANAGE_EMOJIS,
     permissions,
 };
 use actix_multipart::Multipart;

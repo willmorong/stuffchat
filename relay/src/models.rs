@@ -59,4 +59,3 @@ pub struct RelayPushBatchResponse {
     pub invalid_installation_ids: Vec<String>,
     pub retryable_failures: usize,
 }
-

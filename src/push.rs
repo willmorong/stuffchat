@@ -249,6 +249,12 @@ impl PushRelayRuntime {
         occurred_at: DateTime<Utc>,
     ) -> Result<(), sqlx::Error> {
         if recipient_user_ids.is_empty() {
+            log::info!(
+                "skipping message push enqueue: message_id={} channel_id={} actor_user_id={} reason=no_recipients",
+                message.id,
+                channel.id,
+                actor.id
+            );
             return Ok(());
         }
 
@@ -261,7 +267,8 @@ impl PushRelayRuntime {
             recipient_user_ids,
         };
 
-        self.insert_event(PushEventType::Message, event_id, payload).await?;
+        self.insert_event(PushEventType::Message, event_id, payload)
+            .await?;
         self.inner.notify.notify_one();
         Ok(())
     }
@@ -327,14 +334,16 @@ impl PushRelayRuntime {
         let channel_name: String = channel_row.get("name");
         let is_voice = channel_row.get::<i64, _>("is_voice") != 0;
 
-        let member_rows =
-            sqlx::query("SELECT user_id FROM channel_members WHERE channel_id = ? AND can_read = 1")
-                .bind(&channel_id)
-                .fetch_all(&self.inner.db.0)
-                .await
-                .map_err(|err| err.to_string())?;
+        let member_rows = sqlx::query(
+            "SELECT user_id FROM channel_members WHERE channel_id = ? AND can_read = 1",
+        )
+        .bind(&channel_id)
+        .fetch_all(&self.inner.db.0)
+        .await
+        .map_err(|err| err.to_string())?;
 
-        let suppressed: std::collections::HashSet<String> = suppressed_user_ids.into_iter().collect();
+        let suppressed: std::collections::HashSet<String> =
+            suppressed_user_ids.into_iter().collect();
         let recipient_user_ids: Vec<String> = member_rows
             .into_iter()
             .map(|row| row.get::<String, _>("user_id"))
@@ -343,6 +352,11 @@ impl PushRelayRuntime {
             .collect();
 
         if recipient_user_ids.is_empty() {
+            log::info!(
+                "skipping call_started push enqueue: channel_id={} actor_user_id={} reason=no_recipients",
+                channel_id,
+                actor_user_id
+            );
             return Ok(());
         }
 
@@ -380,18 +394,19 @@ impl PushRelayRuntime {
         payload: QueuedPushPayload,
     ) -> Result<(), sqlx::Error> {
         let now = Utc::now();
+        let event_type_name = event_type.as_str();
         let payload_json = serde_json::to_string(&payload)
             .map_err(|err| sqlx::Error::Protocol(err.to_string()))?;
 
-        sqlx::query(
+        let result = sqlx::query(
             "INSERT OR IGNORE INTO push_events(
                 id, event_id, event_type, channel_id, actor_user_id, payload_json,
                 attempt_count, next_attempt_at, created_at, updated_at
              ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
         )
         .bind(uuid::Uuid::new_v4().to_string())
-        .bind(event_id)
-        .bind(event_type.as_str())
+        .bind(&event_id)
+        .bind(event_type_name)
         .bind(&payload.channel.id)
         .bind(&payload.actor.id)
         .bind(payload_json)
@@ -400,6 +415,33 @@ impl PushRelayRuntime {
         .bind(now)
         .execute(&self.inner.db.0)
         .await?;
+
+        let message_id = payload
+            .message
+            .as_ref()
+            .map(|message| message.id.as_str())
+            .unwrap_or("-");
+        if result.rows_affected() == 0 {
+            log::info!(
+                "push event already queued: event_type={} event_id={} channel_id={} actor_user_id={} recipients={} message_id={}",
+                event_type_name,
+                event_id,
+                payload.channel.id,
+                payload.actor.id,
+                payload.recipient_user_ids.len(),
+                message_id
+            );
+        } else {
+            log::info!(
+                "queued push event: event_type={} event_id={} channel_id={} actor_user_id={} recipients={} message_id={}",
+                event_type_name,
+                event_id,
+                payload.channel.id,
+                payload.actor.id,
+                payload.recipient_user_ids.len(),
+                message_id
+            );
+        }
 
         Ok(())
     }
@@ -453,6 +495,13 @@ impl PushRelayRuntimeInner {
     async fn dispatch_event(&self, event: &PendingPushEvent) -> Result<(), String> {
         let devices = self.load_devices_for_event(event).await?;
         if devices.is_empty() {
+            log::info!(
+                "push event has no registered iOS devices: event_id={} event_type={} channel_id={} recipients={}",
+                event.event_id,
+                event.event_type.as_str(),
+                event.payload.channel.id,
+                event.payload.recipient_user_ids.len()
+            );
             self.mark_dispatched(&event.id)
                 .await
                 .map_err(|err| err.to_string())?;
@@ -469,6 +518,18 @@ impl PushRelayRuntimeInner {
             message: event.payload.message.clone(),
             devices,
         };
+        let request_id = body.request_id.clone();
+        let device_count = body.devices.len();
+        log::info!(
+            "dispatching push event to relay: event_id={} request_id={} event_type={} channel_id={} recipients={} devices={} attempt={}",
+            event.event_id,
+            request_id,
+            event.event_type.as_str(),
+            event.payload.channel.id,
+            event.payload.recipient_user_ids.len(),
+            device_count,
+            event.attempt_count + 1
+        );
 
         let body_bytes = serde_json::to_vec(&body).map_err(|err| err.to_string())?;
         let request_url = self
@@ -512,18 +573,40 @@ impl PushRelayRuntimeInner {
         let relay_response: RelayPushBatchResponse =
             response.json().await.map_err(|err| err.to_string())?;
         if !relay_response.invalid_installation_ids.is_empty() {
+            log::warn!(
+                "relay reported invalid push installations: event_id={} request_id={} invalid_installations={}",
+                event.event_id,
+                request_id,
+                relay_response.invalid_installation_ids.len()
+            );
             self.delete_installations(&relay_response.invalid_installation_ids)
                 .await
                 .map_err(|err| err.to_string())?;
         }
 
         if relay_response.accepted && relay_response.retryable_failures == 0 {
+            log::info!(
+                "relay accepted push event: event_id={} request_id={} devices={} invalid_installations={} retryable_failures={}",
+                event.event_id,
+                request_id,
+                device_count,
+                relay_response.invalid_installation_ids.len(),
+                relay_response.retryable_failures
+            );
             self.mark_dispatched(&event.id)
                 .await
                 .map_err(|err| err.to_string())?;
             return Ok(());
         }
 
+        log::warn!(
+            "relay reported retryable push failures: event_id={} request_id={} devices={} invalid_installations={} retryable_failures={}",
+            event.event_id,
+            request_id,
+            device_count,
+            relay_response.invalid_installation_ids.len(),
+            relay_response.retryable_failures
+        );
         Err(format!(
             "relay reported {} retryable failures",
             relay_response.retryable_failures
@@ -621,18 +704,26 @@ impl PushRelayRuntimeInner {
     ) -> Result<(), sqlx::Error> {
         let now = Utc::now();
         let delay = retry_delay(attempt_count);
+        let next_attempt_at = now + delay;
         sqlx::query(
             "UPDATE push_events
              SET attempt_count = ?, next_attempt_at = ?, last_error = ?, updated_at = ?
              WHERE id = ?",
         )
         .bind(attempt_count)
-        .bind(now + delay)
+        .bind(next_attempt_at)
         .bind(last_error)
         .bind(now)
         .bind(event_id)
         .execute(&self.db.0)
         .await?;
+        log::warn!(
+            "scheduled push retry: queue_id={} attempt_count={} next_attempt_at={} error={}",
+            event_id,
+            attempt_count,
+            next_attempt_at.to_rfc3339(),
+            last_error
+        );
         Ok(())
     }
 }
@@ -720,9 +811,15 @@ mod tests {
 
     #[test]
     fn relay_url_requires_https_except_localhost() {
-        assert!(is_allowed_relay_url(&Url::parse("https://relay.example.com").expect("url")));
-        assert!(is_allowed_relay_url(&Url::parse("http://127.0.0.1:8080").expect("url")));
-        assert!(!is_allowed_relay_url(&Url::parse("http://relay.example.com").expect("url")));
+        assert!(is_allowed_relay_url(
+            &Url::parse("https://relay.example.com").expect("url")
+        ));
+        assert!(is_allowed_relay_url(
+            &Url::parse("http://127.0.0.1:8080").expect("url")
+        ));
+        assert!(!is_allowed_relay_url(
+            &Url::parse("http://relay.example.com").expect("url")
+        ));
     }
 
     #[tokio::test]
@@ -746,10 +843,11 @@ mod tests {
             .await
             .expect("enqueue call");
 
-        let row = sqlx::query("SELECT payload_json FROM push_events WHERE event_type = 'call_started'")
-            .fetch_one(&harness.db.0)
-            .await
-            .expect("push event row");
+        let row =
+            sqlx::query("SELECT payload_json FROM push_events WHERE event_type = 'call_started'")
+                .fetch_one(&harness.db.0)
+                .await
+                .expect("push event row");
         let payload: QueuedPushPayload =
             serde_json::from_str(&row.get::<String, _>("payload_json")).expect("payload");
 
@@ -759,7 +857,9 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_prunes_invalid_installations() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind listener");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
         let address = listener.local_addr().expect("local addr");
         let server = tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.expect("accept connection");
@@ -804,11 +904,7 @@ mod tests {
         };
         harness
             .runtime
-            .insert_event(
-                PushEventType::Message,
-                "msg:message-1".to_string(),
-                payload,
-            )
+            .insert_event(PushEventType::Message, "msg:message-1".to_string(), payload)
             .await
             .expect("insert message event");
 
@@ -818,17 +914,19 @@ mod tests {
             .await
             .expect("dispatch");
 
-        let remaining_devices =
-            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM push_devices WHERE installation_id = ?")
-                .bind("installation-1")
-                .fetch_one(&harness.db.0)
-                .await
-                .expect("remaining devices");
-        let dispatched_count =
-            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM push_events WHERE dispatched_at IS NOT NULL")
-                .fetch_one(&harness.db.0)
-                .await
-                .expect("dispatched count");
+        let remaining_devices = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM push_devices WHERE installation_id = ?",
+        )
+        .bind("installation-1")
+        .fetch_one(&harness.db.0)
+        .await
+        .expect("remaining devices");
+        let dispatched_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM push_events WHERE dispatched_at IS NOT NULL",
+        )
+        .fetch_one(&harness.db.0)
+        .await
+        .expect("dispatched count");
 
         server.await.expect("server task");
         assert_eq!(remaining_devices, 0);
