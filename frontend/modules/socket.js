@@ -6,22 +6,42 @@ import { updateCallUI, createPeerConnection, handleSignal } from './voice.js';
 import { renderChannelList, markChannelRead } from './channels.js';
 import { sharePlay } from './shareplay.js';
 
+let reconnectTimer = null;
+
+function scheduleReconnect() {
+    if (reconnectTimer || !store.accessToken) return;
+    reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        if (!store.ws && store.accessToken) {
+            connectWs();
+        }
+    }, 2000);
+}
+
 export function connectWs(reconnect = false) {
     const url = toWsUrl(store.baseUrl);
     if (!url || !store.accessToken) return;
     try {
+        if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+        }
         if (store.ws) {
-            if (store.ws.readyState === WebSocket.OPEN || store.ws.readyState === WebSocket.CONNECTING) {
+            if (!reconnect && (store.ws.readyState === WebSocket.OPEN || store.ws.readyState === WebSocket.CONNECTING)) {
                 // Console log disabled to reduce noise
                 // console.log('WebSocket already open or connecting');
                 return;
             }
-            // If it is closing or closed, we can overwrite it, but maybe we should close it explicitly first just in case?
-            // Usually if it's closed it's fine.
+
+            const previousWs = store.ws;
+            store.ws = null;
+            previousWs.onclose = null;
+            try { previousWs.close(); } catch { }
         }
         const ws = new WebSocket(url + '?token=' + encodeURIComponent(store.accessToken));
         store.ws = ws;
         ws.onopen = () => {
+            if (store.ws !== ws) return;
             // Rejoin current channel
             if (store.currentChannelId) {
                 ws.send(JSON.stringify({ type: 'join', channel_id: store.currentChannelId }));
@@ -38,6 +58,8 @@ export function connectWs(reconnect = false) {
             } catch (e) { console.warn('WS parse error', e) }
         };
         ws.onclose = () => {
+            if (store.ws !== ws) return;
+            store.ws = null;
             if (store.inCall) {
                 console.warn('WebSocket closed while in call, cleaning up');
                 store.inCall = false;
@@ -57,7 +79,7 @@ export function connectWs(reconnect = false) {
                 updateCallUI();
             }
             if (store.accessToken) {
-                setTimeout(() => connectWs(true), 2000);
+                scheduleReconnect();
             }
         };
     } catch (e) { console.warn('WS connect error', e.message); }

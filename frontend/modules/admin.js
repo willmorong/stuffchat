@@ -1,5 +1,5 @@
 import { store } from './store.js';
-import { apiFetch } from './api.js';
+import { apiFetch, apiRequest } from './api.js';
 import { $, buildFileUrl } from './utils.js';
 
 let adminUsers = [];
@@ -276,9 +276,8 @@ async function uploadUserAvatar() {
     if (!userId || !file) return;
     const fd = new FormData();
     fd.append('file', file);
-    const res = await fetch(store.baseUrl + `/api/admin/users/${encodeURIComponent(userId)}/avatar`, {
+    const res = await apiRequest(`/api/admin/users/${encodeURIComponent(userId)}/avatar`, {
         method: 'PUT',
-        headers: store.accessToken ? { 'Authorization': 'Bearer ' + store.accessToken } : {},
         body: fd
     });
     if (!res.ok) {

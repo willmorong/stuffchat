@@ -2,7 +2,7 @@ import { store, setPendingAttachment } from './modules/store.js';
 import { $ } from './modules/utils.js';
 import { setupApi, checkServer } from './modules/api.js';
 import {
-    doLogin, doRegister, logout, showServerStep, showAuthStep, setBaseUrl
+    doLogin, doRegister, logout, clearSession, showServerStep, showAuthStep, setBaseUrl
 } from './modules/auth.js';
 import { connectWs, sendTyping } from './modules/socket.js';
 import {
@@ -31,7 +31,7 @@ import { initEmojiPicker } from './modules/emojis.js';
 import { initSearch } from './modules/search.js';
 
 // Dependency injection to break cycles
-setupApi(logout, connectWs);
+setupApi(clearSession, connectWs);
 
 // Expose for HTML (onclick handlers if any remain, but we try to replace them)
 // Actually showServerStep was called by onclick in HTML: onclick="showServerStep()"
@@ -57,15 +57,11 @@ async function init() {
             await checkServer(storedUrl);
             showAuthStep();
             if (store.accessToken) {
-                // We rely on auth.js methods which are not exported as a single bootstrap function
-                // but bootstrapAfterAuth is.
-                // Wait, auth.js exports bootstrapAfterAuth? Yes.
-                // But we need to check validity? 
-                // In frontend.js: if (store.accessToken) await bootstrapAfterAuth()
-                // But we need to import bootstrapAfterAuth.
-                // It was internal in frontend.js but I exported it in auth.js.
-                // Let's import it.
-                await import('./modules/auth.js').then(m => m.bootstrapAfterAuth());
+                try {
+                    await import('./modules/auth.js').then(m => m.bootstrapAfterAuth());
+                } catch (e) {
+                    console.warn('Stored session restore failed', e);
+                }
             }
         } catch {
             showServerStep();
