@@ -141,7 +141,7 @@ function renderAudioDeviceSettings() {
         '#audioInputDevice',
         store.audioInputDevices,
         store.audioInputDeviceId,
-        'No microphones available'
+        'Default'
     );
 
     const outputSupported = isAudioOutputSelectionSupported();
@@ -149,7 +149,7 @@ function renderAudioDeviceSettings() {
         '#audioOutputDevice',
         store.audioOutputDevices,
         store.audioOutputDeviceId,
-        outputSupported ? 'No speakers available' : 'Output switching is not supported here',
+        'Default',
         !outputSupported
     );
 
