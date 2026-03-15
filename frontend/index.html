@@ -246,7 +246,18 @@
                 </section>
                 <section class="panel">
                     <h3>Audio Settings</h3>
-                    <p class="error">NOTE: Noise suppression works well, the other two aren't fully tested. If you run
+                    <div class="row" style="gap: 12px; flex-wrap: wrap; margin-bottom: 12px;">
+                        <label style="flex: 1; min-width: 220px;">
+                            <div style="margin-bottom: 6px;">Input Device</div>
+                            <select id="audioInputDevice" class="input" style="width: 100%;"></select>
+                        </label>
+                        <label style="flex: 1; min-width: 220px;">
+                            <div style="margin-bottom: 6px;">Output Device</div>
+                            <select id="audioOutputDevice" class="input" style="width: 100%;"></select>
+                        </label>
+                    </div>
+                    <p class="hint" id="audioOutputSupportHint"></p>
+                    <p class="error">NOTE: Noise suppression doesn't apply on some platforms without support. If you run
                         into issues with them, tell Will.</p>
                     <div class="row" style="flex-direction: column; gap: 8px;">
                         <label class="row" style="gap:10px; align-items:center; cursor:pointer">

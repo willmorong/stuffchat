@@ -22,6 +22,10 @@ export const store = {
     noiseSuppression: localStorage.getItem('stuffchat.noise_suppression') !== 'false',
     echoCancellation: localStorage.getItem('stuffchat.echo_cancellation') === 'true',
     autoGainControl: localStorage.getItem('stuffchat.auto_gain_control') === 'true',
+    audioInputDeviceId: localStorage.getItem('stuffchat.audio_input_device_id') || null,
+    audioOutputDeviceId: localStorage.getItem('stuffchat.audio_output_device_id') || null,
+    audioInputDevices: [],
+    audioOutputDevices: [],
     // Video Codec Preferences
     preferVP9: localStorage.getItem('stuffchat.prefer_vp9') === 'true',
     preferAV1: localStorage.getItem('stuffchat.prefer_av1') === 'true',
