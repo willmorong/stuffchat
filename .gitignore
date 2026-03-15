@@ -13,3 +13,5 @@ bridge/__pycache__/
 Cargo.lock
 *.pyc
 relay/target/*
+*.p8
+config.toml
