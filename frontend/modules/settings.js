@@ -7,14 +7,6 @@ import { stopMysteriousAnimation, startMysteriousAnimation } from './mysterious.
 import { stopRainAnimation, startRainAnimation } from './rain.js';
 import { recreateCanvas } from './themeCanvas.js';
 import { fetchEmojis, uploadEmoji, deleteEmoji, buildEmojiUrl } from './emojis.js';
-import {
-    AUDIO_DEVICES_CHANGED_EVENT,
-    bindAudioDeviceEvents,
-    isAudioOutputSelectionSupported,
-    refreshAudioDevices,
-    setPreferredAudioInputDevice,
-    setPreferredAudioOutputDevice
-} from './voice.js';
 
 // List of animated themes that use the background canvas
 const ANIMATED_THEMES = ['clouds', 'mysterious', 'rain'];
@@ -116,59 +108,6 @@ async function updateMediaCapabilities() {
     setIf('#debugHwAudio', 'textContent', aCodecs.join(', '));
 }
 
-function renderAudioDeviceSelect(selectId, devices, selectedDeviceId, emptyLabel, disabled = false) {
-    const select = $(selectId);
-    if (!select) return;
-
-    select.innerHTML = '';
-
-    if (devices.length === 0) {
-        select.appendChild(el('option', { value: '' }, emptyLabel));
-        select.disabled = true;
-        select.value = '';
-        return;
-    }
-
-    devices.forEach(device => {
-        select.appendChild(el('option', { value: device.deviceId }, device.label));
-    });
-    select.disabled = disabled;
-    select.value = selectedDeviceId ?? devices[0].deviceId;
-}
-
-function renderAudioDeviceSettings() {
-    renderAudioDeviceSelect(
-        '#audioInputDevice',
-        store.audioInputDevices,
-        store.audioInputDeviceId,
-        'Default'
-    );
-
-    const outputSupported = isAudioOutputSelectionSupported();
-    renderAudioDeviceSelect(
-        '#audioOutputDevice',
-        store.audioOutputDevices,
-        store.audioOutputDeviceId,
-        'Default',
-        !outputSupported
-    );
-
-    const outputHint = $('#audioOutputSupportHint');
-    if (outputHint) {
-        outputHint.textContent = outputSupported
-            ? 'Changes apply immediately to the active call and become the default for future calls.'
-            : 'This browser does not support switching audio output devices from the web app.';
-    }
-}
-
-const VIDEO_BITRATE_PRESETS = [8000, 5000, 2500];
-
-function getDefaultVideoBitrate() {
-    return VIDEO_BITRATE_PRESETS.includes(Number(store.videoBitrateKbps))
-        ? Number(store.videoBitrateKbps)
-        : 8000;
-}
-
 export function openSettings() {
     // Fill current values
     setIf('#profileUsername', 'value', store.user?.username || '');
@@ -193,8 +132,6 @@ export function openSettings() {
     setIf('#prefNoiseSuppression', 'checked', store.noiseSuppression);
     setIf('#prefEchoCancellation', 'checked', store.echoCancellation);
     setIf('#prefAutoGainControl', 'checked', store.autoGainControl);
-    renderAudioDeviceSettings();
-    setIf('#videoBitratePreset', 'value', String(getDefaultVideoBitrate()));
 
     // Video codec preferences
     setIf('#prefVP9', 'checked', store.preferVP9);
@@ -207,7 +144,6 @@ export function openSettings() {
     renderEmojiList();
 
     $('#settingsModal').classList.remove('hidden');
-    refreshAudioDevices().catch(console.error);
 }
 
 export function closeSettings() {
@@ -232,9 +168,6 @@ export function applyTheme(theme) {
 }
 
 export function bindSettingsEvents() {
-    bindAudioDeviceEvents();
-    window.addEventListener(AUDIO_DEVICES_CHANGED_EVENT, renderAudioDeviceSettings);
-
     // Avatar upload: wired in modal
     const modalAvatar = $('#setAvatarFile');
     if (modalAvatar) {
@@ -304,22 +237,6 @@ export function bindSettingsEvents() {
         store.autoGainControl = e.target.checked;
         localStorage.setItem('stuffchat.auto_gain_control', store.autoGainControl);
     });
-    $('#audioInputDevice').addEventListener('change', async (e) => {
-        try {
-            await setPreferredAudioInputDevice(e.target.value || null);
-        } catch (err) {
-            alert('Could not switch microphone: ' + err.message);
-            renderAudioDeviceSettings();
-        }
-    });
-    $('#audioOutputDevice').addEventListener('change', async (e) => {
-        try {
-            await setPreferredAudioOutputDevice(e.target.value || null);
-        } catch (err) {
-            alert('Could not switch speaker output: ' + err.message);
-            renderAudioDeviceSettings();
-        }
-    });
 
     // Video codec preferences
     $('#prefVP9').addEventListener('change', (e) => {
@@ -329,11 +246,6 @@ export function bindSettingsEvents() {
     $('#prefAV1').addEventListener('change', (e) => {
         store.preferAV1 = e.target.checked;
         localStorage.setItem('stuffchat.prefer_av1', store.preferAV1);
-    });
-    $('#videoBitratePreset').addEventListener('change', (e) => {
-        const bitrate = Number(e.target.value);
-        store.videoBitrateKbps = VIDEO_BITRATE_PRESETS.includes(bitrate) ? bitrate : getDefaultVideoBitrate();
-        localStorage.setItem('stuffchat.video_bitrate_kbps', store.videoBitrateKbps);
     });
 
     // Logout from modal

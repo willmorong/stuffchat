@@ -1,5 +1,5 @@
 import { store } from './store.js';
-import { apiFetch, apiRequest } from './api.js';
+import { apiFetch } from './api.js';
 import { $, buildFileUrl } from './utils.js';
 import { renderMessages } from './messages.js';
 import { updateCallUI } from './voice.js';
@@ -57,8 +57,9 @@ export async function prefetchUsers(userIds) {
 export async function uploadAvatar(file) {
     const fd = new FormData();
     fd.append('file', file);
-    const res = await apiRequest('/api/users/me/avatar', {
+    const res = await fetch(store.baseUrl + '/api/users/me/avatar', {
         method: 'PUT',
+        headers: store.accessToken ? { 'Authorization': 'Bearer ' + store.accessToken } : {},
         body: fd
     });
     if (!res.ok) {

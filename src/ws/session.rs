@@ -3,14 +3,10 @@ use super::server::{
 };
 use crate::{auth, config::Config, db::Db, models::role::PERM_JOIN_VOICE, permissions};
 use actix::{Actor, ActorContext, Addr, AsyncContext, Handler, Message, StreamHandler, WrapFuture};
-use actix_web::{web, Error, HttpRequest, HttpResponse};
+use actix_web::{Error, HttpRequest, HttpResponse, web};
 use actix_web_actors::ws;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use std::time::{Duration, Instant};
-
-const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(15);
-const CLIENT_TIMEOUT: Duration = Duration::from_secs(45);
 
 pub async fn ws_route(
     req: HttpRequest,
@@ -48,7 +44,6 @@ pub async fn ws_route(
         joined: None,
         voice_channel: None,
         db: db.get_ref().clone(),
-        last_heartbeat: Instant::now(),
     };
     let (addr, resp) = ws::WsResponseBuilder::new(session, &req, stream).start_with_addr()?;
 
@@ -72,32 +67,12 @@ pub struct WsSession {
     pub joined: Option<String>,
     pub voice_channel: Option<String>,
     pub db: Db,
-    pub last_heartbeat: Instant,
-}
-
-impl WsSession {
-    fn heartbeat(&self, ctx: &mut ws::WebsocketContext<Self>) {
-        ctx.run_interval(HEARTBEAT_INTERVAL, |act, ctx| {
-            if Instant::now().duration_since(act.last_heartbeat) > CLIENT_TIMEOUT {
-                log::warn!("WebSocket heartbeat timed out for user_id={}", act.user_id);
-                ctx.stop();
-                return;
-            }
-            ctx.ping(b"");
-        });
-    }
 }
 
 impl Actor for WsSession {
     type Context = ws::WebsocketContext<Self>;
     fn started(&mut self, ctx: &mut Self::Context) {
-        log::info!(
-            "WsSession started: user_id={}, session_id={}",
-            self.user_id,
-            self.session_id
-        );
-        self.last_heartbeat = Instant::now();
-        self.heartbeat(ctx);
+        log::info!("WsSession started: user_id={}", self.user_id);
         self.server.do_send(Connect {
             user_id: self.user_id.clone(),
             session_id: self.session_id.clone(),
@@ -105,11 +80,7 @@ impl Actor for WsSession {
         });
     }
     fn stopped(&mut self, ctx: &mut Self::Context) {
-        log::info!(
-            "WsSession stopped: user_id={}, session_id={}",
-            self.user_id,
-            self.session_id
-        );
+        log::info!("WsSession stopped: user_id={}", self.user_id);
         self.server.do_send(Disconnect {
             user_id: self.user_id.clone(),
             session_id: self.session_id.clone(),
@@ -123,7 +94,7 @@ impl Actor for WsSession {
             });
         }
         if let Some(voice_ch) = self.voice_channel.take() {
-            self.server.do_send(super::server::DisconnectVoice {
+            self.server.do_send(super::server::LeaveVoice {
                 channel_id: voice_ch,
                 user_id: self.user_id.clone(),
                 session_id: self.session_id.clone(),
@@ -276,7 +247,6 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
         match msg {
             Ok(ws::Message::Text(text)) => {
                 log::debug!("WsSession received text: {}", text);
-                self.last_heartbeat = Instant::now();
                 if let Ok(ev) = serde_json::from_str::<ClientEvent>(&text) {
                     match ev {
                         ClientEvent::Join { channel_id } => {
@@ -407,7 +377,6 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                             });
                         }
                         ClientEvent::Ping => {
-                            self.last_heartbeat = Instant::now();
                             ctx.text(r#"{"type":"pong"}"#);
                         }
                         ClientEvent::JoinCall { channel_id } => {
@@ -488,13 +457,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                     }
                 }
             }
-            Ok(ws::Message::Ping(bytes)) => {
-                self.last_heartbeat = Instant::now();
-                ctx.pong(&bytes);
-            }
-            Ok(ws::Message::Pong(_)) => {
-                self.last_heartbeat = Instant::now();
-            }
+            Ok(ws::Message::Ping(bytes)) => ctx.pong(&bytes),
             Ok(ws::Message::Close(_)) => ctx.stop(),
             _ => {}
         }

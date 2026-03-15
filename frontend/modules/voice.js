@@ -4,257 +4,6 @@ import { playNotificationSound, buildFileUrl, el } from './utils.js';
 import { sharePlay } from './shareplay.js';
 
 let sharedAudioCtx = null;
-let sharedAudioOutputDestination = null;
-let sharedAudioOutputElement = null;
-
-export const AUDIO_DEVICES_CHANGED_EVENT = 'stuffchat:audio-devices-changed';
-
-function setStoredAudioInputDevice(deviceId) {
-    store.audioInputDeviceId = deviceId;
-    if (deviceId === null) {
-        localStorage.removeItem('stuffchat.audio_input_device_id');
-    } else {
-        localStorage.setItem('stuffchat.audio_input_device_id', deviceId);
-    }
-}
-
-function setStoredAudioOutputDevice(deviceId) {
-    store.audioOutputDeviceId = deviceId;
-    if (deviceId === null) {
-        localStorage.removeItem('stuffchat.audio_output_device_id');
-    } else {
-        localStorage.setItem('stuffchat.audio_output_device_id', deviceId);
-    }
-}
-
-function emitAudioDevicesChanged() {
-    window.dispatchEvent(new CustomEvent(AUDIO_DEVICES_CHANGED_EVENT));
-}
-
-function buildAudioTrackConstraints(deviceId = store.audioInputDeviceId) {
-    const constraints = {
-        echoCancellation: store.echoCancellation,
-        noiseSuppression: store.noiseSuppression,
-        autoGainControl: store.autoGainControl
-    };
-    if (deviceId) {
-        constraints.deviceId = { exact: deviceId };
-    }
-    return constraints;
-}
-
-function getFallbackDeviceLabel(kind, index) {
-    if (kind === 'audiooutput') {
-        return `Speaker ${index + 1}`;
-    }
-    return `Microphone ${index + 1}`;
-}
-
-function normalizeAudioDevices(devices, kind) {
-    return devices
-        .filter(device => device.kind === kind)
-        .map((device, index) => ({
-            deviceId: device.deviceId,
-            kind: device.kind,
-            label: device.label || getFallbackDeviceLabel(kind, index)
-        }));
-}
-
-function reconcileAudioDeviceSelection(devices, currentId, setSelectedDevice) {
-    const nextId = devices.some(device => device.deviceId === currentId)
-        ? currentId
-        : (devices[0]?.deviceId ?? null);
-    setSelectedDevice(nextId);
-    return nextId;
-}
-
-function getLocalAudioTrack() {
-    return store.localStream?.getAudioTracks?.()[0] || null;
-}
-
-async function ensureMediaElementPlayback(mediaElement, label) {
-    try {
-        await mediaElement.play();
-    } catch (e) {
-        console.warn(`Autoplay blocked for ${label}, waiting for user gesture:`, e);
-        const resumeOnGesture = () => {
-            mediaElement.play().catch(() => { });
-            document.removeEventListener('click', resumeOnGesture);
-            document.removeEventListener('keydown', resumeOnGesture);
-        };
-        document.addEventListener('click', resumeOnGesture);
-        document.addEventListener('keydown', resumeOnGesture);
-    }
-}
-
-export function isAudioOutputSelectionSupported() {
-    return typeof HTMLMediaElement !== 'undefined'
-        && typeof HTMLMediaElement.prototype.setSinkId === 'function';
-}
-
-async function ensureSharedAudioOutput() {
-    const ctx = await getAudioCtx();
-    if (!sharedAudioOutputDestination || sharedAudioOutputDestination.context !== ctx) {
-        if (sharedAudioOutputElement) {
-            sharedAudioOutputElement.remove();
-        }
-        sharedAudioOutputDestination = ctx.createMediaStreamDestination();
-        sharedAudioOutputElement = null;
-    }
-
-    if (!sharedAudioOutputElement) {
-        const audio = document.createElement('audio');
-        audio.id = 'voice-call-output';
-        audio.autoplay = true;
-        audio.playsInline = true;
-        audio.style.display = 'none';
-        audio.srcObject = sharedAudioOutputDestination.stream;
-        document.body.appendChild(audio);
-        sharedAudioOutputElement = audio;
-        await applyAudioOutputDevice();
-        await ensureMediaElementPlayback(audio, audio.id);
-    }
-
-    return sharedAudioOutputDestination;
-}
-
-export async function applyAudioOutputDevice() {
-    if (!isAudioOutputSelectionSupported()) return;
-
-    const ctx = await getAudioCtx();
-    if (!sharedAudioOutputDestination || sharedAudioOutputDestination.context !== ctx) {
-        await ensureSharedAudioOutput();
-    }
-    if (!sharedAudioOutputElement) return;
-
-    const sinkId = store.audioOutputDeviceId || '';
-    if (sharedAudioOutputElement.sinkId === sinkId) return;
-
-    try {
-        await sharedAudioOutputElement.setSinkId(sinkId);
-    } catch (e) {
-        console.warn('Failed to change audio output device:', e);
-    }
-}
-
-async function getMicrophoneStream(deviceId = store.audioInputDeviceId) {
-    return navigator.mediaDevices.getUserMedia({
-        audio: buildAudioTrackConstraints(deviceId),
-        video: false
-    });
-}
-
-export async function replaceActiveMicrophone(deviceId = store.audioInputDeviceId) {
-    if (!store.inCall || !store.localStream) return;
-
-    const previousTrack = getLocalAudioTrack();
-    const nextStream = await getMicrophoneStream(deviceId);
-    const nextTrack = nextStream.getAudioTracks()[0];
-    if (!nextTrack) {
-        nextStream.getTracks().forEach(track => track.stop());
-        throw new Error('No microphone track was returned for the selected device.');
-    }
-
-    try {
-        const replacementTasks = [];
-        store.pcs.forEach(pc => {
-            pc.getSenders().forEach(sender => {
-                if (sender.track === previousTrack) {
-                    replacementTasks.push(sender.replaceTrack(nextTrack));
-                }
-            });
-        });
-        await Promise.all(replacementTasks);
-
-        if (previousTrack) {
-            store.localStream.removeTrack(previousTrack);
-            previousTrack.stop();
-        }
-        store.localStream.addTrack(nextTrack);
-        nextTrack.enabled = !store.isMuted;
-
-        const localMonitor = store.volumeMonitors.get(store.user.id);
-        if (localMonitor) {
-            localMonitor.stop();
-            store.volumeMonitors.delete(store.user.id);
-        }
-        updateCallUI();
-    } catch (e) {
-        nextStream.getTracks().forEach(track => track.stop());
-        throw e;
-    }
-}
-
-export async function setPreferredAudioInputDevice(deviceId) {
-    setStoredAudioInputDevice(deviceId);
-    emitAudioDevicesChanged();
-    if (store.inCall) {
-        await replaceActiveMicrophone(deviceId);
-    }
-}
-
-export async function setPreferredAudioOutputDevice(deviceId) {
-    setStoredAudioOutputDevice(deviceId);
-    if (store.inCall || sharedAudioOutputElement) {
-        await applyAudioOutputDevice();
-    }
-    emitAudioDevicesChanged();
-}
-
-export async function refreshAudioDevices() {
-    if (!navigator.mediaDevices?.enumerateDevices) {
-        store.audioInputDevices = [];
-        store.audioOutputDevices = [];
-        setStoredAudioInputDevice(null);
-        setStoredAudioOutputDevice(null);
-        emitAudioDevicesChanged();
-        return;
-    }
-
-    let devices = [];
-    try {
-        devices = await navigator.mediaDevices.enumerateDevices();
-    } catch (e) {
-        console.warn('Failed to enumerate media devices:', e);
-    }
-
-    const previousInputId = store.audioInputDeviceId;
-    const previousOutputId = store.audioOutputDeviceId;
-
-    store.audioInputDevices = normalizeAudioDevices(devices, 'audioinput');
-    store.audioOutputDevices = normalizeAudioDevices(devices, 'audiooutput');
-
-    const nextInputId = reconcileAudioDeviceSelection(
-        store.audioInputDevices,
-        previousInputId,
-        setStoredAudioInputDevice
-    );
-    const nextOutputId = reconcileAudioDeviceSelection(
-        store.audioOutputDevices,
-        previousOutputId,
-        setStoredAudioOutputDevice
-    );
-
-    if (store.inCall && previousInputId !== nextInputId) {
-        try {
-            await replaceActiveMicrophone(nextInputId);
-        } catch (e) {
-            console.warn('Failed to switch to the new default microphone:', e);
-        }
-    }
-    if (previousOutputId !== nextOutputId && (store.inCall || sharedAudioOutputElement)) {
-        await applyAudioOutputDevice();
-    }
-
-    emitAudioDevicesChanged();
-}
-
-export function bindAudioDeviceEvents() {
-    refreshAudioDevices().catch(console.error);
-    navigator.mediaDevices?.addEventListener?.('devicechange', () => {
-        refreshAudioDevices().catch(console.error);
-    });
-}
 
 /**
  * Converts a linear slider value (0–2) to a perceptual gain value using an x³
@@ -360,8 +109,7 @@ function getNegotiationState(pcId) {
             ignoreOffer: false,
             isSettingRemoteAnswerPending: false,
             polite: false,
-            pendingCandidates: [],
-            recoveryTimer: null
+            pendingCandidates: []
         });
     }
     return negotiationState.get(pcId);
@@ -395,9 +143,7 @@ export function updateCallUI() {
         callUI.style.display = 'flex';
 
         const callChan = store.channels.find(c => c.id === store.callChannelId);
-        $('.call-status').textContent = store.callReconnecting
-            ? 'Voice Reconnecting...'
-            : (store.callChannelId === store.currentChannelId)
+        $('.call-status').textContent = (store.callChannelId === store.currentChannelId)
             ? 'Voice Connected'
             : `Voice Connected (${callChan?.name || 'Unknown'})`;
 
@@ -623,32 +369,6 @@ function sendSignal(toUserId, toSessionId, data) {
     }
 }
 
-export function reconcileCallPeers(channelId = store.callChannelId) {
-    if (!store.inCall || !store.callChannelId || store.callChannelId !== channelId) {
-        return;
-    }
-
-    const users = store.voiceUsers.get(channelId) || new Set();
-    const activeIds = new Set(users);
-
-    for (const composite of users) {
-        const [uid, sid] = composite.split(':');
-        if (!uid || !sid || uid === store.user.id) continue;
-
-        const pcId = `${uid}:${sid}`;
-        if (!store.pcs.has(pcId)) {
-            const shouldInitiate = store.user.id > uid;
-            createPeerConnection(uid, sid, shouldInitiate);
-        }
-    }
-
-    for (const pcId of [...store.pcs.keys()]) {
-        if (!activeIds.has(pcId)) {
-            closePeerConnection(pcId);
-        }
-    }
-}
-
 /**
  * Modifies the SDP to prefer Opus and set specific bitrate/channels.
  */
@@ -733,28 +453,20 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
         console.log(`Connection State [${pcId}]: ${peerConnection.connectionState}`);
         updateCallUI();
         if (peerConnection.connectionState === 'connected') {
-            const state = getNegotiationState(pcId);
-            if (state.recoveryTimer) {
-                clearTimeout(state.recoveryTimer);
-                state.recoveryTimer = null;
-            }
             updateVideoGrid();
         }
-        if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'disconnected') {
-            console.warn(`[${pcId}] Connection unstable, attempting ICE restart...`);
+        if (peerConnection.connectionState === 'failed') {
+            console.warn(`[${pcId}] Connection failed, attempting ICE restart...`);
             peerConnection.restartIce();
-            const state = getNegotiationState(pcId);
-            if (!state.recoveryTimer) {
-                state.recoveryTimer = setTimeout(() => {
-                    if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'disconnected') {
-                        console.error(`[${pcId}] ICE recovery did not recover, cleaning up.`);
-                        closePeerConnection(pcId);
-                    }
-                }, 12000);
-            }
+            setTimeout(() => {
+                if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'disconnected') {
+                    console.error(`[${pcId}] ICE restart did not recover, cleaning up.`);
+                    cleanupPeerConnection(pcId);
+                }
+            }, 10000);
         }
         if (peerConnection.connectionState === 'closed') {
-            closePeerConnection(pcId);
+            cleanupPeerConnection(pcId);
         }
     };
 
@@ -794,14 +506,13 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
             };
         } else if (track.kind === 'audio') {
             const isScreenShareAudio = stream.getVideoTracks().length > 0;
-            const outputDestination = await ensureSharedAudioOutput();
 
             if (isScreenShareAudio) {
                 const ctx = await getAudioCtx();
                 const source = ctx.createMediaStreamSource(stream);
                 const gainNode = ctx.createGain();
                 source.connect(gainNode);
-                gainNode.connect(outputDestination);
+                gainNode.connect(ctx.destination);
                 gainNode.gain.value = 0;
 
                 store.screenShareAudioSources.set(pcId, source);
@@ -822,13 +533,22 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
             // Explicitly start playback so the MediaStream is active for the
             // Web Audio API source node.  Browsers may block autoplay even on
             // muted elements when there is no recent user gesture.
-            ensureMediaElementPlayback(audio, audio.id);
+            audio.play().catch(e => {
+                console.warn(`Autoplay blocked for audio-${pcId}, waiting for user gesture:`, e);
+                const resumeOnGesture = () => {
+                    audio.play().catch(() => { });
+                    document.removeEventListener('click', resumeOnGesture);
+                    document.removeEventListener('keydown', resumeOnGesture);
+                };
+                document.addEventListener('click', resumeOnGesture);
+                document.addEventListener('keydown', resumeOnGesture);
+            });
 
             const ctx = await getAudioCtx();
             const source = ctx.createMediaStreamSource(stream);
             const gainNode = ctx.createGain();
             source.connect(gainNode);
-            gainNode.connect(outputDestination);
+            gainNode.connect(ctx.destination);
 
             store.audioSources.set(pcId, source);
             store.gainNodes.set(pcId, gainNode);
@@ -863,7 +583,8 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
             const usersInCall = store.voiceUsers.get(store.callChannelId) || new Set();
             if (Array.from(usersInCall).some(cid => cid.startsWith(targetUserId + ':'))) {
                 console.log(`[${pcId}] Connection timeout after 3s, retrying...`);
-                closePeerConnection(pcId);
+                peerConnection.close();
+                cleanupPeerConnection(pcId);
                 createPeerConnection(targetUserId, targetSessionId, initiator);
             }
         }
@@ -879,11 +600,6 @@ function cleanupPeerConnection(pcId) {
     const audio = document.getElementById(`audio-${pcId}`);
     if (audio) {
         audio.remove();
-    }
-    const state = getNegotiationState(pcId);
-    if (state.recoveryTimer) {
-        clearTimeout(state.recoveryTimer);
-        state.recoveryTimer = null;
     }
     if (store.gainNodes.has(pcId)) {
         store.gainNodes.get(pcId).disconnect();
@@ -906,27 +622,6 @@ function cleanupPeerConnection(pcId) {
     cleanupNegotiationState(pcId);
     updateCallUI();
     updateVideoGrid();
-}
-
-/**
- * Public helper to fully close and clean up a peer connection.
- */
-export function closePeerConnection(pcId) {
-    const pc = store.pcs.get(pcId);
-    if (!pc) return;
-    pc.close();
-    cleanupPeerConnection(pcId);
-}
-
-/**
- * Closes and cleans up all peer connections for the active call.
- */
-export function closeAllPeerConnections() {
-    const pcIds = [...store.pcs.keys()];
-    pcIds.forEach(closePeerConnection);
-    store.pcs.clear();
-    store.remoteVideoStreams.clear();
-    negotiationState.clear();
 }
 
 /**
@@ -1077,8 +772,14 @@ export async function startCall() {
     if (store.inCall) return;
     let stream;
     try {
-        await refreshAudioDevices();
-        stream = await getMicrophoneStream();
+        stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: store.echoCancellation,
+                noiseSuppression: store.noiseSuppression,
+                autoGainControl: store.autoGainControl
+            },
+            video: false
+        });
     } catch (e) {
         console.error('Failed to get media', e);
         alert('Could not access microphone: ' + e.message);
@@ -1091,18 +792,23 @@ export async function startCall() {
     }
     store.callChannelId = store.currentChannelId;
     store.inCall = true;
-    store.callReconnecting = false;
 
     // Ensure AudioContext is warm and running before any peer connections
     // are created.  getUserMedia above provides the user-activation that
     // browsers require, so this resume will always succeed.
     await getAudioCtx();
-    await ensureSharedAudioOutput();
 
     updateCallUI();
     store.ws.send(JSON.stringify({ type: 'join_call', channel_id: store.callChannelId }));
 
-    reconcileCallPeers(store.callChannelId);
+    const existingUsers = store.voiceUsers.get(store.callChannelId) || new Set();
+    existingUsers.forEach(cid => {
+        const [uid, sid] = cid.split(':');
+        if (uid !== store.user.id) {
+            const shouldInitiate = store.user.id > uid;
+            createPeerConnection(uid, sid, shouldInitiate);
+        }
+    });
 }
 
 /**
@@ -1111,7 +817,6 @@ export async function startCall() {
 export function leaveCall() {
     if (!store.inCall) return;
     store.inCall = false;
-    store.callReconnecting = false;
     playNotificationSound('leave');
 
     if (store.screenSharing) {
@@ -1123,7 +828,13 @@ export function leaveCall() {
         store.localStream = null;
     }
 
-    closeAllPeerConnections();
+    store.pcs.forEach((pc, pcid) => {
+        pc.close();
+        cleanupPeerConnection(pcid);
+    });
+    store.pcs.clear();
+    store.remoteVideoStreams.clear();
+    negotiationState.clear();
 
     if (store.ws && store.ws.readyState === 1) {
         store.ws.send(JSON.stringify({ type: 'leave_call', channel_id: store.callChannelId }));

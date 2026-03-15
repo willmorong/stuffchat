@@ -68,11 +68,7 @@ impl Config {
         let mut final_cfg = Self::load();
 
         if final_cfg.jwt_secret.is_none() {
-            log::warn!(
-                "config.toml does not set jwt_secret; generating an ephemeral signing key for this boot. Existing access tokens will become invalid after every restart until jwt_secret is configured."
-            );
             final_cfg.jwt_secret = Some(uuid::Uuid::new_v4().to_string());
-            log::warn!("Generated ephemeral jwt_secret: {}", final_cfg.jwt_secret.as_ref().unwrap());
         }
         std::fs::create_dir_all(&final_cfg.uploads_dir).expect("create uploads dir");
         final_cfg

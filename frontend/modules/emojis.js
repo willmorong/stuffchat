@@ -1,5 +1,5 @@
 import { store } from './store.js';
-import { apiFetch, apiRequest } from './api.js';
+import { apiFetch } from './api.js';
 import { $, el } from './utils.js';
 
 /**
@@ -25,8 +25,9 @@ export async function uploadEmoji(name, file) {
     fd.append('name', name);
     fd.append('file', file);
 
-    const res = await apiRequest('/api/emojis', {
+    const res = await fetch(store.baseUrl + '/api/emojis', {
         method: 'POST',
+        headers: store.accessToken ? { 'Authorization': 'Bearer ' + store.accessToken } : {},
         body: fd
     });
 

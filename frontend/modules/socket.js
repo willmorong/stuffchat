@@ -2,96 +2,26 @@ import { store } from './store.js';
 import { toWsUrl, $, truncateId, playNotificationSound } from './utils.js';
 import { fetchUser } from './users.js';
 import { renderMessages, renderMessageItem, isScrolledToBottom, scrollToBottom, updateMessageReactions } from './messages.js';
-import { closeAllPeerConnections, updateCallUI, closePeerConnection, handleSignal, reconcileCallPeers } from './voice.js';
+import { updateCallUI, createPeerConnection, handleSignal } from './voice.js';
 import { renderChannelList, markChannelRead } from './channels.js';
 import { sharePlay } from './shareplay.js';
-
-let reconnectTimer = null;
-let heartbeatTimer = null;
-let heartbeatTimeout = null;
-
-const WS_HEARTBEAT_INTERVAL_MS = 15000;
-const WS_HEARTBEAT_TIMEOUT_MS = 30000;
-
-function clearHeartbeatTimeout() {
-    if (heartbeatTimeout) {
-        clearTimeout(heartbeatTimeout);
-        heartbeatTimeout = null;
-    }
-}
-
-function startHeartbeat() {
-    if (heartbeatTimer) return;
-    heartbeatTimer = setInterval(() => {
-        if (!store.ws || store.ws.readyState !== WebSocket.OPEN) return;
-        if (heartbeatTimeout) {
-            console.warn('WebSocket heartbeat timeout elapsed, reconnecting');
-            try {
-                store.ws.close();
-            } catch { }
-            clearHeartbeatTimeout();
-            return;
-        }
-        try {
-            store.ws.send(JSON.stringify({ type: 'ping' }));
-            heartbeatTimeout = setTimeout(() => {
-                if (store.ws && store.ws.readyState === WebSocket.OPEN) {
-                    console.warn('WebSocket heartbeat timeout elapsed, reconnecting');
-                    try {
-                        store.ws.close();
-                    } catch { }
-                }
-            }, WS_HEARTBEAT_TIMEOUT_MS);
-        } catch (e) {
-            console.warn('Failed to send heartbeat:', e);
-        }
-    }, WS_HEARTBEAT_INTERVAL_MS);
-}
-
-function stopHeartbeat() {
-    if (heartbeatTimer) {
-        clearInterval(heartbeatTimer);
-        heartbeatTimer = null;
-    }
-    clearHeartbeatTimeout();
-}
-
-function scheduleReconnect() {
-    if (reconnectTimer || !store.accessToken) return;
-    reconnectTimer = setTimeout(() => {
-        reconnectTimer = null;
-        if (!store.ws && store.accessToken) {
-            connectWs();
-        }
-    }, 2000);
-}
 
 export function connectWs(reconnect = false) {
     const url = toWsUrl(store.baseUrl);
     if (!url || !store.accessToken) return;
     try {
-        if (reconnectTimer) {
-            clearTimeout(reconnectTimer);
-            reconnectTimer = null;
-        }
         if (store.ws) {
-            if (!reconnect && (store.ws.readyState === WebSocket.OPEN || store.ws.readyState === WebSocket.CONNECTING)) {
+            if (store.ws.readyState === WebSocket.OPEN || store.ws.readyState === WebSocket.CONNECTING) {
                 // Console log disabled to reduce noise
                 // console.log('WebSocket already open or connecting');
                 return;
             }
-
-            const previousWs = store.ws;
-            store.ws = null;
-            previousWs.onclose = null;
-            stopHeartbeat();
-            try { previousWs.close(); } catch { }
+            // If it is closing or closed, we can overwrite it, but maybe we should close it explicitly first just in case?
+            // Usually if it's closed it's fine.
         }
         const ws = new WebSocket(url + '?token=' + encodeURIComponent(store.accessToken));
         store.ws = ws;
         ws.onopen = () => {
-            if (store.ws !== ws) return;
-            startHeartbeat();
             // Rejoin current channel
             if (store.currentChannelId) {
                 ws.send(JSON.stringify({ type: 'join', channel_id: store.currentChannelId }));
@@ -99,9 +29,6 @@ export function connectWs(reconnect = false) {
             // Rejoin call channel if different
             if (store.callChannelId && store.callChannelId !== store.currentChannelId) {
                 ws.send(JSON.stringify({ type: 'join', channel_id: store.callChannelId }));
-            }
-            if (store.inCall && store.callChannelId) {
-                ws.send(JSON.stringify({ type: 'join_call', channel_id: store.callChannelId }));
             }
         };
         ws.onmessage = (ev) => {
@@ -111,29 +38,26 @@ export function connectWs(reconnect = false) {
             } catch (e) { console.warn('WS parse error', e) }
         };
         ws.onclose = () => {
-            if (store.ws !== ws) return;
-            store.ws = null;
-            stopHeartbeat();
             if (store.inCall) {
-                if (store.accessToken) {
-                    store.callReconnecting = true;
-                } else {
-                    console.warn('WebSocket closed while in call, cleaning up');
-                    store.inCall = false;
-                    store.callReconnecting = false;
-                    if (store.localStream) {
-                        store.localStream.getTracks().forEach(t => t.stop());
-                        store.localStream = null;
-                    }
-                    store.callChannelId = null;
+                console.warn('WebSocket closed while in call, cleaning up');
+                store.inCall = false;
+                if (store.localStream) {
+                    store.localStream.getTracks().forEach(t => t.stop());
+                    store.localStream = null;
                 }
-                closeAllPeerConnections();
+                store.pcs.forEach((pc, pcid) => {
+                    pc.close();
+                    const audio = document.getElementById(`audio-${pcid}`);
+                    if (audio) audio.remove();
+                });
                 store.volumeMonitors.forEach(v => v.stop());
                 store.volumeMonitors.clear();
+                store.pcs.clear();
+                store.callChannelId = null;
                 updateCallUI();
             }
             if (store.accessToken) {
-                scheduleReconnect();
+                setTimeout(() => connectWs(true), 2000);
             }
         };
     } catch (e) { console.warn('WS connect error', e.message); }
@@ -235,10 +159,7 @@ export function handleWsMessage(ev) {
             }
             break;
         }
-        case 'pong': {
-            clearHeartbeatTimeout();
-            break;
-        }
+        case 'pong': break;
         case 'connection_metadata': {
             store.sessionId = ev.session_id;
             console.log('Session ID:', store.sessionId);
@@ -256,20 +177,9 @@ export function handleWsMessage(ev) {
             // Room state now contains pairs of [user_id, session_id]
             const users = new Set();
             (ev.voice_users || []).forEach(([uid, sid]) => {
-                if (uid && sid) {
-                    users.add(`${uid}:${sid}`);
-                }
+                users.add(`${uid}:${sid}`);
             });
             store.voiceUsers.set(chanId, users);
-            if (store.inCall && chanId === store.callChannelId && store.callReconnecting) {
-                const localSessionId = `${store.user?.id}:${store.sessionId}`;
-                if (store.sessionId && users.has(localSessionId)) {
-                    store.callReconnecting = false;
-                }
-            }
-            if (chanId === store.callChannelId) {
-                reconcileCallPeers(chanId);
-            }
             updateCallUI();
             break;
         }
@@ -285,13 +195,13 @@ export function handleWsMessage(ev) {
             if (!store.voiceUsers.has(ev.channel_id)) store.voiceUsers.set(ev.channel_id, new Set());
             const compositeid = `${ev.user_id}:${ev.session_id}`;
             store.voiceUsers.get(ev.channel_id).add(compositeid);
-            if (store.callReconnecting && ev.user_id === store.user.id && ev.session_id === store.sessionId) {
-                store.callReconnecting = false;
-            }
-            if (store.callChannelId === ev.channel_id) {
-                reconcileCallPeers(ev.channel_id);
-            }
             updateCallUI();
+            if (store.inCall && ev.channel_id === store.callChannelId && ev.user_id !== store.user.id) {
+                // If we are in call, and someone joins, we might need to connect to them.
+                // We use (user_id, session_id) for the peer connection.
+                const shouldInitiate = store.user.id > ev.user_id;
+                createPeerConnection(ev.user_id, ev.session_id, shouldInitiate);
+            }
             if (store.inCall && ev.channel_id === store.callChannelId) {
                 playNotificationSound('join');
             }
@@ -300,29 +210,18 @@ export function handleWsMessage(ev) {
         }
         case 'voice_left': {
             if (store.voiceUsers.has(ev.channel_id)) {
+                // Remove all sessions for this user
                 const users = store.voiceUsers.get(ev.channel_id);
-                if (ev.session_id) {
-                    const cid = `${ev.user_id}:${ev.session_id}`;
-                    if (users.delete(cid) && ev.channel_id === store.callChannelId) {
-                        closePeerConnection(cid);
-                    }
-                } else {
-                    // Fallback for older clients without session-aware payloads.
-                    [...users].forEach(cid => {
-                        if (cid.startsWith(ev.user_id + ':')) {
-                            users.delete(cid);
-                            if (ev.channel_id === store.callChannelId) {
-                                closePeerConnection(cid);
-                            }
+                for (const cid of users) {
+                    if (cid.startsWith(ev.user_id + ':')) {
+                        users.delete(cid);
+                        const sid = cid.split(':')[1];
+                        if (ev.channel_id === store.callChannelId && store.pcs.has(`${ev.user_id}:${sid}`)) {
+                            store.pcs.get(`${ev.user_id}:${sid}`).close();
+                            store.pcs.delete(`${ev.user_id}:${sid}`);
                         }
-                    });
+                    }
                 }
-                if (users.size === 0) {
-                    store.voiceUsers.delete(ev.channel_id);
-                }
-            }
-            if (store.callChannelId === ev.channel_id) {
-                reconcileCallPeers(ev.channel_id);
             }
             updateCallUI();
             if (store.inCall && ev.channel_id === store.callChannelId) {

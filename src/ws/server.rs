@@ -2,19 +2,12 @@ use crate::push::PushRelayRuntime;
 use crate::shareplay::SharePlayState;
 use actix::{Actor, AsyncContext, Context, Handler, Message};
 use std::collections::{HashMap, HashSet};
-use std::time::Duration;
-
-
-const VOICE_RECONNECT_GRACE: Duration = Duration::from_secs(10);
 
 pub struct ChatServer {
     rooms: HashMap<String, HashSet<actix::Addr<super::session::WsSession>>>,
     room_members: HashMap<String, HashSet<(String, String)>>, // channel_id -> set of (user_id, session_id)
     voice_participants: HashMap<String, HashSet<(String, String)>>, // channel_id -> set of (user_id, session_id)
     user_sessions: HashMap<String, HashMap<String, actix::Addr<super::session::WsSession>>>, // user_id -> { session_id -> addr }
-    pending_bridge_call_left: HashMap<(String, String), u64>,
-    pending_voice_disconnect_left: HashMap<(String, String, String), u64>,
-    pending_shareplay_cleanup: HashMap<String, u64>,
     pub shareplay_states: HashMap<String, SharePlayState>,
     bridge_runtime: Option<crate::bridge::BridgeRuntime>,
     push_runtime: Option<PushRelayRuntime>,
@@ -30,9 +23,6 @@ impl ChatServer {
             room_members: HashMap::new(),
             voice_participants: HashMap::new(),
             user_sessions: HashMap::new(),
-            pending_bridge_call_left: HashMap::new(),
-            pending_voice_disconnect_left: HashMap::new(),
-            pending_shareplay_cleanup: HashMap::new(),
             shareplay_states: HashMap::new(),
             bridge_runtime,
             push_runtime,
@@ -99,180 +89,6 @@ impl ChatServer {
             }
         }
     }
-
-    fn clear_pending_bridge_call_left(&mut self, channel_id: &str, user_id: &str) -> bool {
-        let key = (channel_id.to_string(), user_id.to_string());
-        self.pending_bridge_call_left.remove(&key).is_some()
-    }
-
-    fn clear_pending_voice_disconnect_left(
-        &mut self,
-        channel_id: &str,
-        user_id: &str,
-        session_id: &str,
-    ) {
-        let key = (
-            channel_id.to_string(),
-            user_id.to_string(),
-            session_id.to_string(),
-        );
-        self.pending_voice_disconnect_left.remove(&key);
-    }
-
-    fn clear_pending_shareplay_cleanup(&mut self, channel_id: &str) {
-        self.pending_shareplay_cleanup.remove(channel_id);
-    }
-
-    fn queue_bridge_call_left(
-        &mut self,
-        ctx: &mut Context<Self>,
-        channel_id: String,
-        user_id: String,
-    ) {
-        let key = (channel_id.clone(), user_id.clone());
-        let version = self
-            .pending_bridge_call_left
-            .entry(key.clone())
-            .and_modify(|v| *v += 1)
-            .or_insert(1);
-        let expected_version = *version;
-        let bridge_runtime = self.bridge_runtime.clone();
-        let channel_id = key.0.clone();
-        let user_id = key.1.clone();
-        ctx.run_later(VOICE_RECONNECT_GRACE, move |act, _ctx| {
-            if act.pending_bridge_call_left.get(&key).copied().unwrap_or(0) != expected_version {
-                return;
-            }
-            act.pending_bridge_call_left.remove(&key);
-            if let Some(bridge_runtime) = bridge_runtime {
-                bridge_runtime.record_call_left(channel_id, user_id);
-            }
-        });
-    }
-
-    fn queue_voice_disconnect_left(
-        &mut self,
-        ctx: &mut Context<Self>,
-        channel_id: String,
-        user_id: String,
-        session_id: String,
-    ) {
-        let key = (channel_id.clone(), user_id.clone(), session_id.clone());
-        let version = self
-            .pending_voice_disconnect_left
-            .entry(key.clone())
-            .and_modify(|v| *v += 1)
-            .or_insert(1);
-        let expected_version = *version;
-
-        ctx.run_later(VOICE_RECONNECT_GRACE, move |act, ctx| {
-            if act
-                .pending_voice_disconnect_left
-                .get(&key)
-                .copied()
-                .unwrap_or(0)
-                != expected_version
-            {
-                return;
-            }
-            act.pending_voice_disconnect_left.remove(&key);
-            act.remove_voice_session(&key.0, &key.1, &key.2, ctx);
-        });
-    }
-
-    fn queue_shareplay_cleanup(&mut self, ctx: &mut Context<Self>, channel_id: String) {
-        let version = self
-            .pending_shareplay_cleanup
-            .entry(channel_id.clone())
-            .and_modify(|v| *v += 1)
-            .or_insert(1);
-        let expected_version = *version;
-        let chan = channel_id.clone();
-        ctx.run_later(VOICE_RECONNECT_GRACE, move |act, ctx| {
-            if act
-                .pending_shareplay_cleanup
-                .get(&chan)
-                .copied()
-                .unwrap_or(0)
-                != expected_version
-            {
-                return;
-            }
-            act.pending_shareplay_cleanup.remove(&chan);
-
-            if act
-                .voice_participants
-                .get(&chan)
-                .is_some_and(|sessions| !sessions.is_empty())
-            {
-                return;
-            }
-
-            if let Some(state) = act.shareplay_states.remove(&chan) {
-                crate::shareplay::cleanup_channel_files(&state);
-                log::info!("Cleaned up SharePlay for empty channel {}", chan);
-
-                let clear_payload = serde_json::json!({
-                    "type": "shareplay_cleared",
-                    "channel_id": chan
-                })
-                .to_string();
-                ctx.notify(Broadcast {
-                    channel_id: chan.clone(),
-                    payload: clear_payload,
-                });
-            }
-        });
-    }
-
-    fn broadcast_voice_left(
-        &self,
-        ctx: &mut Context<Self>,
-        channel_id: &str,
-        user_id: &str,
-        session_id: &str,
-    ) {
-        let payload = serde_json::json!({
-            "type": "voice_left",
-            "channel_id": channel_id,
-            "user_id": user_id,
-            "session_id": session_id
-        })
-        .to_string();
-        ctx.notify(Broadcast {
-            channel_id: channel_id.to_string(),
-            payload,
-        });
-    }
-
-    fn remove_voice_session(
-        &mut self,
-        channel_id: &str,
-        user_id: &str,
-        session_id: &str,
-        ctx: &mut Context<Self>,
-    ) {
-        let Some(voice_users) = self.voice_participants.get_mut(channel_id) else {
-            return;
-        };
-        let already_removed = !voice_users.remove(&(user_id.to_string(), session_id.to_string()));
-        if already_removed {
-            return;
-        }
-        let user_still_in_call = voice_users.iter().any(|(uid, _)| uid == user_id);
-        let voice_channel_empty = voice_users.is_empty();
-
-        self.broadcast_voice_left(ctx, channel_id, user_id, session_id);
-
-        if !user_still_in_call {
-            self.queue_bridge_call_left(ctx, channel_id.to_string(), user_id.to_string());
-        }
-
-        if voice_channel_empty {
-            self.voice_participants.remove(channel_id);
-            self.queue_shareplay_cleanup(ctx, channel_id.to_string());
-        }
-    }
 }
 
 #[derive(Message)]
@@ -311,14 +127,6 @@ pub struct JoinVoice {
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct LeaveVoice {
-    pub channel_id: String,
-    pub user_id: String,
-    pub session_id: String,
-}
-
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct DisconnectVoice {
     pub channel_id: String,
     pub user_id: String,
     pub session_id: String,
@@ -477,12 +285,50 @@ impl Handler<Leave> for ChatServer {
                 self.room_members.remove(&msg.channel_id);
             }
         }
-        self.remove_voice_session(
-            msg.channel_id.as_str(),
-            msg.user_id.as_str(),
-            msg.session_id.as_str(),
-            ctx,
-        );
+        // If user was in voice, remove them
+        if let Some(voice_users) = self.voice_participants.get_mut(&msg.channel_id) {
+            if voice_users.remove(&(msg.user_id.clone(), msg.session_id)) {
+                // Check if any other session of this user is still in the voice call
+                let user_still_in_call = voice_users.iter().any(|(uid, _)| uid == &msg.user_id);
+
+                if !user_still_in_call {
+                    if let Some(bridge_runtime) = &self.bridge_runtime {
+                        bridge_runtime
+                            .record_call_left(msg.channel_id.clone(), msg.user_id.clone());
+                    }
+                    // Broadcast voice_left only if no more sessions of this user are in the call
+                    let payload = serde_json::json!({
+                        "type": "voice_left",
+                        "channel_id": msg.channel_id,
+                        "user_id": msg.user_id
+                    })
+                    .to_string();
+                    ctx.notify(Broadcast {
+                        channel_id: msg.channel_id.clone(),
+                        payload,
+                    });
+                }
+
+                // If NO ONE is left in voice, clean up SharePlay
+                if voice_users.is_empty() {
+                    if let Some(state) = self.shareplay_states.remove(&msg.channel_id) {
+                        crate::shareplay::cleanup_channel_files(&state);
+                        log::info!("Cleaned up SharePlay for empty channel {}", msg.channel_id);
+
+                        // Notify clients
+                        let clear_payload = serde_json::json!({
+                            "type": "shareplay_cleared",
+                            "channel_id": msg.channel_id
+                        })
+                        .to_string();
+                        ctx.notify(Broadcast {
+                            channel_id: msg.channel_id.clone(),
+                            payload: clear_payload,
+                        });
+                    }
+                }
+            }
+        }
     }
 }
 impl Handler<Broadcast> for ChatServer {
@@ -502,13 +348,10 @@ impl Handler<JoinVoice> for ChatServer {
     type Result = ();
     fn handle(&mut self, msg: JoinVoice, ctx: &mut Context<Self>) {
         log::info!(
-            "ChatServer handling JoinVoice: user_id={}, session_id={}, channel_id={}",
+            "ChatServer handling JoinVoice: user_id={}, channel_id={}",
             msg.user_id,
-            msg.session_id,
             msg.channel_id
         );
-        let user_resumed = self.clear_pending_bridge_call_left(&msg.channel_id, &msg.user_id);
-        self.clear_pending_shareplay_cleanup(&msg.channel_id);
         let (inserted, user_already_in_call, channel_was_empty) = {
             let voice_users = self
                 .voice_participants
@@ -521,14 +364,11 @@ impl Handler<JoinVoice> for ChatServer {
         };
         if inserted {
             if !user_already_in_call {
-                if !user_resumed {
-                    if let Some(bridge_runtime) = &self.bridge_runtime {
-                        bridge_runtime
-                            .record_call_joined(msg.channel_id.clone(), msg.user_id.clone());
-                    }
+                if let Some(bridge_runtime) = &self.bridge_runtime {
+                    bridge_runtime.record_call_joined(msg.channel_id.clone(), msg.user_id.clone());
                 }
             }
-            if channel_was_empty && !user_resumed {
+            if channel_was_empty {
                 if let Some(push_runtime) = &self.push_runtime {
                     push_runtime.record_call_started(
                         msg.channel_id.clone(),
@@ -556,42 +396,58 @@ impl Handler<LeaveVoice> for ChatServer {
     type Result = ();
     fn handle(&mut self, msg: LeaveVoice, ctx: &mut Context<Self>) {
         log::info!(
-            "ChatServer handling LeaveVoice: user_id={}, session_id={}, channel_id={}",
+            "ChatServer handling LeaveVoice: user_id={}, channel_id={}",
             msg.user_id,
-            msg.session_id,
             msg.channel_id
         );
-        self.remove_voice_session(
-            msg.channel_id.as_str(),
-            msg.user_id.as_str(),
-            msg.session_id.as_str(),
-            ctx,
-        );
-    }
-}
+        if let Some(voice_users) = self.voice_participants.get_mut(&msg.channel_id) {
+            if voice_users.remove(&(msg.user_id.clone(), msg.session_id)) {
+                // Check if any other session of this user is still in the voice call
+                let user_still_in_call = voice_users.iter().any(|(uid, _)| uid == &msg.user_id);
 
-impl Handler<DisconnectVoice> for ChatServer {
-    type Result = ();
-    fn handle(&mut self, msg: DisconnectVoice, ctx: &mut Context<Self>) {
-        log::info!(
-            "ChatServer handling DisconnectVoice: user_id={}, session_id={}, channel_id={}",
-            msg.user_id,
-            msg.session_id,
-            msg.channel_id
-        );
-        self.clear_pending_voice_disconnect_left(&msg.channel_id, &msg.user_id, &msg.session_id);
-        self.queue_voice_disconnect_left(ctx, msg.channel_id, msg.user_id, msg.session_id);
+                if !user_still_in_call {
+                    if let Some(bridge_runtime) = &self.bridge_runtime {
+                        bridge_runtime
+                            .record_call_left(msg.channel_id.clone(), msg.user_id.clone());
+                    }
+                    let payload = serde_json::json!({
+                        "type": "voice_left",
+                        "channel_id": msg.channel_id,
+                        "user_id": msg.user_id
+                    })
+                    .to_string();
+                    ctx.notify(Broadcast {
+                        channel_id: msg.channel_id.clone(),
+                        payload,
+                    });
+                }
+
+                // If NO ONE is left in voice, clean up SharePlay
+                if voice_users.is_empty() {
+                    if let Some(state) = self.shareplay_states.remove(&msg.channel_id) {
+                        crate::shareplay::cleanup_channel_files(&state);
+                        log::info!("Cleaned up SharePlay for empty channel {}", msg.channel_id);
+
+                        // Notify clients
+                        let clear_payload = serde_json::json!({
+                            "type": "shareplay_cleared",
+                            "channel_id": msg.channel_id
+                        })
+                        .to_string();
+                        ctx.notify(Broadcast {
+                            channel_id: msg.channel_id.clone(),
+                            payload: clear_payload,
+                        });
+                    }
+                }
+            }
+        }
     }
 }
 
 impl Handler<Connect> for ChatServer {
     type Result = ();
     fn handle(&mut self, msg: Connect, _: &mut Context<Self>) {
-        log::info!(
-            "ChatServer connected: user_id={}, session_id={}",
-            msg.user_id,
-            msg.session_id
-        );
         self.user_sessions
             .entry(msg.user_id)
             .or_default()
@@ -602,11 +458,6 @@ impl Handler<Connect> for ChatServer {
 impl Handler<Disconnect> for ChatServer {
     type Result = ();
     fn handle(&mut self, msg: Disconnect, _: &mut Context<Self>) {
-        log::info!(
-            "ChatServer disconnected: user_id={}, session_id={}",
-            msg.user_id,
-            msg.session_id
-        );
         if let Some(sessions) = self.user_sessions.get_mut(&msg.user_id) {
             sessions.remove(&msg.session_id);
             if sessions.is_empty() {

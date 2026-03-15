@@ -1,16 +1,14 @@
 mod common;
 
 use actix::Actor;
-use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
+use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web};
 use common::{insert_channel, insert_user, test_context};
 use serde_json::Value;
 use std::net::TcpListener;
 use stuffchat::bridge::BridgeRuntime;
-use stuffchat::ws::server::{
-    ChatServer, DisconnectVoice, GetChannelActiveUsers, JoinVoice, LeaveVoice,
-};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
-use tokio::time::{timeout, Duration};
+use stuffchat::ws::server::{ChatServer, JoinVoice, LeaveVoice};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+use tokio::time::{Duration, timeout};
 
 #[derive(Debug)]
 struct ReceivedBridgeRequest {
@@ -157,124 +155,15 @@ async fn bridge_emits_join_and_leave_once_per_user_presence() {
         .expect("leave 2");
 
     let first = recv_request(&mut receiver).await;
-    // Leave is now deferred briefly to allow for quick reconnect recovery.
-    let second = timeout(Duration::from_millis(12000), receiver.recv())
-        .await
-        .expect("bridge call_left should arrive after reconnect grace window")
-        .expect("bridge call_left payload");
+    let second = recv_request(&mut receiver).await;
 
     assert_eq!(first.body["type"], "call_joined");
     assert_eq!(second.body["type"], "call_left");
-    assert!(timeout(Duration::from_millis(250), receiver.recv())
-        .await
-        .is_err());
-
-    handle.stop(true).await;
-}
-
-#[actix_web::test]
-async fn bridge_reconnect_suppresses_graceful_left_join_chatter() {
-    let ctx = test_context().await;
-    insert_user(&ctx.db, "user-1", "alice").await;
-    insert_channel(&ctx.db, "channel-1", "main", "user-1", true).await;
-
-    let (bridge_url, mut receiver, handle) = spawn_bridge_receiver().await;
-    let bridge_runtime = BridgeRuntime::new(ctx.bridge_secret.clone(), bridge_url, ctx.db.clone());
-    let server = ChatServer::new(Some(bridge_runtime), None).start();
-
-    server
-        .send(JoinVoice {
-            channel_id: "channel-1".to_string(),
-            user_id: "user-1".to_string(),
-            session_id: "session-1".to_string(),
-        })
-        .await
-        .expect("join");
-
-    let first = recv_request(&mut receiver).await;
-    assert_eq!(first.body["type"], "call_joined");
-
-    server
-        .send(DisconnectVoice {
-            channel_id: "channel-1".to_string(),
-            user_id: "user-1".to_string(),
-            session_id: "session-1".to_string(),
-        })
-        .await
-        .expect("leave");
-    server
-        .send(JoinVoice {
-            channel_id: "channel-1".to_string(),
-            user_id: "user-1".to_string(),
-            session_id: "session-2".to_string(),
-        })
-        .await
-        .expect("resume");
-
     assert!(
         timeout(Duration::from_millis(250), receiver.recv())
             .await
-            .is_err(),
-        "bridge should suppress reconnect chatter",
+            .is_err()
     );
 
     handle.stop(true).await;
-}
-
-#[actix_web::test]
-async fn disconnect_voice_keeps_user_visible_during_reconnect_grace() {
-    let ctx = test_context().await;
-    insert_user(&ctx.db, "user-1", "alice").await;
-    insert_channel(&ctx.db, "channel-1", "main", "user-1", true).await;
-
-    let server = ChatServer::new(None, None).start();
-
-    server
-        .send(JoinVoice {
-            channel_id: "channel-1".to_string(),
-            user_id: "user-1".to_string(),
-            session_id: "session-1".to_string(),
-        })
-        .await
-        .expect("join");
-
-    let active_initial = server
-        .send(GetChannelActiveUsers {
-            channel_id: "channel-1".to_string(),
-            include_voice: true,
-        })
-        .await
-        .expect("active users request")
-        .expect("initial active users");
-    assert_eq!(active_initial, vec!["user-1".to_string()]);
-
-    server
-        .send(DisconnectVoice {
-            channel_id: "channel-1".to_string(),
-            user_id: "user-1".to_string(),
-            session_id: "session-1".to_string(),
-        })
-        .await
-        .expect("disconnect");
-
-    let active_during_grace = server
-        .send(GetChannelActiveUsers {
-            channel_id: "channel-1".to_string(),
-            include_voice: true,
-        })
-        .await
-        .expect("active users request")
-        .expect("active users during grace");
-    assert_eq!(active_during_grace, vec!["user-1".to_string()]);
-
-    tokio::time::sleep(Duration::from_millis(12_000)).await;
-    let active_after_grace = server
-        .send(GetChannelActiveUsers {
-            channel_id: "channel-1".to_string(),
-            include_voice: true,
-        })
-        .await
-        .expect("active users request")
-        .expect("active users after grace");
-    assert!(active_after_grace.is_empty());
 }
