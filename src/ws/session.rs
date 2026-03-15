@@ -3,7 +3,7 @@ use super::server::{
 };
 use crate::{auth, config::Config, db::Db, models::role::PERM_JOIN_VOICE, permissions};
 use actix::{Actor, ActorContext, Addr, AsyncContext, Handler, Message, StreamHandler, WrapFuture};
-use actix_web::{Error, HttpRequest, HttpResponse, web};
+use actix_web::{web, Error, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -123,7 +123,7 @@ impl Actor for WsSession {
             });
         }
         if let Some(voice_ch) = self.voice_channel.take() {
-            self.server.do_send(super::server::LeaveVoice {
+            self.server.do_send(super::server::DisconnectVoice {
                 channel_id: voice_ch,
                 user_id: self.user_id.clone(),
                 session_id: self.session_id.clone(),

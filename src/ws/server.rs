@@ -4,9 +4,7 @@ use actix::{Actor, AsyncContext, Context, Handler, Message};
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-#[cfg(test)]
-const VOICE_RECONNECT_GRACE: Duration = Duration::from_millis(100);
-#[cfg(not(test))]
+
 const VOICE_RECONNECT_GRACE: Duration = Duration::from_secs(10);
 
 pub struct ChatServer {
@@ -15,6 +13,7 @@ pub struct ChatServer {
     voice_participants: HashMap<String, HashSet<(String, String)>>, // channel_id -> set of (user_id, session_id)
     user_sessions: HashMap<String, HashMap<String, actix::Addr<super::session::WsSession>>>, // user_id -> { session_id -> addr }
     pending_bridge_call_left: HashMap<(String, String), u64>,
+    pending_voice_disconnect_left: HashMap<(String, String, String), u64>,
     pending_shareplay_cleanup: HashMap<String, u64>,
     pub shareplay_states: HashMap<String, SharePlayState>,
     bridge_runtime: Option<crate::bridge::BridgeRuntime>,
@@ -32,6 +31,7 @@ impl ChatServer {
             voice_participants: HashMap::new(),
             user_sessions: HashMap::new(),
             pending_bridge_call_left: HashMap::new(),
+            pending_voice_disconnect_left: HashMap::new(),
             pending_shareplay_cleanup: HashMap::new(),
             shareplay_states: HashMap::new(),
             bridge_runtime,
@@ -105,6 +105,20 @@ impl ChatServer {
         self.pending_bridge_call_left.remove(&key).is_some()
     }
 
+    fn clear_pending_voice_disconnect_left(
+        &mut self,
+        channel_id: &str,
+        user_id: &str,
+        session_id: &str,
+    ) {
+        let key = (
+            channel_id.to_string(),
+            user_id.to_string(),
+            session_id.to_string(),
+        );
+        self.pending_voice_disconnect_left.remove(&key);
+    }
+
     fn clear_pending_shareplay_cleanup(&mut self, channel_id: &str) {
         self.pending_shareplay_cleanup.remove(channel_id);
     }
@@ -126,8 +140,34 @@ impl ChatServer {
         let channel_id = key.0.clone();
         let user_id = key.1.clone();
         ctx.run_later(VOICE_RECONNECT_GRACE, move |act, _ctx| {
+            if act.pending_bridge_call_left.get(&key).copied().unwrap_or(0) != expected_version {
+                return;
+            }
+            act.pending_bridge_call_left.remove(&key);
+            if let Some(bridge_runtime) = bridge_runtime {
+                bridge_runtime.record_call_left(channel_id, user_id);
+            }
+        });
+    }
+
+    fn queue_voice_disconnect_left(
+        &mut self,
+        ctx: &mut Context<Self>,
+        channel_id: String,
+        user_id: String,
+        session_id: String,
+    ) {
+        let key = (channel_id.clone(), user_id.clone(), session_id.clone());
+        let version = self
+            .pending_voice_disconnect_left
+            .entry(key.clone())
+            .and_modify(|v| *v += 1)
+            .or_insert(1);
+        let expected_version = *version;
+
+        ctx.run_later(VOICE_RECONNECT_GRACE, move |act, ctx| {
             if act
-                .pending_bridge_call_left
+                .pending_voice_disconnect_left
                 .get(&key)
                 .copied()
                 .unwrap_or(0)
@@ -135,10 +175,8 @@ impl ChatServer {
             {
                 return;
             }
-            act.pending_bridge_call_left.remove(&key);
-            if let Some(bridge_runtime) = bridge_runtime {
-                bridge_runtime.record_call_left(channel_id, user_id);
-            }
+            act.pending_voice_disconnect_left.remove(&key);
+            act.remove_voice_session(&key.0, &key.1, &key.2, ctx);
         });
     }
 
@@ -227,11 +265,7 @@ impl ChatServer {
         self.broadcast_voice_left(ctx, channel_id, user_id, session_id);
 
         if !user_still_in_call {
-            self.queue_bridge_call_left(
-                ctx,
-                channel_id.to_string(),
-                user_id.to_string(),
-            );
+            self.queue_bridge_call_left(ctx, channel_id.to_string(), user_id.to_string());
         }
 
         if voice_channel_empty {
@@ -277,6 +311,14 @@ pub struct JoinVoice {
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct LeaveVoice {
+    pub channel_id: String,
+    pub user_id: String,
+    pub session_id: String,
+}
+
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct DisconnectVoice {
     pub channel_id: String,
     pub user_id: String,
     pub session_id: String,
@@ -481,7 +523,8 @@ impl Handler<JoinVoice> for ChatServer {
             if !user_already_in_call {
                 if !user_resumed {
                     if let Some(bridge_runtime) = &self.bridge_runtime {
-                        bridge_runtime.record_call_joined(msg.channel_id.clone(), msg.user_id.clone());
+                        bridge_runtime
+                            .record_call_joined(msg.channel_id.clone(), msg.user_id.clone());
                     }
                 }
             }
@@ -524,6 +567,20 @@ impl Handler<LeaveVoice> for ChatServer {
             msg.session_id.as_str(),
             ctx,
         );
+    }
+}
+
+impl Handler<DisconnectVoice> for ChatServer {
+    type Result = ();
+    fn handle(&mut self, msg: DisconnectVoice, ctx: &mut Context<Self>) {
+        log::info!(
+            "ChatServer handling DisconnectVoice: user_id={}, session_id={}, channel_id={}",
+            msg.user_id,
+            msg.session_id,
+            msg.channel_id
+        );
+        self.clear_pending_voice_disconnect_left(&msg.channel_id, &msg.user_id, &msg.session_id);
+        self.queue_voice_disconnect_left(ctx, msg.channel_id, msg.user_id, msg.session_id);
     }
 }
 
