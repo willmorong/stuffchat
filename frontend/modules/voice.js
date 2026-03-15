@@ -360,7 +360,8 @@ function getNegotiationState(pcId) {
             ignoreOffer: false,
             isSettingRemoteAnswerPending: false,
             polite: false,
-            pendingCandidates: []
+            pendingCandidates: [],
+            recoveryTimer: null
         });
     }
     return negotiationState.get(pcId);
@@ -704,20 +705,28 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
         console.log(`Connection State [${pcId}]: ${peerConnection.connectionState}`);
         updateCallUI();
         if (peerConnection.connectionState === 'connected') {
+            const state = getNegotiationState(pcId);
+            if (state.recoveryTimer) {
+                clearTimeout(state.recoveryTimer);
+                state.recoveryTimer = null;
+            }
             updateVideoGrid();
         }
-        if (peerConnection.connectionState === 'failed') {
-            console.warn(`[${pcId}] Connection failed, attempting ICE restart...`);
+        if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'disconnected') {
+            console.warn(`[${pcId}] Connection unstable, attempting ICE restart...`);
             peerConnection.restartIce();
-            setTimeout(() => {
-                if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'disconnected') {
-                    console.error(`[${pcId}] ICE restart did not recover, cleaning up.`);
-                    cleanupPeerConnection(pcId);
-                }
-            }, 10000);
+            const state = getNegotiationState(pcId);
+            if (!state.recoveryTimer) {
+                state.recoveryTimer = setTimeout(() => {
+                    if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'disconnected') {
+                        console.error(`[${pcId}] ICE recovery did not recover, cleaning up.`);
+                        closePeerConnection(pcId);
+                    }
+                }, 12000);
+            }
         }
         if (peerConnection.connectionState === 'closed') {
-            cleanupPeerConnection(pcId);
+            closePeerConnection(pcId);
         }
     };
 
@@ -826,8 +835,7 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
             const usersInCall = store.voiceUsers.get(store.callChannelId) || new Set();
             if (Array.from(usersInCall).some(cid => cid.startsWith(targetUserId + ':'))) {
                 console.log(`[${pcId}] Connection timeout after 3s, retrying...`);
-                peerConnection.close();
-                cleanupPeerConnection(pcId);
+                closePeerConnection(pcId);
                 createPeerConnection(targetUserId, targetSessionId, initiator);
             }
         }
@@ -843,6 +851,11 @@ function cleanupPeerConnection(pcId) {
     const audio = document.getElementById(`audio-${pcId}`);
     if (audio) {
         audio.remove();
+    }
+    const state = getNegotiationState(pcId);
+    if (state.recoveryTimer) {
+        clearTimeout(state.recoveryTimer);
+        state.recoveryTimer = null;
     }
     if (store.gainNodes.has(pcId)) {
         store.gainNodes.get(pcId).disconnect();
@@ -865,6 +878,27 @@ function cleanupPeerConnection(pcId) {
     cleanupNegotiationState(pcId);
     updateCallUI();
     updateVideoGrid();
+}
+
+/**
+ * Public helper to fully close and clean up a peer connection.
+ */
+export function closePeerConnection(pcId) {
+    const pc = store.pcs.get(pcId);
+    if (!pc) return;
+    pc.close();
+    cleanupPeerConnection(pcId);
+}
+
+/**
+ * Closes and cleans up all peer connections for the active call.
+ */
+export function closeAllPeerConnections() {
+    const pcIds = [...store.pcs.keys()];
+    pcIds.forEach(closePeerConnection);
+    store.pcs.clear();
+    store.remoteVideoStreams.clear();
+    negotiationState.clear();
 }
 
 /**
@@ -1066,13 +1100,7 @@ export function leaveCall() {
         store.localStream = null;
     }
 
-    store.pcs.forEach((pc, pcid) => {
-        pc.close();
-        cleanupPeerConnection(pcid);
-    });
-    store.pcs.clear();
-    store.remoteVideoStreams.clear();
-    negotiationState.clear();
+    closeAllPeerConnections();
 
     if (store.ws && store.ws.readyState === 1) {
         store.ws.send(JSON.stringify({ type: 'leave_call', channel_id: store.callChannelId }));

@@ -8,7 +8,7 @@ import { loadChannels } from './channels.js';
 import { enableComposer } from './messages.js';
 import { heartbeat, presencePollLoop, startHeartbeatLoop } from './presence.js';
 import { fetchEmojis } from './emojis.js';
-import { updateCallUI } from './voice.js';
+import { closeAllPeerConnections, updateCallUI } from './voice.js';
 import { sharePlay } from './shareplay.js';
 
 export function showServerStep() {
@@ -59,9 +59,7 @@ export function clearSession(silent = false) {
         store.localVideoStream.getTracks().forEach(track => track.stop());
         store.localVideoStream = null;
     }
-    store.pcs.forEach(pc => pc.close());
-    store.pcs.clear();
-    store.remoteVideoStreams.clear();
+    closeAllPeerConnections();
     store.volumeMonitors.forEach(monitor => monitor.stop());
     store.volumeMonitors.clear();
     store.gainNodes.clear();

@@ -2,11 +2,59 @@ import { store } from './store.js';
 import { toWsUrl, $, truncateId, playNotificationSound } from './utils.js';
 import { fetchUser } from './users.js';
 import { renderMessages, renderMessageItem, isScrolledToBottom, scrollToBottom, updateMessageReactions } from './messages.js';
-import { updateCallUI, createPeerConnection, handleSignal } from './voice.js';
+import { closeAllPeerConnections, updateCallUI, createPeerConnection, closePeerConnection, handleSignal } from './voice.js';
 import { renderChannelList, markChannelRead } from './channels.js';
 import { sharePlay } from './shareplay.js';
 
 let reconnectTimer = null;
+let heartbeatTimer = null;
+let heartbeatTimeout = null;
+
+const WS_HEARTBEAT_INTERVAL_MS = 15000;
+const WS_HEARTBEAT_TIMEOUT_MS = 30000;
+
+function clearHeartbeatTimeout() {
+    if (heartbeatTimeout) {
+        clearTimeout(heartbeatTimeout);
+        heartbeatTimeout = null;
+    }
+}
+
+function startHeartbeat() {
+    if (heartbeatTimer) return;
+    heartbeatTimer = setInterval(() => {
+        if (!store.ws || store.ws.readyState !== WebSocket.OPEN) return;
+        if (heartbeatTimeout) {
+            console.warn('WebSocket heartbeat timeout elapsed, reconnecting');
+            try {
+                store.ws.close();
+            } catch { }
+            clearHeartbeatTimeout();
+            return;
+        }
+        try {
+            store.ws.send(JSON.stringify({ type: 'ping' }));
+            heartbeatTimeout = setTimeout(() => {
+                if (store.ws && store.ws.readyState === WebSocket.OPEN) {
+                    console.warn('WebSocket heartbeat timeout elapsed, reconnecting');
+                    try {
+                        store.ws.close();
+                    } catch { }
+                }
+            }, WS_HEARTBEAT_TIMEOUT_MS);
+        } catch (e) {
+            console.warn('Failed to send heartbeat:', e);
+        }
+    }, WS_HEARTBEAT_INTERVAL_MS);
+}
+
+function stopHeartbeat() {
+    if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+    }
+    clearHeartbeatTimeout();
+}
 
 function scheduleReconnect() {
     if (reconnectTimer || !store.accessToken) return;
@@ -36,12 +84,14 @@ export function connectWs(reconnect = false) {
             const previousWs = store.ws;
             store.ws = null;
             previousWs.onclose = null;
+            stopHeartbeat();
             try { previousWs.close(); } catch { }
         }
         const ws = new WebSocket(url + '?token=' + encodeURIComponent(store.accessToken));
         store.ws = ws;
         ws.onopen = () => {
             if (store.ws !== ws) return;
+            startHeartbeat();
             // Rejoin current channel
             if (store.currentChannelId) {
                 ws.send(JSON.stringify({ type: 'join', channel_id: store.currentChannelId }));
@@ -60,6 +110,7 @@ export function connectWs(reconnect = false) {
         ws.onclose = () => {
             if (store.ws !== ws) return;
             store.ws = null;
+            stopHeartbeat();
             if (store.inCall) {
                 console.warn('WebSocket closed while in call, cleaning up');
                 store.inCall = false;
@@ -67,14 +118,9 @@ export function connectWs(reconnect = false) {
                     store.localStream.getTracks().forEach(t => t.stop());
                     store.localStream = null;
                 }
-                store.pcs.forEach((pc, pcid) => {
-                    pc.close();
-                    const audio = document.getElementById(`audio-${pcid}`);
-                    if (audio) audio.remove();
-                });
+                closeAllPeerConnections();
                 store.volumeMonitors.forEach(v => v.stop());
                 store.volumeMonitors.clear();
-                store.pcs.clear();
                 store.callChannelId = null;
                 updateCallUI();
             }
@@ -181,7 +227,10 @@ export function handleWsMessage(ev) {
             }
             break;
         }
-        case 'pong': break;
+        case 'pong': {
+            clearHeartbeatTimeout();
+            break;
+        }
         case 'connection_metadata': {
             store.sessionId = ev.session_id;
             console.log('Session ID:', store.sessionId);
@@ -238,9 +287,8 @@ export function handleWsMessage(ev) {
                     if (cid.startsWith(ev.user_id + ':')) {
                         users.delete(cid);
                         const sid = cid.split(':')[1];
-                        if (ev.channel_id === store.callChannelId && store.pcs.has(`${ev.user_id}:${sid}`)) {
-                            store.pcs.get(`${ev.user_id}:${sid}`).close();
-                            store.pcs.delete(`${ev.user_id}:${sid}`);
+                        if (ev.channel_id === store.callChannelId) {
+                            closePeerConnection(`${ev.user_id}:${sid}`);
                         }
                     }
                 }
