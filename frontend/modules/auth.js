@@ -68,6 +68,7 @@ export function clearSession(silent = false) {
     store.screenShareAudioSources.clear();
     store.callChannelId = null;
     store.inCall = false;
+    store.callReconnecting = false;
     store.screenSharing = false;
     sharePlay.reset();
     updateCallUI();

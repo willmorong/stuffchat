@@ -91,7 +91,11 @@ impl WsSession {
 impl Actor for WsSession {
     type Context = ws::WebsocketContext<Self>;
     fn started(&mut self, ctx: &mut Self::Context) {
-        log::info!("WsSession started: user_id={}", self.user_id);
+        log::info!(
+            "WsSession started: user_id={}, session_id={}",
+            self.user_id,
+            self.session_id
+        );
         self.last_heartbeat = Instant::now();
         self.heartbeat(ctx);
         self.server.do_send(Connect {
@@ -101,7 +105,11 @@ impl Actor for WsSession {
         });
     }
     fn stopped(&mut self, ctx: &mut Self::Context) {
-        log::info!("WsSession stopped: user_id={}", self.user_id);
+        log::info!(
+            "WsSession stopped: user_id={}, session_id={}",
+            self.user_id,
+            self.session_id
+        );
         self.server.do_send(Disconnect {
             user_id: self.user_id.clone(),
             session_id: self.session_id.clone(),

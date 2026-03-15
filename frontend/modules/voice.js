@@ -395,7 +395,9 @@ export function updateCallUI() {
         callUI.style.display = 'flex';
 
         const callChan = store.channels.find(c => c.id === store.callChannelId);
-        $('.call-status').textContent = (store.callChannelId === store.currentChannelId)
+        $('.call-status').textContent = store.callReconnecting
+            ? 'Voice Reconnecting...'
+            : (store.callChannelId === store.currentChannelId)
             ? 'Voice Connected'
             : `Voice Connected (${callChan?.name || 'Unknown'})`;
 
@@ -618,6 +620,32 @@ function sendSignal(toUserId, toSessionId, data) {
             from_session_id: store.sessionId,
             data
         }));
+    }
+}
+
+export function reconcileCallPeers(channelId = store.callChannelId) {
+    if (!store.inCall || !store.callChannelId || store.callChannelId !== channelId) {
+        return;
+    }
+
+    const users = store.voiceUsers.get(channelId) || new Set();
+    const activeIds = new Set(users);
+
+    for (const composite of users) {
+        const [uid, sid] = composite.split(':');
+        if (!uid || !sid || uid === store.user.id) continue;
+
+        const pcId = `${uid}:${sid}`;
+        if (!store.pcs.has(pcId)) {
+            const shouldInitiate = store.user.id > uid;
+            createPeerConnection(uid, sid, shouldInitiate);
+        }
+    }
+
+    for (const pcId of [...store.pcs.keys()]) {
+        if (!activeIds.has(pcId)) {
+            closePeerConnection(pcId);
+        }
     }
 }
 
@@ -1063,6 +1091,7 @@ export async function startCall() {
     }
     store.callChannelId = store.currentChannelId;
     store.inCall = true;
+    store.callReconnecting = false;
 
     // Ensure AudioContext is warm and running before any peer connections
     // are created.  getUserMedia above provides the user-activation that
@@ -1073,14 +1102,7 @@ export async function startCall() {
     updateCallUI();
     store.ws.send(JSON.stringify({ type: 'join_call', channel_id: store.callChannelId }));
 
-    const existingUsers = store.voiceUsers.get(store.callChannelId) || new Set();
-    existingUsers.forEach(cid => {
-        const [uid, sid] = cid.split(':');
-        if (uid !== store.user.id) {
-            const shouldInitiate = store.user.id > uid;
-            createPeerConnection(uid, sid, shouldInitiate);
-        }
-    });
+    reconcileCallPeers(store.callChannelId);
 }
 
 /**
@@ -1089,6 +1111,7 @@ export async function startCall() {
 export function leaveCall() {
     if (!store.inCall) return;
     store.inCall = false;
+    store.callReconnecting = false;
     playNotificationSound('leave');
 
     if (store.screenSharing) {

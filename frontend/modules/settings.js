@@ -161,6 +161,14 @@ function renderAudioDeviceSettings() {
     }
 }
 
+const VIDEO_BITRATE_PRESETS = [8000, 5000, 2500];
+
+function getDefaultVideoBitrate() {
+    return VIDEO_BITRATE_PRESETS.includes(Number(store.videoBitrateKbps))
+        ? Number(store.videoBitrateKbps)
+        : 8000;
+}
+
 export function openSettings() {
     // Fill current values
     setIf('#profileUsername', 'value', store.user?.username || '');
@@ -186,6 +194,7 @@ export function openSettings() {
     setIf('#prefEchoCancellation', 'checked', store.echoCancellation);
     setIf('#prefAutoGainControl', 'checked', store.autoGainControl);
     renderAudioDeviceSettings();
+    setIf('#videoBitratePreset', 'value', String(getDefaultVideoBitrate()));
 
     // Video codec preferences
     setIf('#prefVP9', 'checked', store.preferVP9);
@@ -320,6 +329,11 @@ export function bindSettingsEvents() {
     $('#prefAV1').addEventListener('change', (e) => {
         store.preferAV1 = e.target.checked;
         localStorage.setItem('stuffchat.prefer_av1', store.preferAV1);
+    });
+    $('#videoBitratePreset').addEventListener('change', (e) => {
+        const bitrate = Number(e.target.value);
+        store.videoBitrateKbps = VIDEO_BITRATE_PRESETS.includes(bitrate) ? bitrate : getDefaultVideoBitrate();
+        localStorage.setItem('stuffchat.video_bitrate_kbps', store.videoBitrateKbps);
     });
 
     // Logout from modal

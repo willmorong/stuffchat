@@ -155,7 +155,11 @@ async fn bridge_emits_join_and_leave_once_per_user_presence() {
         .expect("leave 2");
 
     let first = recv_request(&mut receiver).await;
-    let second = recv_request(&mut receiver).await;
+    // Leave is now deferred briefly to allow for quick reconnect recovery.
+    let second = timeout(Duration::from_millis(12000), receiver.recv())
+        .await
+        .expect("bridge call_left should arrive after reconnect grace window")
+        .expect("bridge call_left payload");
 
     assert_eq!(first.body["type"], "call_joined");
     assert_eq!(second.body["type"], "call_left");
@@ -163,6 +167,55 @@ async fn bridge_emits_join_and_leave_once_per_user_presence() {
         timeout(Duration::from_millis(250), receiver.recv())
             .await
             .is_err()
+    );
+
+    handle.stop(true).await;
+}
+
+#[actix_web::test]
+async fn bridge_reconnect_suppresses_graceful_left_join_chatter() {
+    let ctx = test_context().await;
+    insert_user(&ctx.db, "user-1", "alice").await;
+    insert_channel(&ctx.db, "channel-1", "main", "user-1", true).await;
+
+    let (bridge_url, mut receiver, handle) = spawn_bridge_receiver().await;
+    let bridge_runtime = BridgeRuntime::new(ctx.bridge_secret.clone(), bridge_url, ctx.db.clone());
+    let server = ChatServer::new(Some(bridge_runtime), None).start();
+
+    server
+        .send(JoinVoice {
+            channel_id: "channel-1".to_string(),
+            user_id: "user-1".to_string(),
+            session_id: "session-1".to_string(),
+        })
+        .await
+        .expect("join");
+
+    let first = recv_request(&mut receiver).await;
+    assert_eq!(first.body["type"], "call_joined");
+
+    server
+        .send(LeaveVoice {
+            channel_id: "channel-1".to_string(),
+            user_id: "user-1".to_string(),
+            session_id: "session-1".to_string(),
+        })
+        .await
+        .expect("leave");
+    server
+        .send(JoinVoice {
+            channel_id: "channel-1".to_string(),
+            user_id: "user-1".to_string(),
+            session_id: "session-2".to_string(),
+        })
+        .await
+        .expect("resume");
+
+    assert!(
+        timeout(Duration::from_millis(250), receiver.recv())
+            .await
+            .is_err(),
+        "bridge should suppress reconnect chatter",
     );
 
     handle.stop(true).await;

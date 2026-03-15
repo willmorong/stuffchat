@@ -55,7 +55,10 @@ async function runRefresh(snapshot) {
         }
 
         saveTokens(data);
-        _connectWs(true);
+        const ws = store.ws;
+        if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+            _connectWs(true);
+        }
         return true;
     } catch (e) {
         console.warn('Refresh failed', e);

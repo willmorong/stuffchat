@@ -2,7 +2,7 @@ import { store } from './store.js';
 import { toWsUrl, $, truncateId, playNotificationSound } from './utils.js';
 import { fetchUser } from './users.js';
 import { renderMessages, renderMessageItem, isScrolledToBottom, scrollToBottom, updateMessageReactions } from './messages.js';
-import { closeAllPeerConnections, updateCallUI, createPeerConnection, closePeerConnection, handleSignal } from './voice.js';
+import { closeAllPeerConnections, updateCallUI, closePeerConnection, handleSignal, reconcileCallPeers } from './voice.js';
 import { renderChannelList, markChannelRead } from './channels.js';
 import { sharePlay } from './shareplay.js';
 
@@ -100,6 +100,9 @@ export function connectWs(reconnect = false) {
             if (store.callChannelId && store.callChannelId !== store.currentChannelId) {
                 ws.send(JSON.stringify({ type: 'join', channel_id: store.callChannelId }));
             }
+            if (store.inCall && store.callChannelId) {
+                ws.send(JSON.stringify({ type: 'join_call', channel_id: store.callChannelId }));
+            }
         };
         ws.onmessage = (ev) => {
             try {
@@ -112,16 +115,21 @@ export function connectWs(reconnect = false) {
             store.ws = null;
             stopHeartbeat();
             if (store.inCall) {
-                console.warn('WebSocket closed while in call, cleaning up');
-                store.inCall = false;
-                if (store.localStream) {
-                    store.localStream.getTracks().forEach(t => t.stop());
-                    store.localStream = null;
+                if (store.accessToken) {
+                    store.callReconnecting = true;
+                } else {
+                    console.warn('WebSocket closed while in call, cleaning up');
+                    store.inCall = false;
+                    store.callReconnecting = false;
+                    if (store.localStream) {
+                        store.localStream.getTracks().forEach(t => t.stop());
+                        store.localStream = null;
+                    }
+                    store.callChannelId = null;
                 }
                 closeAllPeerConnections();
                 store.volumeMonitors.forEach(v => v.stop());
                 store.volumeMonitors.clear();
-                store.callChannelId = null;
                 updateCallUI();
             }
             if (store.accessToken) {
@@ -248,9 +256,20 @@ export function handleWsMessage(ev) {
             // Room state now contains pairs of [user_id, session_id]
             const users = new Set();
             (ev.voice_users || []).forEach(([uid, sid]) => {
-                users.add(`${uid}:${sid}`);
+                if (uid && sid) {
+                    users.add(`${uid}:${sid}`);
+                }
             });
             store.voiceUsers.set(chanId, users);
+            if (store.inCall && chanId === store.callChannelId && store.callReconnecting) {
+                const localSessionId = `${store.user?.id}:${store.sessionId}`;
+                if (store.sessionId && users.has(localSessionId)) {
+                    store.callReconnecting = false;
+                }
+            }
+            if (chanId === store.callChannelId) {
+                reconcileCallPeers(chanId);
+            }
             updateCallUI();
             break;
         }
@@ -266,13 +285,13 @@ export function handleWsMessage(ev) {
             if (!store.voiceUsers.has(ev.channel_id)) store.voiceUsers.set(ev.channel_id, new Set());
             const compositeid = `${ev.user_id}:${ev.session_id}`;
             store.voiceUsers.get(ev.channel_id).add(compositeid);
-            updateCallUI();
-            if (store.inCall && ev.channel_id === store.callChannelId && ev.user_id !== store.user.id) {
-                // If we are in call, and someone joins, we might need to connect to them.
-                // We use (user_id, session_id) for the peer connection.
-                const shouldInitiate = store.user.id > ev.user_id;
-                createPeerConnection(ev.user_id, ev.session_id, shouldInitiate);
+            if (store.callReconnecting && ev.user_id === store.user.id && ev.session_id === store.sessionId) {
+                store.callReconnecting = false;
             }
+            if (store.callChannelId === ev.channel_id) {
+                reconcileCallPeers(ev.channel_id);
+            }
+            updateCallUI();
             if (store.inCall && ev.channel_id === store.callChannelId) {
                 playNotificationSound('join');
             }
@@ -281,17 +300,29 @@ export function handleWsMessage(ev) {
         }
         case 'voice_left': {
             if (store.voiceUsers.has(ev.channel_id)) {
-                // Remove all sessions for this user
                 const users = store.voiceUsers.get(ev.channel_id);
-                for (const cid of users) {
-                    if (cid.startsWith(ev.user_id + ':')) {
-                        users.delete(cid);
-                        const sid = cid.split(':')[1];
-                        if (ev.channel_id === store.callChannelId) {
-                            closePeerConnection(`${ev.user_id}:${sid}`);
-                        }
+                if (ev.session_id) {
+                    const cid = `${ev.user_id}:${ev.session_id}`;
+                    if (users.delete(cid) && ev.channel_id === store.callChannelId) {
+                        closePeerConnection(cid);
                     }
+                } else {
+                    // Fallback for older clients without session-aware payloads.
+                    [...users].forEach(cid => {
+                        if (cid.startsWith(ev.user_id + ':')) {
+                            users.delete(cid);
+                            if (ev.channel_id === store.callChannelId) {
+                                closePeerConnection(cid);
+                            }
+                        }
+                    });
                 }
+                if (users.size === 0) {
+                    store.voiceUsers.delete(ev.channel_id);
+                }
+            }
+            if (store.callChannelId === ev.channel_id) {
+                reconcileCallPeers(ev.channel_id);
             }
             updateCallUI();
             if (store.inCall && ev.channel_id === store.callChannelId) {
