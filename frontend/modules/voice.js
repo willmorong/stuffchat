@@ -594,6 +594,34 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
 }
 
 /**
+ * Reconciles peer connections with the current room state for the active call.
+ */
+export function reconcileCallPeers(channelId = store.callChannelId) {
+    if (!store.inCall || !channelId) return;
+
+    const callUsers = store.voiceUsers.get(channelId) || new Set();
+    const desiredPeerIds = new Set(
+        Array.from(callUsers)
+            .filter(cid => !cid.startsWith(store.user.id + ':'))
+    );
+
+    for (const [pcId, pc] of store.pcs) {
+        if (!desiredPeerIds.has(pcId)) {
+            pc.close();
+            cleanupPeerConnection(pcId);
+        }
+    }
+
+    desiredPeerIds.forEach(pcId => {
+        if (store.pcs.has(pcId)) return;
+
+        const [userId, sessionId] = pcId.split(':');
+        const shouldInitiate = store.user.id > userId;
+        createPeerConnection(userId, sessionId, shouldInitiate);
+    });
+}
+
+/**
  * Closes and cleans up a peer connection and its associated resources.
  */
 function cleanupPeerConnection(pcId) {

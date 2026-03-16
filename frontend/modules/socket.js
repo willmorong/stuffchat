@@ -1,14 +1,92 @@
 import { store } from './store.js';
 import { toWsUrl, $, truncateId, playNotificationSound } from './utils.js';
+import { refreshTokens } from './api.js';
 import { fetchUser } from './users.js';
 import { renderMessages, renderMessageItem, isScrolledToBottom, scrollToBottom, updateMessageReactions } from './messages.js';
-import { updateCallUI, createPeerConnection, handleSignal } from './voice.js';
+import { updateCallUI, createPeerConnection, handleSignal, reconcileCallPeers } from './voice.js';
 import { renderChannelList, markChannelRead } from './channels.js';
 import { sharePlay } from './shareplay.js';
 
-export function connectWs(reconnect = false) {
+const WS_PING_INTERVAL_MS = 20000;
+const WS_PONG_TIMEOUT_MS = 5000;
+const ACCESS_TOKEN_REFRESH_LEEWAY_MS = 60000;
+
+let wsPingIntervalId = null;
+let wsPongTimeoutId = null;
+let wsReconnectTimeoutId = null;
+
+function decodeJwtPayload(token) {
+    const parts = token.split('.');
+    if (parts.length < 2) return null;
+
+    try {
+        const base64 = parts[1]
+            .replace(/-/g, '+')
+            .replace(/_/g, '/')
+            .padEnd(Math.ceil(parts[1].length / 4) * 4, '=');
+        return JSON.parse(atob(base64));
+    } catch {
+        return null;
+    }
+}
+
+function accessTokenNeedsRefresh(token) {
+    if (!token) return false;
+
+    const payload = decodeJwtPayload(token);
+    if (!payload || typeof payload.exp !== 'number') return false;
+
+    return (payload.exp * 1000) - Date.now() <= ACCESS_TOKEN_REFRESH_LEEWAY_MS;
+}
+
+function clearWsHeartbeat() {
+    if (wsPingIntervalId) {
+        clearInterval(wsPingIntervalId);
+        wsPingIntervalId = null;
+    }
+    if (wsPongTimeoutId) {
+        clearTimeout(wsPongTimeoutId);
+        wsPongTimeoutId = null;
+    }
+}
+
+function markWsPongReceived() {
+    if (wsPongTimeoutId) {
+        clearTimeout(wsPongTimeoutId);
+        wsPongTimeoutId = null;
+    }
+}
+
+function startWsHeartbeat(ws) {
+    clearWsHeartbeat();
+
+    wsPingIntervalId = setInterval(() => {
+        if (store.ws !== ws || ws.readyState !== WebSocket.OPEN) {
+            clearWsHeartbeat();
+            return;
+        }
+
+        markWsPongReceived();
+        wsPongTimeoutId = setTimeout(() => {
+            if (store.ws === ws && ws.readyState === WebSocket.OPEN) {
+                console.warn('WebSocket heartbeat timed out, forcing reconnect');
+                ws.close();
+            }
+        }, WS_PONG_TIMEOUT_MS);
+
+        ws.send(JSON.stringify({ type: 'ping' }));
+    }, WS_PING_INTERVAL_MS);
+}
+
+export async function connectWs(reconnect = false) {
     const url = toWsUrl(store.baseUrl);
     if (!url || !store.accessToken) return;
+
+    if (accessTokenNeedsRefresh(store.accessToken) && store.refreshTokenId && store.refreshToken) {
+        const refreshed = await refreshTokens({ reconnectWs: false });
+        if (!refreshed || !store.accessToken) return;
+    }
+
     try {
         if (store.ws) {
             if (store.ws.readyState === WebSocket.OPEN || store.ws.readyState === WebSocket.CONNECTING) {
@@ -22,6 +100,13 @@ export function connectWs(reconnect = false) {
         const ws = new WebSocket(url + '?token=' + encodeURIComponent(store.accessToken));
         store.ws = ws;
         ws.onopen = () => {
+            if (wsReconnectTimeoutId) {
+                clearTimeout(wsReconnectTimeoutId);
+                wsReconnectTimeoutId = null;
+            }
+
+            startWsHeartbeat(ws);
+
             // Rejoin current channel
             if (store.currentChannelId) {
                 ws.send(JSON.stringify({ type: 'join', channel_id: store.currentChannelId }));
@@ -29,6 +114,9 @@ export function connectWs(reconnect = false) {
             // Rejoin call channel if different
             if (store.callChannelId && store.callChannelId !== store.currentChannelId) {
                 ws.send(JSON.stringify({ type: 'join', channel_id: store.callChannelId }));
+            }
+            if (store.inCall && store.callChannelId) {
+                ws.send(JSON.stringify({ type: 'join_call', channel_id: store.callChannelId }));
             }
         };
         ws.onmessage = (ev) => {
@@ -38,26 +126,18 @@ export function connectWs(reconnect = false) {
             } catch (e) { console.warn('WS parse error', e) }
         };
         ws.onclose = () => {
-            if (store.inCall) {
-                console.warn('WebSocket closed while in call, cleaning up');
-                store.inCall = false;
-                if (store.localStream) {
-                    store.localStream.getTracks().forEach(t => t.stop());
-                    store.localStream = null;
-                }
-                store.pcs.forEach((pc, pcid) => {
-                    pc.close();
-                    const audio = document.getElementById(`audio-${pcid}`);
-                    if (audio) audio.remove();
-                });
-                store.volumeMonitors.forEach(v => v.stop());
-                store.volumeMonitors.clear();
-                store.pcs.clear();
-                store.callChannelId = null;
-                updateCallUI();
+            clearWsHeartbeat();
+            if (store.ws === ws) {
+                store.ws = null;
             }
+
             if (store.accessToken) {
-                setTimeout(() => connectWs(true), 2000);
+                if (!wsReconnectTimeoutId) {
+                    wsReconnectTimeoutId = setTimeout(() => {
+                        wsReconnectTimeoutId = null;
+                        connectWs(true);
+                    }, 2000);
+                }
             }
         };
     } catch (e) { console.warn('WS connect error', e.message); }
@@ -159,7 +239,9 @@ export function handleWsMessage(ev) {
             }
             break;
         }
-        case 'pong': break;
+        case 'pong':
+            markWsPongReceived();
+            break;
         case 'connection_metadata': {
             store.sessionId = ev.session_id;
             console.log('Session ID:', store.sessionId);
@@ -181,6 +263,9 @@ export function handleWsMessage(ev) {
             });
             store.voiceUsers.set(chanId, users);
             updateCallUI();
+            if (store.inCall && chanId === store.callChannelId) {
+                reconcileCallPeers(chanId);
+            }
             break;
         }
         case 'shareplay_state': {

@@ -18,7 +18,8 @@ export function saveTokens({ access_token, refresh_token_id, refresh_token }) {
     localStorage.setItem('stuffchat.refresh_token', refresh_token);
 }
 
-export async function refreshTokens() {
+export async function refreshTokens(options = {}) {
+    const { reconnectWs = true } = options;
     try {
         const data = await fetch(store.baseUrl + '/api/auth/refresh', {
             method: 'POST',
@@ -26,8 +27,9 @@ export async function refreshTokens() {
             body: JSON.stringify({ refresh_token_id: store.refreshTokenId, refresh_token: store.refreshToken })
         }).then(r => r.ok ? r.json() : Promise.reject(r));
         saveTokens(data);
-        // reconnect WS with new token
-        _connectWs(true);
+        if (reconnectWs) {
+            _connectWs(true);
+        }
         return true;
     } catch (e) {
         console.warn('Refresh failed', e);
