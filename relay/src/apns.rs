@@ -4,15 +4,16 @@ use crate::models::{
     RelayPushDevice,
 };
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::{DateTime, Duration, Utc};
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use reqwest::StatusCode;
 use serde::Serialize;
 use serde_json::json;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 const APNS_SANDBOX_URL: &str = "https://api.sandbox.push.apple.com";
 const APNS_PRODUCTION_URL: &str = "https://api.push.apple.com";
+const APNS_AUTH_TOKEN_REUSE_WINDOW: Duration = Duration::minutes(50);
 
 #[derive(Debug, Clone)]
 pub struct ApnsNotification {
@@ -43,6 +44,13 @@ pub struct RealApnsSender {
     team_id: String,
     topic: String,
     encoding_key: EncodingKey,
+    authorization_token_cache: Mutex<CachedAuthorizationToken>,
+}
+
+#[derive(Default)]
+struct CachedAuthorizationToken {
+    token: Option<String>,
+    issued_at: Option<DateTime<Utc>>,
 }
 
 impl RealApnsSender {
@@ -84,10 +92,34 @@ impl RealApnsSender {
             team_id: team_id.to_string(),
             topic: topic.to_string(),
             encoding_key,
+            authorization_token_cache: Mutex::new(CachedAuthorizationToken::default()),
         })
     }
 
     fn authorization_token(&self) -> Result<String, String> {
+        self.authorization_token_at(Utc::now())
+    }
+
+    fn authorization_token_at(&self, now: DateTime<Utc>) -> Result<String, String> {
+        let mut cache = self
+            .authorization_token_cache
+            .lock()
+            .map_err(|_| "authorization token cache lock poisoned".to_string())?;
+        if let (Some(token), Some(issued_at)) = (&cache.token, cache.issued_at) {
+            if should_reuse_authorization_token(issued_at, now) {
+                return Ok(token.clone());
+            }
+        }
+
+        // APNS provider tokens are valid for up to an hour and should be reused
+        // across requests instead of rotating on every push.
+        let token = self.sign_authorization_token(now)?;
+        cache.token = Some(token.clone());
+        cache.issued_at = Some(now);
+        Ok(token)
+    }
+
+    fn sign_authorization_token(&self, issued_at: DateTime<Utc>) -> Result<String, String> {
         #[derive(Serialize)]
         struct Claims<'a> {
             iss: &'a str,
@@ -100,12 +132,16 @@ impl RealApnsSender {
             &header,
             &Claims {
                 iss: &self.team_id,
-                iat: Utc::now().timestamp() as usize,
+                iat: issued_at.timestamp() as usize,
             },
             &self.encoding_key,
         )
         .map_err(|err| err.to_string())
     }
+}
+
+fn should_reuse_authorization_token(issued_at: DateTime<Utc>, now: DateTime<Utc>) -> bool {
+    now >= issued_at && now - issued_at < APNS_AUTH_TOKEN_REUSE_WINDOW
 }
 
 #[async_trait]
@@ -232,6 +268,7 @@ fn build_request_parts(notification: &ApnsNotification) -> BuiltApnsRequest {
 mod tests {
     use super::*;
     use crate::models::{PushEnvironment, PushEventType};
+    use chrono::TimeZone;
 
     #[test]
     fn message_request_contains_thread_and_payload() {
@@ -266,8 +303,14 @@ mod tests {
             built.payload["aps"]["thread-id"].as_str(),
             Some("channel-1")
         );
-        assert_eq!(built.payload["aps"]["alert"]["title"].as_str(), Some("alice (#general)"));
-        assert_eq!(built.payload["aps"]["alert"]["body"].as_str(), Some("hello"));
+        assert_eq!(
+            built.payload["aps"]["alert"]["title"].as_str(),
+            Some("alice (#general)")
+        );
+        assert_eq!(
+            built.payload["aps"]["alert"]["body"].as_str(),
+            Some("hello")
+        );
     }
 
     #[test]
@@ -294,6 +337,25 @@ mod tests {
             },
         });
 
-        assert_eq!(built.payload["aps"]["alert"]["title"].as_str(), Some("alice (#random)"));
+        assert_eq!(
+            built.payload["aps"]["alert"]["title"].as_str(),
+            Some("alice (#random)")
+        );
+    }
+
+    #[test]
+    fn authorization_token_is_reused_within_refresh_window() {
+        let issued_at = Utc.with_ymd_and_hms(2026, 3, 16, 12, 0, 0).unwrap();
+        let now = issued_at + Duration::minutes(49);
+
+        assert!(should_reuse_authorization_token(issued_at, now));
+    }
+
+    #[test]
+    fn authorization_token_is_refreshed_at_refresh_window_boundary() {
+        let issued_at = Utc.with_ymd_and_hms(2026, 3, 16, 12, 0, 0).unwrap();
+        let now = issued_at + Duration::minutes(50);
+
+        assert!(!should_reuse_authorization_token(issued_at, now));
     }
 }
