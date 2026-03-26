@@ -6,24 +6,47 @@ import { renderMessages, fetchMessagesPage, enableComposer } from './messages.js
 import { fetchPresenceForUsers } from './presence.js';
 import { prefetchUsers, fetchAllUsers } from './users.js';
 
+function parseChannelActivityAt(channel) {
+    if (!channel?.last_message_at) return null;
+    const ts = Date.parse(channel.last_message_at);
+    return Number.isNaN(ts) ? null : ts;
+}
+
+function sortChannelsByRecentMessage(channels) {
+    return channels
+        .map((channel, index) => ({
+            channel,
+            index,
+            activityAt: parseChannelActivityAt(channel)
+        }))
+        .sort((a, b) => {
+            if (a.activityAt === b.activityAt) return a.index - b.index;
+            if (a.activityAt === null) return 1;
+            if (b.activityAt === null) return -1;
+            return b.activityAt - a.activityAt;
+        })
+        .map(item => item.channel);
+}
+
 export async function loadChannels() {
     const [list, unread] = await Promise.all([
         apiFetch('/api/channels'),
         apiFetch('/api/channels/unread').catch(() => [])
     ]);
-    store.channels = list;
+    store.channels = sortChannelsByRecentMessage(list);
     if (unread) {
         unread.forEach(u => store.unread.set(u.channel_id, u));
     }
     renderChannelList();
-    if (list.length && !store.currentChannelId) {
-        selectChannel(list[0].id);
+    if (store.channels.length && !store.currentChannelId) {
+        selectChannel(store.channels[0].id);
     }
 }
 
 export function renderChannelList() {
     const wrap = $('#channels');
     wrap.innerHTML = '';
+    store.channels = sortChannelsByRecentMessage(store.channels);
     store.channels.forEach(ch => {
         const isActive = ch.id === store.currentChannelId;
 
