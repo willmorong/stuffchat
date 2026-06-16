@@ -29,9 +29,9 @@
       }
     },
     {
-      "label": "Upload frontend to VPS (rsync)",
+      "label": "Upload frontend to vnic (rsync)",
       "type": "shell",
-      "command": "rsync -az --delete --info=progress2 --human-readable --mkpath frontend/ root@caddy-sfo2-01:/srv/frontend/",
+      "command": "rsync -az --delete --info=progress2 --human-readable --mkpath frontend/ rocky@vnic:/srv/frontend/",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -62,7 +62,7 @@
       "label": "Run backend + Upload frontend (parallel)",
       "dependsOn": [
         "Run Rust (cargo run)",
-        "Upload frontend to VPS (rsync)"
+        "Upload frontend to vnic (rsync)"
       ],
       "dependsOrder": "parallel",
       "problemMatcher": [],

@@ -29,13 +29,13 @@
       "internalConsoleOptions": "neverOpen"
     },
     {
-      "name": "Upload frontend to VPS (rsync)",
+      "name": "Upload frontend to vnic (rsync)",
       "type": "node",
       "request": "launch",
       "runtimeExecutable": "bash",
       "runtimeArgs": [
         "-lc",
-        "rsync -az --delete --info=progress2 --human-readable --mkpath frontend/ root@caddy-sfo2-01:/srv/frontend/"
+        "rsync -az --delete --info=progress2 --human-readable --mkpath frontend/ rocky@vnic:/srv/frontend/"
       ],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
@@ -55,7 +55,7 @@
       "name": "Run backend + Upload frontend",
       "configurations": [
         "Backend: cargo run",
-        "Upload frontend to VPS (rsync)"
+        "Upload frontend to vnic (rsync)"
       ],
       "stopAll": true
     }
