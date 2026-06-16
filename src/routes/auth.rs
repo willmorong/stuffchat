@@ -23,8 +23,15 @@ pub async fn register(
     db: web::Data<Db>,
     body: web::Json<RegisterReq>,
 ) -> Result<HttpResponse, ApiError> {
-    if body.username.len() < 3 || body.password.len() < 8 {
-        return Err(ApiError::BadRequest("invalid username/password".into()));
+    if body.username.len() < 3 {
+        return Err(ApiError::BadRequest(
+            "username must be at least 3 characters".into(),
+        ));
+    }
+    if body.password.len() < 8 {
+        return Err(ApiError::BadRequest(
+            "password must be at least 8 characters".into(),
+        ));
     }
 
     if cfg.invite_only {

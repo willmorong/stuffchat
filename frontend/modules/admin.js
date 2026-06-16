@@ -7,6 +7,7 @@ let adminRoles = [];
 let adminLogs = [];
 let adminLoaded = false;
 const ADMIN_PERMISSION = 1;
+const MIN_PASSWORD_LENGTH = 8;
 
 function hasAdminPermission() {
     const perms = store.user?.permissions;
@@ -29,6 +30,14 @@ function setStatus(msg, isError = false) {
     if (!el) return;
     el.textContent = msg || '';
     el.classList.toggle('error', isError);
+}
+
+function setPasswordStatus(msg, isError = false) {
+    const el = $('#adminPasswordStatus');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.classList.toggle('error', isError);
+    el.classList.toggle('hint', !isError);
 }
 
 function closeAdminModal() {
@@ -103,6 +112,7 @@ function renderSelectedUser() {
     $('#adminEmail').value = user?.email || '';
     $('#adminNewPassword').value = '';
     $('#adminAvatarFile').value = '';
+    setPasswordStatus('');
 
     renderUserRoles(user);
 }
@@ -257,16 +267,20 @@ async function setUserPassword() {
     const userId = $('#adminUserSelect').value;
     if (!userId) return;
     const new_password = $('#adminNewPassword').value;
-    if (!new_password) return;
+    if (new_password.length < MIN_PASSWORD_LENGTH) {
+        setPasswordStatus(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`, true);
+        return;
+    }
+    setPasswordStatus('');
     try {
         await apiFetch(`/api/admin/users/${encodeURIComponent(userId)}/password`, {
             method: 'PUT',
             body: JSON.stringify({ new_password })
         });
         $('#adminNewPassword').value = '';
-        setStatus('Password updated');
+        setPasswordStatus('Password updated.');
     } catch (e) {
-        setStatus(e.message, true);
+        setPasswordStatus(e.message, true);
     }
 }
 
@@ -334,6 +348,7 @@ export function bindAdminEvents() {
     $('#btnAdminRefresh').addEventListener('click', loadAdminData);
     $('#btnAdminRefreshLogs').addEventListener('click', loadAdminData);
     $('#adminUserSelect').addEventListener('change', renderSelectedUser);
+    $('#adminNewPassword').addEventListener('input', () => setPasswordStatus(''));
 
     $('#btnAdminSaveUser').addEventListener('click', saveUserInfo);
     $('#btnAdminSetPassword').addEventListener('click', setUserPassword);

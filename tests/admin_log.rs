@@ -54,6 +54,39 @@ async fn admin_log_endpoint_requires_admin_role() {
 }
 
 #[actix_web::test]
+async fn admin_password_update_reports_short_password() {
+    let ctx = test_context().await;
+    insert_user(&ctx.db, "admin-1", "admin").await;
+    insert_user(&ctx.db, "user-2", "target").await;
+    insert_role(&ctx.db, "role-admin", "admin").await;
+    grant_role(&ctx.db, "admin-1", "role-admin").await;
+
+    let admin_token = auth_token(&ctx.cfg, "admin-1");
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(ctx.cfg.clone()))
+            .app_data(web::Data::new(ctx.db.clone()))
+            .app_data(web::Data::new(ctx.chat_server.clone()))
+            .app_data(web::Data::new(None::<stuffchat::push::PushRelayRuntime>))
+            .configure(|cfg| stuffchat::app::configure(cfg, true)),
+    )
+    .await;
+
+    let request = test::TestRequest::put()
+        .uri("/api/admin/users/user-2/password")
+        .insert_header(("Authorization", format!("Bearer {admin_token}")))
+        .set_json(json!({
+            "new_password": "short"
+        }))
+        .to_request();
+    let response = test::call_service(&app, request).await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body: Value = test::read_body_json(response).await;
+    assert_eq!(body["error"], "bad request: new password too short");
+}
+
+#[actix_web::test]
 async fn admin_actions_are_logged_without_password_data() {
     let ctx = test_context().await;
     insert_user(&ctx.db, "admin-1", "admin").await;

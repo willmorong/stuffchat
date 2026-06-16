@@ -49,7 +49,8 @@
                 <div class="row"><input id="regEmail" class="input grow" placeholder="Email" autocomplete="email" />
                 </div>
                 <div class="row"><input id="regPass" class="input grow" type="password"
-                        placeholder="Password (min 8 chars)" autocomplete="new-password" /></div>
+                        placeholder="Password (min 8 chars)" autocomplete="new-password" minlength="8"
+                        aria-describedby="regErr" /></div>
                 <div class="row" id="regInviteRow" style="display:none"><input id="regInvite" class="input grow"
                         placeholder="Invite Code" /></div>
                 <div class="row"><button id="btnRegister" class="button grow">Create account</button></div>
@@ -363,10 +364,12 @@
                             </div>
                             <div class="row" style="align-items:center; flex-wrap:wrap">
                                 <input id="adminNewPassword" class="input grow" type="password"
-                                    placeholder="New password" />
+                                    placeholder="New password (min 8 chars)" minlength="8"
+                                    aria-describedby="adminPasswordStatus" />
                                 <button id="btnAdminSetPassword" class="button" style="width:180px">Set
                                     Password</button>
                             </div>
+                            <div id="adminPasswordStatus" class="hint" aria-live="polite"></div>
                             <div class="row">
                                 <button id="btnAdminSaveUser" class="button">Save User Info</button>
                             </div>

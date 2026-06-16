@@ -9,6 +9,8 @@ import { enableComposer } from './messages.js';
 import { heartbeat, presencePollLoop, startHeartbeatLoop } from './presence.js';
 import { fetchEmojis } from './emojis.js';
 
+const MIN_PASSWORD_LENGTH = 8;
+
 export function showServerStep() {
     $('#serverStep').style.display = 'block';
     $('#authStep').style.display = 'none';
@@ -59,6 +61,11 @@ export async function doLogin(username_or_email, password) {
 }
 
 export async function doRegister(username, email, password) {
+    if (password.length < MIN_PASSWORD_LENGTH) {
+        $('#regErr').textContent = `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`;
+        return;
+    }
+
     const invite_code = $('#regInviteRow').style.display !== 'none' ? $('#regInvite').value : null;
     try {
         const data = await apiFetch('/api/auth/register', {
