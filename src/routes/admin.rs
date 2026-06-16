@@ -1,6 +1,5 @@
 use actix_multipart::Multipart;
 use actix_web::{HttpResponse, web};
-use futures_util::TryStreamExt as _;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::Row;
@@ -206,24 +205,13 @@ pub async fn upload_user_avatar(
     chat: web::Data<actix::Addr<ChatServer>>,
     user: AuthUser,
     path: web::Path<String>,
-    mut payload: Multipart,
+    payload: Multipart,
 ) -> Result<HttpResponse, ApiError> {
-    use crate::routes::files::{SavedFile, save_multipart_file};
     require_admin(&db, &user.user_id).await?;
     let target_id = path.into_inner();
 
-    let mut saved: Option<SavedFile> = None;
-    while let Some(item) = payload
-        .try_next()
-        .await
-        .map_err(|_| ApiError::BadRequest("invalid multipart".into()))?
-    {
-        let field = item;
-        let s = save_multipart_file(&cfg, &db, &target_id, field).await?;
-        saved = Some(s);
-        break;
-    }
-    let saved = saved.ok_or(ApiError::BadRequest("no file".into()))?;
+    let saved =
+        crate::routes::users::save_avatar_from_multipart(&cfg, &db, &target_id, payload).await?;
 
     sqlx::query("UPDATE users SET avatar_file_id = ?, updated_at = ? WHERE id = ?")
         .bind(&saved.file_id)

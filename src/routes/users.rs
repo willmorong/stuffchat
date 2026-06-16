@@ -12,6 +12,54 @@ use futures_util::TryStreamExt as _;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
+pub(crate) async fn save_avatar_from_multipart(
+    cfg: &Config,
+    db: &Db,
+    user_id: &str,
+    mut payload: Multipart,
+) -> Result<crate::routes::files::SavedFile, ApiError> {
+    use crate::avatar::{AVATAR_MIME_TYPE, AVATAR_ORIGINAL_NAME, process_avatar_upload};
+    use crate::routes::files::{read_multipart_file, save_file_bytes};
+
+    let mut saved: Option<crate::routes::files::SavedFile> = None;
+    while let Some(item) = payload
+        .try_next()
+        .await
+        .map_err(|_| ApiError::BadRequest("invalid multipart".into()))?
+    {
+        if saved.is_some() {
+            return Err(ApiError::BadRequest("too many files".into()));
+        }
+        let uploaded = read_multipart_file(cfg, item).await?;
+        let processed = process_avatar_upload(&uploaded.data, &uploaded.original_name)?;
+        saved = Some(
+            save_file_bytes(
+                cfg,
+                db,
+                user_id,
+                AVATAR_ORIGINAL_NAME,
+                "avif",
+                Some(AVATAR_MIME_TYPE),
+                &processed.bytes,
+            )
+            .await?,
+        );
+    }
+
+    let saved = saved.ok_or(ApiError::BadRequest("no file".into()))?;
+    sqlx::query(
+        "INSERT INTO profile_pictures(user_id, file_id, set_at) VALUES (?, ?, ?)
+         ON CONFLICT(user_id) DO UPDATE SET file_id = excluded.file_id, set_at = excluded.set_at",
+    )
+    .bind(user_id)
+    .bind(&saved.file_id)
+    .bind(chrono::Utc::now())
+    .execute(&db.0)
+    .await?;
+
+    Ok(saved)
+}
+
 pub async fn me(
     db: web::Data<Db>,
     user: super::super::auth::AuthUser,
@@ -125,22 +173,9 @@ pub async fn upload_avatar(
     db: web::Data<Db>,
     chat: web::Data<actix::Addr<ChatServer>>,
     user: AuthUser,
-    mut payload: Multipart,
+    payload: Multipart,
 ) -> Result<HttpResponse, ApiError> {
-    use crate::routes::files::{SavedFile, save_multipart_file};
-    let mut saved: Option<SavedFile> = None;
-
-    while let Some(item) = payload
-        .try_next()
-        .await
-        .map_err(|_| ApiError::BadRequest("invalid multipart".into()))?
-    {
-        let field = item;
-        let s = save_multipart_file(&cfg, &db, &user.user_id, field).await?;
-        saved = Some(s);
-        break;
-    }
-    let saved = saved.ok_or(ApiError::BadRequest("no file".into()))?;
+    let saved = save_avatar_from_multipart(&cfg, &db, &user.user_id, payload).await?;
     sqlx::query("UPDATE users SET avatar_file_id = ?, updated_at = ? WHERE id = ?")
         .bind(&saved.file_id)
         .bind(chrono::Utc::now())

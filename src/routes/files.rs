@@ -24,17 +24,14 @@ pub async fn upload_file(
 ) -> Result<HttpResponse, ApiError> {
     permissions::require_permission(&db, &user.user_id, PERM_UPLOAD_FILES).await?;
 
-    let mut saved: Option<SavedFile> = None;
-    while let Some(item) = payload
+    let Some(item) = payload
         .try_next()
         .await
         .map_err(|_| ApiError::BadRequest("invalid multipart".into()))?
-    {
-        let s = save_multipart_file(&cfg, &db, &user.user_id, item).await?;
-        saved = Some(s);
-        break;
-    }
-    let saved = saved.ok_or(ApiError::BadRequest("no file part".into()))?;
+    else {
+        return Err(ApiError::BadRequest("no file part".into()));
+    };
+    let saved = save_multipart_file(&cfg, &db, &user.user_id, item).await?;
     Ok(HttpResponse::Ok().json(UploadResp {
         file_id: saved.file_id,
     }))
@@ -44,12 +41,15 @@ pub struct SavedFile {
     pub file_id: String,
 }
 
-pub async fn save_multipart_file(
+pub struct UploadedFile {
+    pub original_name: String,
+    pub data: Vec<u8>,
+}
+
+pub async fn read_multipart_file(
     cfg: &Config,
-    db: &Db,
-    user_id: &str,
     mut field: actix_multipart::Field,
-) -> Result<SavedFile, ApiError> {
+) -> Result<UploadedFile, ApiError> {
     let content_disposition = field.content_disposition().cloned();
     let original = content_disposition
         .and_then(|cd| cd.get_filename().map(|s| s.to_string()))
@@ -66,21 +66,63 @@ pub async fn save_multipart_file(
             return Err(ApiError::BadRequest("file too large".into()));
         }
     }
+
+    Ok(UploadedFile {
+        original_name: original_safe,
+        data,
+    })
+}
+
+pub async fn save_multipart_file(
+    cfg: &Config,
+    db: &Db,
+    user_id: &str,
+    field: actix_multipart::Field,
+) -> Result<SavedFile, ApiError> {
+    let uploaded = read_multipart_file(cfg, field).await?;
+    let data = uploaded.data;
     let mime = infer::get(&data).map(|t| t.mime_type().to_string());
-    let id = uuid::Uuid::new_v4().to_string();
-    let ext = Path::new(&original_safe)
+    let ext = Path::new(&uploaded.original_name)
         .extension()
         .and_then(|s| s.to_str())
         .unwrap_or("bin");
-    let stored_name = format!("{}.{}", id, ext);
+    save_file_bytes(
+        cfg,
+        db,
+        user_id,
+        &uploaded.original_name,
+        ext,
+        mime.as_deref(),
+        &data,
+    )
+    .await
+}
+
+pub async fn save_file_bytes(
+    cfg: &Config,
+    db: &Db,
+    user_id: &str,
+    original_name: &str,
+    extension: &str,
+    mime_type: Option<&str>,
+    data: &[u8],
+) -> Result<SavedFile, ApiError> {
+    let id = uuid::Uuid::new_v4().to_string();
+    let stored_name = format!("{}.{}", id, extension.trim_start_matches('.'));
     let path = std::path::Path::new(&cfg.uploads_dir).join(&stored_name);
     let mut f = std::fs::File::create(&path).map_err(|_| ApiError::Internal)?;
-    f.write_all(&data).map_err(|_| ApiError::Internal)?;
+    f.write_all(data).map_err(|_| ApiError::Internal)?;
 
     sqlx::query("INSERT INTO files(id, user_id, original_name, stored_name, mime_type, size_bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-        .bind(&id).bind(user_id).bind(&original_safe).bind(&stored_name).bind(&mime)
-        .bind(data.len() as i64).bind(chrono::Utc::now())
-        .execute(&db.0).await?;
+        .bind(&id)
+        .bind(user_id)
+        .bind(original_name)
+        .bind(&stored_name)
+        .bind(mime_type)
+        .bind(data.len() as i64)
+        .bind(chrono::Utc::now())
+        .execute(&db.0)
+        .await?;
 
     Ok(SavedFile { file_id: id })
 }
@@ -120,11 +162,11 @@ pub async fn get_file(
         });
 
     let mut resp = named.into_response(&req);
-    if let Some(m) = mime {
-        if let Ok(val) = actix_web::http::header::HeaderValue::from_str(&m) {
-            resp.headers_mut()
-                .insert(actix_web::http::header::CONTENT_TYPE, val);
-        }
+    if let Some(m) = mime
+        && let Ok(val) = actix_web::http::header::HeaderValue::from_str(&m)
+    {
+        resp.headers_mut()
+            .insert(actix_web::http::header::CONTENT_TYPE, val);
     }
     Ok(resp)
 }

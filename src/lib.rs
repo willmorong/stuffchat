@@ -1,6 +1,7 @@
 pub mod admin_log;
 pub mod app;
 pub mod auth;
+pub mod avatar;
 pub mod bridge;
 pub mod config;
 pub mod db;
