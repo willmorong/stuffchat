@@ -98,6 +98,8 @@ class VolumeMonitor {
 }
 
 const negotiationState = new Map();
+const PEER_CONNECT_TIMEOUT_MS = 15000;
+const PEER_RECOVERY_RETRY_MS = 12000;
 
 /**
  * Retrieves or initializes the perfect negotiation state for a peer connection.
@@ -109,7 +111,13 @@ function getNegotiationState(pcId) {
             ignoreOffer: false,
             isSettingRemoteAnswerPending: false,
             polite: false,
-            pendingCandidates: []
+            initialOfferer: false,
+            pendingCandidates: [],
+            negotiating: false,
+            needsNegotiation: false,
+            needsIceRestart: false,
+            recoveryTimer: null,
+            connectTimer: null
         });
     }
     return negotiationState.get(pcId);
@@ -119,7 +127,30 @@ function getNegotiationState(pcId) {
  * Clears the negotiation state for a specific peer connection.
  */
 function cleanupNegotiationState(pcId) {
+    const state = negotiationState.get(pcId);
+    if (state) {
+        if (state.recoveryTimer) clearTimeout(state.recoveryTimer);
+        if (state.connectTimer) clearTimeout(state.connectTimer);
+    }
     negotiationState.delete(pcId);
+}
+
+function endpointId(userId, sessionId) {
+    return `${userId || ''}:${sessionId || ''}`;
+}
+
+function localEndpointId() {
+    return endpointId(store.user?.id, store.sessionId);
+}
+
+function isLocalInitialOfferer(targetUserId, targetSessionId) {
+    return localEndpointId() > endpointId(targetUserId, targetSessionId);
+}
+
+function isPeerStillDesired(pcId) {
+    if (!store.inCall || !store.callChannelId) return false;
+    const usersInCall = store.voiceUsers.get(store.callChannelId) || new Set();
+    return usersInCall.has(pcId);
 }
 
 /**
@@ -412,12 +443,113 @@ function mangleSdpVideo(sdp) {
     return sdp;
 }
 
+async function negotiatePeer(pcId, targetUserId, targetSessionId, options = {}) {
+    const peerConnection = store.pcs.get(pcId);
+    if (!peerConnection || peerConnection.connectionState === 'closed') return;
+
+    const state = getNegotiationState(pcId);
+    state.needsNegotiation = true;
+    state.needsIceRestart = state.needsIceRestart || !!options.iceRestart;
+
+    if (state.negotiating) return;
+    state.negotiating = true;
+
+    try {
+        while (state.needsNegotiation) {
+            state.needsNegotiation = false;
+
+            if (!isPeerStillDesired(pcId)) return;
+
+            // On first setup, only the deterministic offerer sends an offer.
+            // The answerer still creates a peer connection and attaches tracks,
+            // so its media is included when it answers the offer.
+            if (!state.initialOfferer && !peerConnection.remoteDescription) {
+                return;
+            }
+
+            if (peerConnection.signalingState !== 'stable') {
+                state.needsNegotiation = true;
+                setTimeout(() => {
+                    const currentPc = store.pcs.get(pcId);
+                    if (currentPc && currentPc.signalingState === 'stable') {
+                        negotiatePeer(pcId, targetUserId, targetSessionId);
+                    }
+                }, 0);
+                return;
+            }
+
+            if (state.needsIceRestart) {
+                peerConnection.restartIce();
+                state.needsIceRestart = false;
+            }
+
+            state.makingOffer = true;
+            await peerConnection.setLocalDescription();
+            let sdp = peerConnection.localDescription.sdp;
+            sdp = mangleSdp(sdp);
+            sdp = mangleSdpVideo(sdp);
+            sendSignal(targetUserId, targetSessionId, {
+                sdp: { ...peerConnection.localDescription.toJSON(), sdp }
+            });
+            state.makingOffer = false;
+        }
+    } catch (e) {
+        console.error(`Negotiation error [${pcId}]:`, e);
+    } finally {
+        state.makingOffer = false;
+        state.negotiating = false;
+        if (state.needsNegotiation && peerConnection.signalingState === 'stable') {
+            queueMicrotask(() => negotiatePeer(pcId, targetUserId, targetSessionId));
+        }
+    }
+}
+
+function clearPeerRecovery(pcId) {
+    const state = negotiationState.get(pcId);
+    if (!state) return;
+    if (state.recoveryTimer) {
+        clearTimeout(state.recoveryTimer);
+        state.recoveryTimer = null;
+    }
+    if (state.connectTimer) {
+        clearTimeout(state.connectTimer);
+        state.connectTimer = null;
+    }
+}
+
+function schedulePeerRecovery(pcId, targetUserId, targetSessionId, reason, delay = 0) {
+    const peerConnection = store.pcs.get(pcId);
+    if (!peerConnection || peerConnection.connectionState === 'closed') return;
+
+    const state = getNegotiationState(pcId);
+    if (state.recoveryTimer) return;
+
+    state.recoveryTimer = setTimeout(() => {
+        state.recoveryTimer = null;
+        const currentPc = store.pcs.get(pcId);
+        if (!currentPc || currentPc.connectionState === 'closed' || currentPc.connectionState === 'connected') return;
+        if (!isPeerStillDesired(pcId)) return;
+
+        if (state.initialOfferer) {
+            console.log(`[${pcId}] Starting ICE restart (${reason})`);
+            negotiatePeer(pcId, targetUserId, targetSessionId, { iceRestart: true });
+        } else {
+            console.log(`[${pcId}] Requesting remote ICE restart (${reason})`);
+            sendSignal(targetUserId, targetSessionId, { restart_requested: true });
+        }
+
+        schedulePeerRecovery(pcId, targetUserId, targetSessionId, 'recovery_retry', PEER_RECOVERY_RETRY_MS);
+    }, delay);
+}
+
 /**
  * Creates and configures a new RTCPeerConnection for a target user.
  */
 export async function createPeerConnection(targetUserId, targetSessionId, initiator) {
     const pcId = `${targetUserId}:${targetSessionId}`;
-    if (store.pcs.has(pcId)) return store.pcs.get(pcId);
+    const existing = store.pcs.get(pcId);
+    if (existing && existing.connectionState !== 'closed') return existing;
+    if (existing) cleanupPeerConnection(pcId);
 
     const peerConnection = new RTCPeerConnection({
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
@@ -425,7 +557,8 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
     store.pcs.set(pcId, peerConnection);
 
     const state = getNegotiationState(pcId);
-    state.polite = store.user.id < targetUserId;
+    state.initialOfferer = initiator ?? isLocalInitialOfferer(targetUserId, targetSessionId);
+    state.polite = !state.initialOfferer;
 
     peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
@@ -433,20 +566,8 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
         }
     };
 
-    peerConnection.onnegotiationneeded = async () => {
-        const state = getNegotiationState(pcId);
-        try {
-            state.makingOffer = true;
-            await peerConnection.setLocalDescription();
-            let sdp = peerConnection.localDescription.sdp;
-            sdp = mangleSdp(sdp);
-            sdp = mangleSdpVideo(sdp);
-            sendSignal(targetUserId, targetSessionId, { sdp: { ...peerConnection.localDescription.toJSON(), sdp } });
-        } catch (e) {
-            console.error(`Negotiation error [${pcId}]:`, e);
-        } finally {
-            state.makingOffer = false;
-        }
+    peerConnection.onnegotiationneeded = () => {
+        negotiatePeer(pcId, targetUserId, targetSessionId);
     };
 
     peerConnection.onconnectionstatechange = () => {
@@ -454,16 +575,14 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
         updateCallUI();
         if (peerConnection.connectionState === 'connected') {
             updateVideoGrid();
+            clearPeerRecovery(pcId);
         }
         if (peerConnection.connectionState === 'failed') {
-            console.warn(`[${pcId}] Connection failed, attempting ICE restart...`);
-            peerConnection.restartIce();
-            setTimeout(() => {
-                if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'disconnected') {
-                    console.error(`[${pcId}] ICE restart did not recover, cleaning up.`);
-                    cleanupPeerConnection(pcId);
-                }
-            }, 10000);
+            console.warn(`[${pcId}] Connection failed, scheduling ICE recovery`);
+            schedulePeerRecovery(pcId, targetUserId, targetSessionId, 'failed');
+        }
+        if (peerConnection.connectionState === 'disconnected') {
+            schedulePeerRecovery(pcId, targetUserId, targetSessionId, 'disconnected', PEER_RECOVERY_RETRY_MS);
         }
         if (peerConnection.connectionState === 'closed') {
             cleanupPeerConnection(pcId);
@@ -578,17 +697,16 @@ export async function createPeerConnection(targetUserId, targetSessionId, initia
 
     updateVideoGrid();
 
-    setTimeout(() => {
-        if (peerConnection.connectionState !== 'connected' && peerConnection.connectionState !== 'closed') {
-            const usersInCall = store.voiceUsers.get(store.callChannelId) || new Set();
-            if (Array.from(usersInCall).some(cid => cid.startsWith(targetUserId + ':'))) {
-                console.log(`[${pcId}] Connection timeout after 3s, retrying...`);
-                peerConnection.close();
-                cleanupPeerConnection(pcId);
-                createPeerConnection(targetUserId, targetSessionId, initiator);
-            }
+    if (state.initialOfferer) {
+        queueMicrotask(() => negotiatePeer(pcId, targetUserId, targetSessionId));
+    }
+
+    state.connectTimer = setTimeout(() => {
+        if (peerConnection.connectionState !== 'connected' && peerConnection.connectionState !== 'closed' && isPeerStillDesired(pcId)) {
+            console.warn(`[${pcId}] Connection still not established after ${PEER_CONNECT_TIMEOUT_MS}ms, requesting ICE recovery`);
+            schedulePeerRecovery(pcId, targetUserId, targetSessionId, 'connect_timeout');
         }
-    }, 3000);
+    }, PEER_CONNECT_TIMEOUT_MS);
 
     return peerConnection;
 }
@@ -616,15 +734,18 @@ export function reconcileCallPeers(channelId = store.callChannelId) {
         if (store.pcs.has(pcId)) return;
 
         const [userId, sessionId] = pcId.split(':');
-        const shouldInitiate = store.user.id > userId;
-        createPeerConnection(userId, sessionId, shouldInitiate);
+        createPeerConnection(userId, sessionId);
     });
 }
 
 /**
  * Closes and cleans up a peer connection and its associated resources.
  */
-function cleanupPeerConnection(pcId) {
+export function cleanupPeerConnection(pcId) {
+    const peerConnection = store.pcs.get(pcId);
+    if (peerConnection && peerConnection.connectionState !== 'closed') {
+        peerConnection.close();
+    }
     const audio = document.getElementById(`audio-${pcId}`);
     if (audio) {
         audio.remove();
@@ -665,7 +786,11 @@ export async function handleSignal(userId, sessionId, data) {
     const state = getNegotiationState(pcId);
 
     try {
-        if (data.sdp) {
+        if (data.restart_requested) {
+            if (state.initialOfferer) {
+                negotiatePeer(pcId, userId, sessionId, { iceRestart: true });
+            }
+        } else if (data.sdp) {
             const description = new RTCSessionDescription(data.sdp);
             const readyForOffer =
                 !state.makingOffer &&
@@ -683,9 +808,15 @@ export async function handleSignal(userId, sessionId, data) {
                 console.log(`[${pcId}] Accepting remote offer via implicit rollback (we are polite)`);
             }
 
-            state.isSettingRemoteAnswerPending = description.type === 'answer';
-            await peerConnection.setRemoteDescription(description);
-            state.isSettingRemoteAnswerPending = false;
+            try {
+                state.isSettingRemoteAnswerPending = description.type === 'answer';
+                await peerConnection.setRemoteDescription(description);
+                if (description.type === 'answer') {
+                    state.ignoreOffer = false;
+                }
+            } finally {
+                state.isSettingRemoteAnswerPending = false;
+            }
 
             if (state.pendingCandidates.length > 0) {
                 for (const candidate of state.pendingCandidates) {
@@ -708,8 +839,14 @@ export async function handleSignal(userId, sessionId, data) {
                 sendSignal(userId, sessionId, { sdp: { ...peerConnection.localDescription.toJSON(), sdp } });
             }
 
+            if (state.needsNegotiation && peerConnection.signalingState === 'stable') {
+                queueMicrotask(() => negotiatePeer(pcId, userId, sessionId));
+            }
+
             updateVideoGrid();
         } else if (data.candidate) {
+            if (state.ignoreOffer) return;
+
             if (!peerConnection.remoteDescription || !peerConnection.remoteDescription.type) {
                 state.pendingCandidates.push(new RTCIceCandidate(data.candidate));
             } else {
@@ -833,8 +970,7 @@ export async function startCall() {
     existingUsers.forEach(cid => {
         const [uid, sid] = cid.split(':');
         if (uid !== store.user.id) {
-            const shouldInitiate = store.user.id > uid;
-            createPeerConnection(uid, sid, shouldInitiate);
+            createPeerConnection(uid, sid);
         }
     });
 }

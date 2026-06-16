@@ -3,7 +3,7 @@ import { toWsUrl, $, truncateId, playNotificationSound } from './utils.js';
 import { refreshTokens } from './api.js';
 import { fetchUser } from './users.js';
 import { renderMessages, renderMessageItem, isScrolledToBottom, scrollToBottom, updateMessageReactions } from './messages.js';
-import { updateCallUI, createPeerConnection, handleSignal, reconcileCallPeers } from './voice.js';
+import { updateCallUI, createPeerConnection, handleSignal, reconcileCallPeers, cleanupPeerConnection } from './voice.js';
 import { renderChannelList, markChannelRead } from './channels.js';
 import { sharePlay } from './shareplay.js';
 
@@ -284,8 +284,7 @@ export function handleWsMessage(ev) {
             if (store.inCall && ev.channel_id === store.callChannelId && ev.user_id !== store.user.id) {
                 // If we are in call, and someone joins, we might need to connect to them.
                 // We use (user_id, session_id) for the peer connection.
-                const shouldInitiate = store.user.id > ev.user_id;
-                createPeerConnection(ev.user_id, ev.session_id, shouldInitiate);
+                createPeerConnection(ev.user_id, ev.session_id);
             }
             if (store.inCall && ev.channel_id === store.callChannelId) {
                 playNotificationSound('join');
@@ -302,8 +301,7 @@ export function handleWsMessage(ev) {
                         users.delete(cid);
                         const sid = cid.split(':')[1];
                         if (ev.channel_id === store.callChannelId && store.pcs.has(`${ev.user_id}:${sid}`)) {
-                            store.pcs.get(`${ev.user_id}:${sid}`).close();
-                            store.pcs.delete(`${ev.user_id}:${sid}`);
+                            cleanupPeerConnection(`${ev.user_id}:${sid}`);
                         }
                     }
                 }
